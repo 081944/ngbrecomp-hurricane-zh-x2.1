@@ -27,8 +27,11 @@
 #include <execinfo.h>
 #include <limits.h>
 #include <pthread.h>
+#include <semaphore.h>
+#include <time.h>
 #include <unistd.h>
 #include "platform/win32_compat.h"
+#include "platform/vcpu.h"
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +40,11 @@
 
 #include <xbox/xboxrecomp.h>
 #include "recomp_icall_feedback.h"
+#if defined(NGB_NV2A_VK)
+#include "nv2a_vk_runtime.h"
+#include "nv2a_vk.h"
+#include "nv2a_window.h"
+#endif
 #include <signal.h>
 
 /* ── Global register state (defined in xbox_memory_layout.c) ── */
@@ -49,6 +57,9 @@ extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
 extern ptrdiff_t g_xbox_mem_offset;
 
 #define NGB_ENTRY_POINT 0x0032B385u
+
+/* Renderer choice (choose_renderer): the GPU model, and whether it has a window. */
+static bool s_use_gpu, s_headless;
 #define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
 extern void xbe_entry_point(void);
@@ -169,22 +180,53 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
  * TF single-steps the register traps depend on. Whichever thread the kernel
  * hands the signal to forwards it to the guest thread. */
 static pthread_t s_guest_thread;
+static sem_t *s_sample_done;
 
-static void sample_on_signal(int sig)
+/* One external `kill -USR1` fans out to every guest thread (the boot thread
+ * and everything CreateThread started); each prints its own host backtrace
+ * and its own guest registers, which are thread-local. */
+static void sample_on_signal(int sig, siginfo_t *si, void *uc)
 {
     void *frames[48];
     int n;
 
-    if (!pthread_equal(pthread_self(), s_guest_thread)) {
-        pthread_kill(s_guest_thread, sig);
+    (void)uc;
+    if (si->si_code == SI_USER) {
+        /* One at a time, so the backtraces do not interleave. */
+        static sem_t done;
+        static int inited;
+        pthread_t th[256];
+        int k = compat_thread_list(th, 256);
+        if (!inited) { sem_init(&done, 0, 0); inited = 1; }
+        s_sample_done = &done;
+        th[k++] = s_guest_thread;
+        for (int i = 0; i < k; i++) {
+            if (pthread_equal(th[i], pthread_self()))
+                continue;   /* cannot wait on itself; it is sampled last */
+            if (pthread_kill(th[i], sig) == 0) {
+                struct timespec ts;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_sec += 2;
+                sem_timedwait(&done, &ts);
+            }
+        }
+#if defined(NGB_NV2A_VK)
+        if (s_use_gpu)
+            nv2a_vk_sample_threads();
+#endif
         return;
     }
     n = backtrace(frames, 48);
-    fprintf(stderr, "[SAMPLE] guest thread: esp=%08X eax=%08X ecx=%08X "
+    fprintf(stderr, "[SAMPLE] %s thread %lx prio %d%s: esp=%08X eax=%08X ecx=%08X "
                     "edx=%08X ebx=%08X esi=%08X edi=%08X\n",
+            pthread_equal(pthread_self(), s_guest_thread) ? "boot" : "guest",
+            (unsigned long)pthread_self(),
+            vcpu_self() ? vcpu_get_priority(vcpu_self()) : -99,
+            vcpu_holds_cpu() ? " (running)" : "",
             g_esp, g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi);
     backtrace_symbols_fd(frames, n, 2);
-    print_guest_stack();
+    if (s_sample_done)
+        sem_post(s_sample_done);
 }
 #endif
 
@@ -279,9 +321,26 @@ static void set_default(const char *name, const char *value)
 #endif
 }
 
+/* NGB_RENDERER: "vulkan" (default when built with the GPU model), "null"
+ * (the GPU model without a window -- for headless runs), or "none" (no GPU
+ * model: the plain-RAM aperture and the fence mirror, as before it existed). */
+
+static void choose_renderer(void)
+{
+    const char *r = getenv("NGB_RENDERER");
+#if defined(NGB_NV2A_VK)
+    s_use_gpu = !(r && !strcmp(r, "none"));
+    s_headless = r && !strcmp(r, "null");
+#else
+    (void)r;
+#endif
+}
+
 static void bringup_defaults(void)
 {
-    set_default("RECOMP_VBLANK", "1");
+    /* With the GPU model, vblank comes from its CRTC. */
+    if (!s_use_gpu)
+        set_default("RECOMP_VBLANK", "1");
     set_default("RECOMP_AC97_READY", "1");
     set_default("RECOMP_DSP_ACK", "0x82BF8810");
 }
@@ -297,67 +356,60 @@ static void feedback_on_signal(int sig)
 }
 #endif
 
-int main(int argc, char **argv)
+/* ── Boot (guest thread) ───────────────────────────────────── */
+
+static char s_game_dir[4096];
+
+/* Everything from loading the XBE to the entry point runs on the thread that
+ * will execute guest code: the guest register file and the TIB the kernel
+ * sets up are per-thread. */
+static void *guest_main(void *unused)
 {
-    char game_dir[4096], xbe_path[4200];
+    char xbe_path[4200];
     void *xbe_data = NULL;
     size_t xbe_size = 0;
-    const char *dir = argc > 1 ? argv[1] : getenv("NGB_GAME_DIR");
 
-    setvbuf(stdout, NULL, _IONBF, 0);
-    setvbuf(stderr, NULL, _IONBF, 0);
-    bringup_defaults();
-
-    if (dir && *dir) {
-        snprintf(game_dir, sizeof(game_dir), "%s", dir);
-    } else {
-        char base[4096];
-        exe_dir(base, sizeof(base));
-        snprintf(game_dir, sizeof(game_dir), "%sgame", base);
-    }
-    snprintf(xbe_path, sizeof(xbe_path), "%s/default.xbe", game_dir);
-
-    printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
-    printf("Game directory: %s\n", game_dir);
-
-#if defined(_WIN32)
-    SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
-    SymInitialize(GetCurrentProcess(), NULL, TRUE);
-#endif
-    AddVectoredExceptionHandler(1, veh_handler);
+    (void)unused;
 #if !defined(_WIN32)
     s_guest_thread = pthread_self();
-    signal(SIGUSR1, sample_on_signal);
+    /* The boot thread runs the title's main thread inline: it is a guest
+     * thread like the ones the title creates (platform/vcpu.h). */
+    vcpu_attach(VCPU_PRIO_NORMAL);
 #endif
-#if defined(RECOMP_ICALL_FEEDBACK)
-    RECOMP_ICALL_FEEDBACK_INIT();     /* atexit dump to icall_targets.dump */
-    signal(SIGINT, feedback_on_signal);
-    signal(SIGTERM, feedback_on_signal);
-#endif
-
+    snprintf(xbe_path, sizeof(xbe_path), "%s/default.xbe", s_game_dir);
     if (!load_file(xbe_path, &xbe_data, &xbe_size)) {
         fprintf(stderr, "Cannot read %s\n"
                         "Put the extracted disc in a 'game' directory next to the "
                         "executable, or pass its path.\n", xbe_path);
-        return 1;
+        exit(1);
     }
     printf("XBE loaded: %zu bytes\n", xbe_size);
 
     if (!xbox_MemoryLayoutInit(xbe_data, xbe_size)) {
         fprintf(stderr, "Failed to initialize the Xbox memory layout.\n");
-        free(xbe_data);
-        return 1;
+        exit(1);
     }
     g_xbox_mem_offset = xbox_GetMemoryOffset();
     printf("Xbox memory mapped. Offset: 0x%llX\n",
            (unsigned long long)g_xbox_mem_offset);
 
-    /* D3D8LTCG's pushbuffer fence. The device pointer lives at 0x3D83C8;
-     * +0x2C is the write sequence and +0x30 points at where the GPU reports
-     * how far it has read. Until a renderer consumes the pushbuffer and
-     * advances that honestly, mirror the write sequence into it so space and
-     * fence waits (sub_003CAA10) complete instead of spinning forever. */
-    xbox_Nv2aMirrorFence(NGB_D3D_DEVICE_PTR, 0x2C, 0x30);
+#if defined(NGB_NV2A_VK)
+    if (s_use_gpu) {
+        Nv2aVkOptions o = { .headless = s_headless };
+        if (xbox_Nv2aVkStart(&o) != 0) {
+            fprintf(stderr, "Cannot start the GPU.\n");
+            exit(1);
+        }
+    } else
+#endif
+    {
+        /* No GPU model: D3D8LTCG's pushbuffer fence never advances on its
+         * own. The device pointer lives at 0x3D83C8; +0x2C is the write
+         * sequence and +0x30 points at where the GPU reports how far it has
+         * read. Mirror one into the other so space and fence waits
+         * (sub_003CAA10) complete instead of spinning forever. */
+        xbox_Nv2aMirrorFence(NGB_D3D_DEVICE_PTR, 0x2C, 0x30);
+    }
 
     /* The APU and its register trap are only useful together: a trap with no
      * model declines every access, a model nothing traps into sees nothing. */
@@ -373,7 +425,7 @@ int main(int argc, char **argv)
         char save_dir[4096];
         save_dir_path(save_dir, sizeof(save_dir));
         printf("Save directory: %s\n", save_dir);
-        xbox_path_init(game_dir, save_dir);
+        xbox_path_init(s_game_dir, save_dir);
     }
     xbox_kernel_bridge_init();
     g_esp = XBOX_STACK_TOP;
@@ -391,9 +443,89 @@ int main(int argc, char **argv)
            NGB_ENTRY_POINT, g_esp);
     xbe_entry_point();
 
-    printf("Game returned. Cleaning up...\n");
-    xbox_kernel_shutdown();
-    xbox_MemoryLayoutShutdown();
-    free(xbe_data);
-    return 0;
+    printf("Game returned.\n");
+    exit(0);
+    return NULL;
+}
+
+/* ── Entry (host main thread: window and events) ───────────── */
+
+int main(int argc, char **argv)
+{
+    const char *dir = argc > 1 ? argv[1] : getenv("NGB_GAME_DIR");
+
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+    choose_renderer();
+    bringup_defaults();
+
+    if (dir && *dir) {
+        snprintf(s_game_dir, sizeof(s_game_dir), "%s", dir);
+    } else {
+        char base[4096];
+        exe_dir(base, sizeof(base));
+        snprintf(s_game_dir, sizeof(s_game_dir), "%sgame", base);
+    }
+
+    printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
+    printf("Game directory: %s\n", s_game_dir);
+
+#if defined(_WIN32)
+    SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+    SymInitialize(GetCurrentProcess(), NULL, TRUE);
+#endif
+    AddVectoredExceptionHandler(1, veh_handler);
+#if !defined(_WIN32)
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = sample_on_signal;
+        sa.sa_flags = SA_SIGINFO | SA_RESTART;
+        sigaction(SIGUSR1, &sa, NULL);
+    }
+#endif
+#if defined(RECOMP_ICALL_FEEDBACK)
+    RECOMP_ICALL_FEEDBACK_INIT();     /* atexit dump to icall_targets.dump */
+    signal(SIGINT, feedback_on_signal);
+    signal(SIGTERM, feedback_on_signal);
+#endif
+
+#if defined(NGB_NV2A_VK)
+    if (s_use_gpu && !s_headless &&
+        nv2a_window_create("Ninja Gaiden Black", 1280, 960,
+                           getenv("NGB_FULLSCREEN") != NULL,
+                           4.0 / 3.0, getenv("NGB_VSYNC") != NULL) != 0) {
+        fprintf(stderr, "Cannot open the game window.\n");
+        return 1;
+    }
+#endif
+
+#if defined(_WIN32)
+    CloseHandle(CreateThread(NULL, 64u << 20,
+                             (LPTHREAD_START_ROUTINE)guest_main, NULL, 0, NULL));
+#else
+    {
+        /* Lifted code nests a host call per guest call; give it room. */
+        pthread_attr_t attr;
+        pthread_t th;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr, 64u << 20);
+        if (pthread_create(&th, &attr, guest_main, NULL) != 0) {
+            fprintf(stderr, "Cannot start the guest thread.\n");
+            return 1;
+        }
+        pthread_attr_destroy(&attr);
+    }
+#endif
+
+#if defined(NGB_NV2A_VK)
+    if (s_use_gpu && !s_headless) {
+        while (nv2a_window_pump())
+            usleep(2000);
+        printf("Window closed.\n");
+        _exit(0);
+    }
+#endif
+    for (;;)
+        pause();
 }

@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 # xboxrecomp pipeline (see README.md); it is not checked in.
 # ============================================================================
 
-project(ninja_gaiden_black C)
+project(ninja_gaiden_black C CXX)   # CXX: the GPU renderer links VMA
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -24,6 +24,10 @@ option(NGB_ICALL_FEEDBACK "Record indirect-branch targets (bring-up builds)" OFF
 if(NGB_ICALL_FEEDBACK)
     add_compile_definitions(RECOMP_ICALL_FEEDBACK)
 endif()
+
+# The GPU: xemu's NV2A model with its Vulkan renderer (xboxrecomp nv2a_vk).
+option(NGB_NV2A_VK "Render with the NV2A Vulkan model" ON)
+set(XBOXRECOMP_NV2A_VK ${NGB_NV2A_VK} CACHE BOOL "" FORCE)
 
 set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xboxrecomp" CACHE PATH
     "Path to the xboxrecomp toolkit root directory")
@@ -72,6 +76,10 @@ add_executable(${PROJECT_NAME}
     $<TARGET_OBJECTS:ngb_gen>
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
+if(NGB_NV2A_VK)
+    target_link_libraries(${PROJECT_NAME} PRIVATE xbox_nv2a_vk)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NGB_NV2A_VK)
+endif()
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen
