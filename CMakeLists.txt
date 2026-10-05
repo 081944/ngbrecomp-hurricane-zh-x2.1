@@ -74,6 +74,7 @@ add_executable(${PROJECT_NAME}
     src/main.c
     src/recomp_manual.c
     src/fibers.c
+    $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_CURRENT_SOURCE_DIR}/src/install.c>
     $<TARGET_OBJECTS:ngb_gen>
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)

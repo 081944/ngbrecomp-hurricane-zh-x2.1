@@ -42,6 +42,9 @@
 #include "recomp_icall_feedback.h"
 #include "usb/ohci.h"
 extern void xbox_InputInit(void);
+#if !defined(_WIN32)
+#include "install.h"
+#endif
 #if defined(NGB_NV2A_VK)
 #include "nv2a_vk_runtime.h"
 #include "nv2a_vk.h"
@@ -562,13 +565,16 @@ static void *guest_main(void *unused)
 
 int main(int argc, char **argv)
 {
+#if defined(_WIN32)
     const char *dir = argc > 1 ? argv[1] : getenv("NGB_GAME_DIR");
+#endif
 
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     choose_renderer();
     bringup_defaults();
 
+#if defined(_WIN32)
     if (dir && *dir) {
         snprintf(s_game_dir, sizeof(s_game_dir), "%s", dir);
     } else {
@@ -576,6 +582,17 @@ int main(int argc, char **argv)
         exe_dir(base, sizeof(base));
         snprintf(s_game_dir, sizeof(s_game_dir), "%sgame", base);
     }
+#else
+    {
+        /* A game folder, or a disc image/archive installed on first use. */
+        char base[4096], save[4096];
+        exe_dir(base, sizeof(base));
+        save_dir_path(save, sizeof(save));
+        if (ngb_find_game(argc > 1 ? argv[1] : NULL, save, base,
+                          s_game_dir, sizeof(s_game_dir)) != 0)
+            return 1;
+    }
+#endif
 
     printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
     printf("Game directory: %s\n", s_game_dir);
