@@ -28,13 +28,17 @@ if [ ! -f "$xbe" ]; then
     "$py" -m tools.xiso unpack "$iso" -o "$files"
 fi
 
-echo "== parse";    "$py" -m tools.xbe_parser "$xbe" --json "$files/default_analysis.json" >/dev/null
+# The analysis JSON stays out of game_files: the title enumerates its own
+# root directory at boot, and a stray file there is one it never shipped with.
+analysis=$here/build/analysis/default_analysis.json
+mkdir -p "$(dirname "$analysis")"
+echo "== parse";    "$py" -m tools.xbe_parser "$xbe" --json "$analysis" >/dev/null
 # Indirect-branch targets measured by earlier runs (tools/feedback.sh) seed
 # function detection; the database is cumulative, so each pass reaches further.
 seeds=()
 db=$toolkit/tools/recomp/output/icall_targets.json
 [ -f "$db" ] && seeds=(--seed-functions "$db")
-echo "== disasm";   "$py" -m tools.disasm "$xbe" --force "${seeds[@]}" >/dev/null
+echo "== disasm";   "$py" -m tools.disasm "$xbe" --force --analysis-json "$analysis" "${seeds[@]}" >/dev/null
 echo "== func_id";  "$py" -m tools.func_id "$xbe" >/dev/null
 echo "== abi";      "$py" -m tools.abi_analysis "$xbe" >/dev/null
 echo "== recomp"

@@ -24,7 +24,9 @@
 #else
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <execinfo.h>
 #include <limits.h>
+#include <pthread.h>
 #include <unistd.h>
 #include "platform/win32_compat.h"
 #endif
@@ -47,6 +49,7 @@ extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
 extern ptrdiff_t g_xbox_mem_offset;
 
 #define NGB_ENTRY_POINT 0x0032B385u
+#define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
 extern void xbe_entry_point(void);
 extern int recomp_dispatch_init(void);   /* recomp_dispatch.c */
@@ -157,6 +160,34 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/* ── Hang sampling (Linux) ─────────────────────────────────── */
+
+#if !defined(_WIN32)
+/* `kill -USR1 <pid>` prints where the guest thread is: a host backtrace
+ * (every lifted function is a named symbol) and its guest registers. No
+ * ptrace, so it works where gdb cannot attach and where gdb would swallow the
+ * TF single-steps the register traps depend on. Whichever thread the kernel
+ * hands the signal to forwards it to the guest thread. */
+static pthread_t s_guest_thread;
+
+static void sample_on_signal(int sig)
+{
+    void *frames[48];
+    int n;
+
+    if (!pthread_equal(pthread_self(), s_guest_thread)) {
+        pthread_kill(s_guest_thread, sig);
+        return;
+    }
+    n = backtrace(frames, 48);
+    fprintf(stderr, "[SAMPLE] guest thread: esp=%08X eax=%08X ecx=%08X "
+                    "edx=%08X ebx=%08X esi=%08X edi=%08X\n",
+            g_esp, g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi);
+    backtrace_symbols_fd(frames, n, 2);
+    print_guest_stack();
+}
+#endif
+
 /* ── Paths ─────────────────────────────────────────────────── */
 
 /* Directory holding the executable, with a trailing separator. */
@@ -224,6 +255,37 @@ static bool load_file(const char *path, void **out_data, size_t *out_size)
 
 /* ── Entry ─────────────────────────────────────────────────── */
 
+/* Runtime switches this title needs to get past hardware it waits on, until
+ * the hardware is modelled. Set only when absent, so any of them can still be
+ * overridden (or turned off with an empty value) from the environment.
+ *
+ *   RECOMP_VBLANK      D3D blocks on its vblank event; raise the NV2A vblank
+ *                      interrupt at 60 Hz.
+ *   RECOMP_AC97_READY  DirectSound programs the APU directly; trap its
+ *                      registers into the emulated APU.
+ *   RECOMP_DSP_ACK     DirectSound's effects-image download posts command 3 to
+ *                      the GP DSP mailbox and spins until the DSP clears it
+ *                      (sub_0037DAAE). The DSP is not emulated, so complete it
+ *                      at once. The mailbox is +0x810 into a contiguous block
+ *                      whose address is deterministic for this build. */
+static void set_default(const char *name, const char *value)
+{
+    if (getenv(name))
+        return;
+#if defined(_WIN32)
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 0);
+#endif
+}
+
+static void bringup_defaults(void)
+{
+    set_default("RECOMP_VBLANK", "1");
+    set_default("RECOMP_AC97_READY", "1");
+    set_default("RECOMP_DSP_ACK", "0x82BF8810");
+}
+
 #if defined(RECOMP_ICALL_FEEDBACK)
 /* A bring-up run usually ends at a timeout or ^C, not an orderly exit, and
  * atexit does not run on a signal. Dump on the way out of those too. */
@@ -244,6 +306,7 @@ int main(int argc, char **argv)
 
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+    bringup_defaults();
 
     if (dir && *dir) {
         snprintf(game_dir, sizeof(game_dir), "%s", dir);
@@ -262,6 +325,10 @@ int main(int argc, char **argv)
     SymInitialize(GetCurrentProcess(), NULL, TRUE);
 #endif
     AddVectoredExceptionHandler(1, veh_handler);
+#if !defined(_WIN32)
+    s_guest_thread = pthread_self();
+    signal(SIGUSR1, sample_on_signal);
+#endif
 #if defined(RECOMP_ICALL_FEEDBACK)
     RECOMP_ICALL_FEEDBACK_INIT();     /* atexit dump to icall_targets.dump */
     signal(SIGINT, feedback_on_signal);
@@ -284,6 +351,13 @@ int main(int argc, char **argv)
     g_xbox_mem_offset = xbox_GetMemoryOffset();
     printf("Xbox memory mapped. Offset: 0x%llX\n",
            (unsigned long long)g_xbox_mem_offset);
+
+    /* D3D8LTCG's pushbuffer fence. The device pointer lives at 0x3D83C8;
+     * +0x2C is the write sequence and +0x30 points at where the GPU reports
+     * how far it has read. Until a renderer consumes the pushbuffer and
+     * advances that honestly, mirror the write sequence into it so space and
+     * fence waits (sub_003CAA10) complete instead of spinning forever. */
+    xbox_Nv2aMirrorFence(NGB_D3D_DEVICE_PTR, 0x2C, 0x30);
 
     /* The APU and its register trap are only useful together: a trap with no
      * model declines every access, a model nothing traps into sees nothing. */
