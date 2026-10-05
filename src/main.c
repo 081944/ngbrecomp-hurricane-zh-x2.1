@@ -41,6 +41,7 @@
 #include <xbox/xboxrecomp.h>
 #include "recomp_icall_feedback.h"
 #include "usb/ohci.h"
+extern void xbox_InputInit(void);
 #if defined(NGB_NV2A_VK)
 #include "nv2a_vk_runtime.h"
 #include "nv2a_vk.h"
@@ -614,6 +615,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "Cannot open the game window.\n");
         return 1;
     }
+    /* Controllers and keyboard, on the thread that pumps the window's
+     * events (hotplug arrives there too). */
+    if (s_use_gpu && !s_headless)
+        xbox_InputInit();
 #endif
 
 #if defined(_WIN32)
