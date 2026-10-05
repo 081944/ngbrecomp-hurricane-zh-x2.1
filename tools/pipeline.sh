@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Regenerate src/recomp/gen from the disc.
+#
+#   tools/pipeline.sh [path/to/disc.iso]
+#
+# The disc (or the .7z it came in) is only read; the extracted files go to
+# game_files/ and the toolkit's analysis output stays in the xboxrecomp clone,
+# where its tools expect it. Needs python3 with capstone: the first run makes
+# a venv in the toolkit clone for that.
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")/.." && pwd)
+toolkit=${XBOXRECOMP_DIR:-$here/../xboxrecomp}
+toolkit=$(cd "$toolkit" && pwd)
+iso=${1:-$here/disc/ngb.xiso}
+files=$here/game_files
+xbe=$files/default.xbe
+
+if [ ! -x "$toolkit/.venv/bin/python" ]; then
+    python3 -m venv "$toolkit/.venv"
+    "$toolkit/.venv/bin/pip" -q install capstone
+fi
+py=$toolkit/.venv/bin/python
+cd "$toolkit"
+
+if [ ! -f "$xbe" ]; then
+    echo "== unpacking $iso"
+    "$py" -m tools.xiso unpack "$iso" -o "$files"
+fi
+
+echo "== parse";    "$py" -m tools.xbe_parser "$xbe" --json "$files/default_analysis.json" >/dev/null
+# Indirect-branch targets measured by earlier runs (tools/feedback.sh) seed
+# function detection; the database is cumulative, so each pass reaches further.
+seeds=()
+db=$toolkit/tools/recomp/output/icall_targets.json
+[ -f "$db" ] && seeds=(--seed-functions "$db")
+echo "== disasm";   "$py" -m tools.disasm "$xbe" --force "${seeds[@]}" >/dev/null
+echo "== func_id";  "$py" -m tools.func_id "$xbe" >/dev/null
+echo "== abi";      "$py" -m tools.abi_analysis "$xbe" >/dev/null
+echo "== recomp"
+# --exclude-manual: functions defined by hand in recomp_manual.c are not
+# generated, so the hand-written body is the one that links.
+"$py" -m tools.recomp "$xbe" --all --split 250 \
+    --game-name "Ninja Gaiden Black" \
+    --exclude-manual "$here/src/recomp_manual.c" \
+    --gen-dir "$here/src/recomp/gen" > "$here/recomp_log.txt" 2>&1 \
+    || { tail -20 "$here/recomp_log.txt"; exit 1; }
+tail -3 "$here/recomp_log.txt"

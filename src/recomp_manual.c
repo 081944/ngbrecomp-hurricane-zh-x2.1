@@ -19,6 +19,7 @@
  */
 
 #include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* ── ICALL trace ring buffer ───────────────────────────────── */
@@ -45,7 +46,6 @@ typedef void (*recomp_func_t)(void);
 
 /* ── Register state (defined in xbox_memory_layout.c) ──────── */
 
-extern uint32_t g_eax;
 extern ptrdiff_t g_xbox_mem_offset;
 
 /* ── Manual function overrides ─────────────────────────────── */

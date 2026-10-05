@@ -53,3 +53,4 @@ disc/
 game_files/
 recomp_log.txt
 *.afs
+runs/
