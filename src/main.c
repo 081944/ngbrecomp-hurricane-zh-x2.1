@@ -40,6 +40,7 @@
 
 #include <xbox/xboxrecomp.h>
 #include "recomp_icall_feedback.h"
+#include "usb/ohci.h"
 #if defined(NGB_NV2A_VK)
 #include "nv2a_vk_runtime.h"
 #include "nv2a_vk.h"
@@ -156,6 +157,10 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
     if (g_apu_state && xbox_va >= APU_TRAP_BASE && xbox_va < APU_TRAP_END
             && apu_hook_handle_mmio(ep->ContextRecord, fault_addr, xbox_va, is_write))
         return EXCEPTION_CONTINUE_EXECUTION;
+    /* The USB host controllers (the controller ports). */
+    if (xbox_OhciOwnsAddress(xbox_va) &&
+        xbox_OhciHandleMmio(ep->ContextRecord, xbox_va))
+        return EXCEPTION_CONTINUE_EXECUTION;
 
     fprintf(stderr, "[CRASH] Access violation at RIP=0x%llX, fault addr=0x%llX (%s)\n",
             (unsigned long long)ep->ContextRecord->Rip,
@@ -214,6 +219,28 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
         if (s_use_gpu)
             nv2a_vk_sample_threads();
 #endif
+        xbox_PeekSample("sample");
+        {   /* NGB_DUMP=va:len[,va:len...]: hex+ascii dump on a sample */
+            const char *d = getenv("NGB_DUMP");
+            while (d && *d) {
+                char *e;
+                uint32_t va = (uint32_t)strtoul(d, &e, 0), len = 0;
+                if (*e == ':') len = (uint32_t)strtoul(e + 1, &e, 0);
+                for (uint32_t o = 0; o < len; o += 16) {
+                    fprintf(stderr, "[DUMP] %08X:", va + o);
+                    for (int j = 0; j < 16; j++)
+                        fprintf(stderr, " %02X", ((const uint8_t *)(uintptr_t)xbox_GetMemoryOffset())[va + o + j]);
+                    fprintf(stderr, "  ");
+                    for (int j = 0; j < 16; j++) {
+                        uint8_t c = ((const uint8_t *)(uintptr_t)xbox_GetMemoryOffset())[va + o + j];
+                        fputc(c >= 32 && c < 127 ? c : '.', stderr);
+                    }
+                    fputc('\n', stderr);
+                }
+                d = *e == ',' ? e + 1 : e;
+                if (e == d && *e) break;
+            }
+        }
         return;
     }
     n = backtrace(frames, 48);
@@ -227,6 +254,84 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
     backtrace_symbols_fd(frames, n, 2);
     if (s_sample_done)
         sem_post(s_sample_done);
+}
+#endif
+
+/* ── Profiling (Linux) ─────────────────────────────────────── */
+
+#if !defined(_WIN32)
+#include <sys/time.h>
+#include <ucontext.h>
+/* NGB_PROFILE=1: sample the instruction pointer of whichever thread is using
+ * CPU every millisecond of process CPU time, and print the hottest functions
+ * (every lifted guest function is a named symbol) when the process ends. */
+#define PROF_SLOTS (1u << 20)
+static uintptr_t *s_prof_pc;
+static volatile unsigned long s_prof_n;
+
+static void prof_signal(int sig, siginfo_t *si, void *uc_)
+{
+    ucontext_t *uc = uc_;
+    unsigned long i = __atomic_fetch_add(&s_prof_n, 1, __ATOMIC_RELAXED);
+    (void)sig; (void)si;
+    if (i < PROF_SLOTS)
+        s_prof_pc[i] = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
+}
+
+typedef struct { const char *name; unsigned long n; } ProfEntry;
+
+static int prof_cmp(const void *a, const void *b)
+{
+    const ProfEntry *x = a, *y = b;
+    return (y->n > x->n) - (y->n < x->n);
+}
+
+static void prof_report(void)
+{
+    unsigned long n = s_prof_n < PROF_SLOTS ? s_prof_n : PROF_SLOTS, k = 0;
+    ProfEntry *e;
+
+    if (!n)
+        return;
+    e = calloc(n, sizeof(*e));
+    for (unsigned long i = 0; i < n; i++) {
+        Dl_info di;
+        const char *name = "?";
+        if (dladdr((void *)s_prof_pc[i], &di))
+            name = di.dli_sname ? di.dli_sname : di.dli_fname;
+        unsigned long j;
+        for (j = 0; j < k; j++)
+            if (e[j].name == name || !strcmp(e[j].name, name))
+                break;
+        if (j == k)
+            e[k++].name = name;
+        e[j].n++;
+    }
+    qsort(e, k, sizeof(*e), prof_cmp);
+    fprintf(stderr, "[PROFILE] %lu samples (1 ms of CPU each)\n", n);
+    for (unsigned long j = 0; j < k && j < 40; j++)
+        fprintf(stderr, "  %5.1f%%  %s\n", 100.0 * e[j].n / n, e[j].name);
+    free(e);
+}
+
+static void prof_exit_on_signal(int sig)
+{
+    (void)sig;
+    exit(0);   /* runs prof_report */
+}
+
+static void prof_start(void)
+{
+    struct sigaction sa;
+    struct itimerval it = { { 0, 1000 }, { 0, 1000 } };
+
+    s_prof_pc = calloc(PROF_SLOTS, sizeof(*s_prof_pc));
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = prof_signal;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigaction(SIGPROF, &sa, NULL);
+    setitimer(ITIMER_PROF, &it, NULL);
+    atexit(prof_report);
 }
 #endif
 
@@ -342,6 +447,7 @@ static void bringup_defaults(void)
     if (!s_use_gpu)
         set_default("RECOMP_VBLANK", "1");
     set_default("RECOMP_AC97_READY", "1");
+    set_default("RECOMP_USB", "1");
     set_default("RECOMP_DSP_ACK", "0x82BF8810");
 }
 
@@ -428,6 +534,9 @@ static void *guest_main(void *unused)
         xbox_path_init(s_game_dir, save_dir);
     }
     xbox_kernel_bridge_init();
+    /* Controller ports: OHCI with an Xbox gamepad fed by SDL's game
+     * controllers (src/usb). Inert unless RECOMP_USB is set. */
+    xbox_OhciInit();
     g_esp = XBOX_STACK_TOP;
 
     /* Flat dispatch table: without it every indirect call binary-searches the
@@ -482,6 +591,13 @@ int main(int argc, char **argv)
         sa.sa_sigaction = sample_on_signal;
         sa.sa_flags = SA_SIGINFO | SA_RESTART;
         sigaction(SIGUSR1, &sa, NULL);
+    }
+#endif
+#if !defined(_WIN32)
+    if (getenv("NGB_PROFILE")) {
+        prof_start();
+        signal(SIGINT, prof_exit_on_signal);
+        signal(SIGTERM, prof_exit_on_signal);
     }
 #endif
 #if defined(RECOMP_ICALL_FEEDBACK)

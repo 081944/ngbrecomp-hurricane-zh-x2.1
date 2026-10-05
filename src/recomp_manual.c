@@ -19,6 +19,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -84,8 +85,47 @@ extern ptrdiff_t g_xbox_mem_offset;
  *       g_eax = result;
  *   }
  */
+/* NGB_ICALL_HIST=1: count indirect-call targets and print the most frequent
+ * every 5 s -- which vtable methods (scene, task, effect) the title runs. */
+#include <stdlib.h>
+#include <time.h>
+#define HIST_SLOTS 8192
+static uint32_t s_hist_va[HIST_SLOTS];
+static uint32_t s_hist_n[HIST_SLOTS];
+
+static void icall_hist(uint32_t va)
+{
+    static int on = -1;
+    static time_t last;
+    uint32_t h;
+
+    if (on < 0)
+        on = getenv("NGB_ICALL_HIST") != NULL;
+    if (!on)
+        return;
+    h = (va * 2654435761u) & (HIST_SLOTS - 1);
+    while (s_hist_va[h] && s_hist_va[h] != va)
+        h = (h + 1) & (HIST_SLOTS - 1);
+    s_hist_va[h] = va;
+    __atomic_fetch_add(&s_hist_n[h], 1, __ATOMIC_RELAXED);
+    if (time(NULL) - last >= 5) {
+        last = time(NULL);
+        fprintf(stderr, "[ICALLS] last 5 s:\n");
+        for (int k = 0; k < 30; k++) {
+            uint32_t best = 0, bi = 0;
+            for (uint32_t i = 0; i < HIST_SLOTS; i++)
+                if (s_hist_n[i] > best) { best = s_hist_n[i]; bi = i; }
+            if (!best) break;
+            fprintf(stderr, "  %8u  0x%08X\n", best, s_hist_va[bi]);
+            s_hist_n[bi] = 0;
+        }
+        memset(s_hist_n, 0, sizeof(s_hist_n));
+    }
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
+    icall_hist(xbox_va);
     /*
      * TODO: Add your overrides here. Examples:
      *

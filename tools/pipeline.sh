@@ -36,17 +36,21 @@ echo "== parse";    "$py" -m tools.xbe_parser "$xbe" --json "$analysis" >/dev/nu
 # Indirect-branch targets measured by earlier runs (tools/feedback.sh) seed
 # function detection; the database is cumulative, so each pass reaches further.
 seeds=()
-db=$toolkit/tools/recomp/output/icall_targets.json
+# The database lives in this repo (src/icall_targets.json), next to the code
+# it seeds; feedback.sh merges new targets into it.
+db=$here/src/icall_targets.json
 [ -f "$db" ] && seeds=(--seed-functions "$db")
 echo "== disasm";   "$py" -m tools.disasm "$xbe" --force --analysis-json "$analysis" "${seeds[@]}" >/dev/null
 echo "== func_id";  "$py" -m tools.func_id "$xbe" >/dev/null
 echo "== abi";      "$py" -m tools.abi_analysis "$xbe" >/dev/null
 echo "== recomp"
 # --exclude-manual: functions defined by hand in recomp_manual.c are not
-# generated, so the hand-written body is the one that links.
+# generated, so the hand-written body is the one that links;
+# src/manual_functions.json lists those defined elsewhere (src/fibers.c).
 "$py" -m tools.recomp "$xbe" --all --split 250 \
     --game-name "Ninja Gaiden Black" \
     --exclude-manual "$here/src/recomp_manual.c" \
+    --manual-functions "$here/src/manual_functions.json" \
     --gen-dir "$here/src/recomp/gen" > "$here/recomp_log.txt" 2>&1 \
     || { tail -20 "$here/recomp_log.txt"; exit 1; }
 tail -3 "$here/recomp_log.txt"
