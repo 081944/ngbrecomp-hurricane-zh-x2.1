@@ -466,5 +466,23 @@
   "flags": 2,
   "seen": "unresolved",
   "source": "icall-feedback"
+ },
+ {
+  "start": "0x0012A520",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x001B5EC0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x00299660",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
  }
 ]
