@@ -185,14 +185,25 @@ static LONG watch_exception(PEXCEPTION_POINTERS ep, uint32_t xbox_va, int is_wri
     }
     if (!s_watch_len || !is_write || (xbox_va & ~0xFFFu) != s_watch_page)
         return EXCEPTION_CONTINUE_SEARCH;
+    static long long after = -1, t0;
+    if (after < 0) {
+        const char *e = getenv("NGB_WATCH_AFTER");   /* ms before logging */
+        after = e ? atoll(e) : 0;
+        t0 = (long long)GetTickCount64();
+    }
     if (xbox_va + 8 > s_watch_va && xbox_va < s_watch_va + s_watch_len &&
-        s_watch_hits++ < 400) {
+        (long long)GetTickCount64() - t0 >= after && s_watch_hits++ < 400) {
         Dl_info di;
         void *rip = (void *)(uintptr_t)ep->ContextRecord->Rip;
         fprintf(stderr, "[WATCH] write 0x%08X by %s (esp=%08X ret %08X %08X %08X %08X)\n",
                 xbox_va, dladdr(rip, &di) && di.dli_sname ? di.dli_sname : "?",
                 g_esp, MEM32_HOST(g_esp), MEM32_HOST(g_esp + 4),
                 MEM32_HOST(g_esp + 8), MEM32_HOST(g_esp + 12));
+        if (getenv("NGB_WATCH_BT") && s_watch_hits % 50 == 1) {
+            void *frames[64];
+            int n = backtrace(frames, 64);
+            backtrace_symbols_fd(frames, n, 2);
+        }
     }
     watch_protect(0);
     t_watch_stepping = 1;
