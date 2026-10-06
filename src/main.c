@@ -65,6 +65,7 @@ extern ptrdiff_t g_xbox_mem_offset;
 
 /* Renderer choice (choose_renderer): the GPU model, and whether it has a window. */
 static bool s_use_gpu, s_headless;
+static bool s_widescreen;
 #define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
 extern void xbe_entry_point(void);
@@ -721,11 +722,21 @@ int main(int argc, char **argv)
     signal(SIGTERM, feedback_on_signal);
 #endif
 
+    /* Widescreen unless NGB_WIDESCREEN=0: the game renders anamorphic 16:9
+     * when the dashboard setting says so, and the window shows it at 16:9. */
+    {
+        const char *ws = getenv("NGB_WIDESCREEN");
+        s_widescreen = !(ws && *ws == '0');
+        if (s_widescreen)
+            xbox_XcVideoFlags |= XC_VIDEO_FLAGS_WIDESCREEN;
+    }
 #if defined(NGB_NV2A_VK)
     if (s_use_gpu && !s_headless &&
-        nv2a_window_create("Ninja Gaiden Black", 1280, 960,
+        nv2a_window_create("Ninja Gaiden Black",
+                           1280, s_widescreen ? 720 : 960,
                            getenv("NGB_FULLSCREEN") != NULL,
-                           4.0 / 3.0, getenv("NGB_VSYNC") != NULL) != 0) {
+                           s_widescreen ? 16.0 / 9.0 : 4.0 / 3.0,
+                           getenv("NGB_VSYNC") != NULL) != 0) {
         fprintf(stderr, "Cannot open the game window.\n");
         return 1;
     }

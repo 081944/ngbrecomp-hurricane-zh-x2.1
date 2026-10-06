@@ -39,6 +39,9 @@ The game directory is the first argument, then `NGB_GAME_DIR`, then `game/` next
 the executable. Hard-disk images and saves go to `~/.local/share/NinjaGaidenBlack`
 (sparse files; `NGB_SAVE_DIR` overrides).
 
+The game runs in widescreen (16:9, the game's own anamorphic mode); `NGB_WIDESCREEN=0`
+gives 4:3. `NGB_FULLSCREEN=1` and `NGB_VSYNC=1` do what they say; `NGB_AUDIO=0` mutes.
+
 ## Bring-up tools
 
 - `kill -USR1 <pid>` prints the guest thread's host backtrace (every lifted function
