@@ -145,12 +145,75 @@ extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
 #define APU_TRAP_BASE 0xFE800000u
 #define APU_TRAP_END  0xFE880000u
 
+#define MEM32_HOST(va) (*(uint32_t *)(uintptr_t)(g_xbox_mem_offset + (uint32_t)(va)))
+/* NGB_WATCH_WRITE=va[:len]: report every write to guest [va, va+len) -- the
+ * host function (a lifted sub_XXXXXXXX) and the guest return addresses --
+ * by write-protecting the page and stepping over each write. */
+static uint32_t s_watch_va, s_watch_len, s_watch_page;
+static __thread int t_watch_stepping;
+static unsigned long s_watch_hits;
+
+static void watch_protect(int on)
+{
+    DWORD old;
+    VirtualProtect((void *)(uintptr_t)(g_xbox_mem_offset + s_watch_page), 4096,
+                   on ? PAGE_READONLY : PAGE_READWRITE, &old);
+}
+
+static void watch_arm(void)
+{
+    const char *e = getenv("NGB_WATCH_WRITE");
+    char *end;
+    if (!e || !*e)
+        return;
+    s_watch_va = (uint32_t)strtoul(e, &end, 0);
+    s_watch_len = *end == ':' ? (uint32_t)strtoul(end + 1, NULL, 0) : 4;
+    s_watch_page = s_watch_va & ~0xFFFu;
+    watch_protect(1);
+    fprintf(stderr, "[WATCH] writes to 0x%08X+%u\n", s_watch_va, s_watch_len);
+}
+
+static LONG watch_exception(PEXCEPTION_POINTERS ep, uint32_t xbox_va, int is_write)
+{
+    if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP) {
+        if (!t_watch_stepping)
+            return EXCEPTION_CONTINUE_SEARCH;
+        t_watch_stepping = 0;
+        ep->ContextRecord->EFlags &= ~0x100u;
+        watch_protect(1);
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    if (!s_watch_len || !is_write || (xbox_va & ~0xFFFu) != s_watch_page)
+        return EXCEPTION_CONTINUE_SEARCH;
+    if (xbox_va + 8 > s_watch_va && xbox_va < s_watch_va + s_watch_len &&
+        s_watch_hits++ < 400) {
+        Dl_info di;
+        void *rip = (void *)(uintptr_t)ep->ContextRecord->Rip;
+        fprintf(stderr, "[WATCH] write 0x%08X by %s (esp=%08X ret %08X %08X %08X %08X)\n",
+                xbox_va, dladdr(rip, &di) && di.dli_sname ? di.dli_sname : "?",
+                g_esp, MEM32_HOST(g_esp), MEM32_HOST(g_esp + 4),
+                MEM32_HOST(g_esp + 8), MEM32_HOST(g_esp + 12));
+    }
+    watch_protect(0);
+    t_watch_stepping = 1;
+    ep->ContextRecord->EFlags |= 0x100u;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
 static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
 {
     uintptr_t fault_addr;
     uint32_t xbox_va;
     int is_write;
 
+    if (s_watch_len && (ep->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP ||
+                        ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)) {
+        uintptr_t fa = ep->ExceptionRecord->ExceptionInformation[1];
+        LONG r = watch_exception(ep, (uint32_t)(fa - (uintptr_t)g_xbox_mem_offset),
+                                 ep->ExceptionRecord->ExceptionInformation[0] ? 1 : 0);
+        if (r == EXCEPTION_CONTINUE_EXECUTION)
+            return r;
+    }
     if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
         return EXCEPTION_CONTINUE_SEARCH;
 
@@ -224,6 +287,22 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
             nv2a_vk_sample_threads();
 #endif
         xbox_PeekSample("sample");
+        {   /* NGB_DUMP_RAM=path: the guest's low 64 MB to path.N */
+            const char *path = getenv("NGB_DUMP_RAM");
+            static int seq;
+            if (path && *path) {
+                char name[600];
+                FILE *f;
+                snprintf(name, sizeof name, "%s.%d", path, seq++);
+                f = fopen(name, "wb");
+                if (f) {
+                    fwrite((const void *)(uintptr_t)xbox_GetMemoryOffset(), 1,
+                           64u << 20, f);
+                    fclose(f);
+                    fprintf(stderr, "[DUMP] RAM -> %s\n", name);
+                }
+            }
+        }
         {   /* NGB_DUMP=va:len[,va:len...]: hex+ascii dump on a sample */
             const char *d = getenv("NGB_DUMP");
             while (d && *d) {
@@ -421,7 +500,8 @@ static bool load_file(const char *path, void **out_data, size_t *out_size)
  *                      the GP DSP mailbox and spins until the DSP clears it
  *                      (sub_0037DAAE). The DSP is not emulated, so complete it
  *                      at once. The mailbox is +0x810 into a contiguous block
- *                      whose address is deterministic for this build. */
+ *                      whose address is deterministic for this build (it moves if the
+ *                      contiguous allocator does: XBOX_CONTIG_ALLOC_BASE). */
 static void set_default(const char *name, const char *value)
 {
     if (getenv(name))
@@ -455,7 +535,7 @@ static void bringup_defaults(void)
         set_default("RECOMP_VBLANK", "1");
     set_default("RECOMP_AC97_READY", "1");
     set_default("RECOMP_USB", "1");
-    set_default("RECOMP_DSP_ACK", "0x82BF8810");
+    set_default("RECOMP_DSP_ACK", "0x86BF8810");   /* contiguous memory starts at 64 MB */
 }
 
 #if defined(RECOMP_ICALL_FEEDBACK)
@@ -557,6 +637,7 @@ static void *guest_main(void *unused)
     /* Inert unless RECOMP_WATCHDOG_SECS is set; must run on the guest thread. */
     xbox_WatchdogStart();
 
+    watch_arm();
     printf("Entry point: 0x%08X, ESP: 0x%08X\nStarting game...\n",
            NGB_ENTRY_POINT, g_esp);
     xbe_entry_point();
