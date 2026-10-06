@@ -54,3 +54,4 @@ game_files/
 recomp_log.txt
 *.afs
 runs/
+xbox_kernel.log

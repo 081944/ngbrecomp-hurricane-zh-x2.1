@@ -320,8 +320,11 @@ static void prof_report(void)
 
 static void prof_exit_on_signal(int sig)
 {
+    struct itimerval off = { { 0, 0 }, { 0, 0 } };
     (void)sig;
-    exit(0);   /* runs prof_report */
+    setitimer(ITIMER_PROF, &off, NULL);
+    prof_report();
+    _exit(0);   /* see feedback_on_signal */
 }
 
 static void prof_start(void)
@@ -461,8 +464,10 @@ static void bringup_defaults(void)
 static void feedback_on_signal(int sig)
 {
     RECOMP_ICALL_FEEDBACK_DUMP();
-    signal(sig, SIG_DFL);
-    raise(sig);
+    /* Straight out, as closing the window does: exit() would run library
+     * destructors (the Vulkan driver's, SDL's audio) while the GPU and
+     * audio threads still use them, and either hangs or crashes there. */
+    _exit(128 + sig);
 }
 #endif
 
