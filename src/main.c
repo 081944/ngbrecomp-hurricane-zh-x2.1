@@ -42,6 +42,41 @@
 #include "recomp_icall_feedback.h"
 #include "usb/ohci.h"
 extern void xbox_InputInit(void);
+extern void (*xbox_FileReadHook)(const char *host_path, uint64_t offset, size_t len);
+#if defined(NGB_NV2A_VK)
+#include "launcher.h"
+#include "usb/usb_gamepad.h"
+
+/* Skip intro movie: the boot movie (the prologue, 2_VI_WIDE_B.sfd in
+ * widescreen, 4_VI_STD_B.sfd in 4:3) is skippable with Start on the console;
+ * while it streams, press Start for the player. Only those two files: the
+ * story movies (pre_movie*.sfd) are left alone. */
+static volatile uint64_t s_intro_read_ms;
+
+static void intro_read_hook(const char *path, uint64_t off, size_t len)
+{
+    (void)off; (void)len;
+    if (path && (strstr(path, "2_VI_WIDE_B.sfd") || strstr(path, "4_VI_STD_B.sfd")))
+        s_intro_read_ms = GetTickCount64();
+}
+
+static void *intro_skip_thread(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        uint64_t now = GetTickCount64();
+        if (s_intro_read_ms && now - s_intro_read_ms < 600) {
+            usb_gamepad_inject = 0x10;          /* Start */
+            usleep(150 * 1000);
+            usb_gamepad_inject = 0;
+            usleep(350 * 1000);
+        } else {
+            usleep(50 * 1000);
+        }
+    }
+    return NULL;
+}
+#endif
 #if !defined(_WIN32)
 #include "install.h"
 #endif
@@ -66,6 +101,7 @@ extern ptrdiff_t g_xbox_mem_offset;
 /* Renderer choice (choose_renderer): the GPU model, and whether it has a window. */
 static bool s_use_gpu, s_headless;
 static bool s_widescreen;
+static int s_show_settings;
 #define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
 extern void xbe_entry_point(void);
@@ -668,6 +704,14 @@ static void *guest_main(void *unused)
 
 int main(int argc, char **argv)
 {
+    /* --settings: show the settings screen even if it is turned off. */
+    for (int i = 1; i < argc; i++)
+        if (!strcmp(argv[i], "--settings")) {
+            s_show_settings = 1;
+            memmove(&argv[i], &argv[i + 1], (size_t)(argc - i) * sizeof *argv);
+            argc--;
+            i--;
+        }
 #if defined(_WIN32)
     const char *dir = argc > 1 ? argv[1] : getenv("NGB_GAME_DIR");
 #endif
@@ -727,21 +771,52 @@ int main(int argc, char **argv)
     signal(SIGTERM, feedback_on_signal);
 #endif
 
-    /* Widescreen unless NGB_WIDESCREEN=0: the game renders anamorphic 16:9
-     * when the dashboard setting says so, and the window shows it at 16:9. */
+#if defined(NGB_NV2A_VK)
+    /* The settings screen, then the settings. Environment variables of the
+     * same meaning still win, for testing. */
+    NgbSettings cfg;
+    ngb_settings_load(&cfg);
+    if (s_use_gpu && !s_headless && (cfg.show_launcher || s_show_settings) &&
+        !getenv("NGB_NO_SETTINGS")) {
+        if (!ngb_launcher_run(&cfg))
+            return 0;
+    }
+    {
+        const char *e;
+        if ((e = getenv("NGB_WIDESCREEN")))
+            cfg.aspect = *e == '0' ? ASPECT_4_3 : ASPECT_16_9;
+        if ((e = getenv("NGB_FULLSCREEN")))
+            cfg.fullscreen = *e != '0';
+        if ((e = getenv("NGB_VSYNC")))
+            cfg.vsync = *e != '0';
+        if (!getenv("NV2A_SCALE") && cfg.scale > 1) {
+            char v[8];
+            snprintf(v, sizeof v, "%d", cfg.scale);
+            setenv("NV2A_SCALE", v, 1);
+        }
+        if (cfg.skip_intro && s_use_gpu) {
+            pthread_t t;
+            xbox_FileReadHook = intro_read_hook;
+            pthread_create(&t, NULL, intro_skip_thread, NULL);
+            pthread_detach(t);
+        }
+    }
+    /* Widescreen (16:9 and 16:10 alike: the game's anamorphic mode, shown
+     * at the chosen shape) unless 4:3. */
+    s_widescreen = cfg.aspect != ASPECT_4_3;
+#else
     {
         const char *ws = getenv("NGB_WIDESCREEN");
         s_widescreen = !(ws && *ws == '0');
-        if (s_widescreen)
-            xbox_XcVideoFlags |= XC_VIDEO_FLAGS_WIDESCREEN;
     }
+#endif
+    if (s_widescreen)
+        xbox_XcVideoFlags |= XC_VIDEO_FLAGS_WIDESCREEN;
 #if defined(NGB_NV2A_VK)
     if (s_use_gpu && !s_headless &&
-        nv2a_window_create("Ninja Gaiden Black",
-                           1280, s_widescreen ? 720 : 960,
-                           getenv("NGB_FULLSCREEN") != NULL,
-                           s_widescreen ? 16.0 / 9.0 : 4.0 / 3.0,
-                           getenv("NGB_VSYNC") != NULL) != 0) {
+        nv2a_window_create("Ninja Gaiden Black", cfg.width, cfg.height,
+                           cfg.fullscreen, ngb_settings_aspect_ratio(&cfg),
+                           cfg.vsync) != 0) {
         fprintf(stderr, "Cannot open the game window.\n");
         return 1;
     }

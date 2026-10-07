@@ -39,8 +39,15 @@ The game directory is the first argument, then `NGB_GAME_DIR`, then `game/` next
 the executable. Hard-disk images and saves go to `~/.local/share/NinjaGaidenBlack`
 (sparse files; `NGB_SAVE_DIR` overrides).
 
-The game runs in widescreen (16:9, the game's own anamorphic mode); `NGB_WIDESCREEN=0`
-gives 4:3. `NGB_FULLSCREEN=1` and `NGB_VSYNC=1` do what they say; `NGB_AUDIO=0` mutes.
+A settings screen comes up first (keyboard, mouse or controller): aspect ratio (4:3,
+16:9, 16:10 for the Steam Deck, or stretch), window size, windowed/fullscreen, render
+resolution (1x-4x), V-Sync, skipping the intro movie, and whether to show the screen at
+all. They are saved to `~/.config/NinjaGaidenBlack/settings.ini`; `--settings` brings
+the screen back if it is turned off. In game, F11 or Alt+Enter toggles fullscreen.
+
+The environment still overrides the file, for testing: `NGB_WIDESCREEN=0|1`,
+`NGB_FULLSCREEN=0|1`, `NGB_VSYNC=0|1`, `NV2A_SCALE=n`, `NGB_NO_SETTINGS=1` (skip the
+screen), `NGB_AUDIO=0` (mute).
 
 ## Bring-up tools
 
