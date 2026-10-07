@@ -257,7 +257,7 @@ static void row_text(const NgbSettings *s, int row, const char **label, char *va
     case ROW_DISPLAY: *label = "Display";       snprintf(val, n, "%s", s->fullscreen ? "Fullscreen" : "Windowed"); break;
     case ROW_SCALE:   *label = "Render resolution"; snprintf(val, n, "%s", SCALE_LABEL[s->scale - 1]); break;
     case ROW_VSYNC:   *label = "V-Sync";        snprintf(val, n, "%s", s->vsync ? "On" : "Off"); break;
-    case ROW_SKIP:    *label = "Skip intro movie"; snprintf(val, n, "%s", s->skip_intro ? "Yes" : "No"); break;
+    case ROW_SKIP:    *label = "Skip intro movies"; snprintf(val, n, "%s", s->skip_intro ? "Yes" : "No"); break;
     case ROW_SHOW:    *label = "Show this screen at startup"; snprintf(val, n, "%s", s->show_launcher ? "Yes" : "No"); break;
     case ROW_START:   *label = "Start game"; break;
     case ROW_QUIT:    *label = "Quit"; break;

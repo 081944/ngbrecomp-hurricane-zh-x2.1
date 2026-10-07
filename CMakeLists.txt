@@ -44,7 +44,9 @@ endif()
 # The generated chunks are ~2 MB of C each. They are an object library so
 # their flags can differ from the hand-written code, and so a host change
 # never recompiles them.
-add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES})
+add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
+    # Hand-written replacements in the generated code's style.
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/movie_skip.c)
 target_include_directories(ngb_gen PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen
     ${XBOXRECOMP_DIR}/include

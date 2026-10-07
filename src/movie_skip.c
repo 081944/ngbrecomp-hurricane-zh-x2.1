@@ -1,0 +1,130 @@
+/*
+ * movie_skip.c -- "Skip intro movie": sub_00344BE0 by hand.
+ *
+ * sub_00344BE0 is CRI Sofdec's mwPlyGetStat, which the title polls every
+ * frame while a movie plays (sub_0031DA50); 3 (PLAYEND) makes it run its
+ * own end-of-movie path, which also stops the narration (movie/ninja.aix)
+ * and the subtitles. The body is the lifted one, kept here (listed in
+ * src/manual_functions.json so the pipeline does not generate it), with one
+ * change: while a movie the player chose to skip is playing, "playing"
+ * reads as "ended".
+ *
+ * Skipped: the New Game prologue (ninja_gaiden.sfd) and the boot movie
+ * (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd). Neither is skippable in the game --
+ * no button ends them -- and the story movies (pre_movie*.sfd) are left
+ * alone. Which movie is playing comes from the movie file the title last
+ * read (ngb_movie_read, from the kernel's read hook): it opens every movie
+ * at boot to probe them, so the last one opened says nothing.
+ */
+#define RECOMP_GENERATED_CODE
+#include "recomp_funcs.h"
+#include <math.h>
+#include <string.h>
+#include <strings.h>
+
+int ngb_skip_intro;
+static volatile int s_skip_current;
+
+void ngb_movie_read(const char *host_path)
+{
+    const char *base = strrchr(host_path, '/');
+    if (!base || !strstr(host_path, "/movie/") || !strstr(base, ".sfd"))
+        return;
+    base++;
+    s_skip_current = ngb_skip_intro &&
+        (!strcasecmp(base, "ninja_gaiden.sfd") || !strcasecmp(base, "2_VI_WIDE_B.sfd") ||
+         !strcasecmp(base, "4_VI_STD_B.sfd"));
+}
+
+static int ngb_movie_skip_now(void)
+{
+    return s_skip_current;
+}
+
+void sub_00344BE0(void)
+{
+    RECOMP_ENTRY(0x00344BE0u);
+    int _flags = 0; /* fallback flag var */
+    uint32_t _fa = 0, _fb = 0;
+    int32_t _fas = 0, _fbs = 0;
+    (void)_fa; (void)_fb; (void)_fas; (void)_fbs;
+
+loc_00344BE0: ;
+    ecx = MEM32(esp + 4);
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu; _fb = (uint32_t)(0) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp ecx, 0 (32-bit) */
+    if (CMP_EQ(_fa, _fb)) goto loc_00344BED; /* je: equal / zero */
+
+loc_00344BE8: ;
+    _fa = (uint32_t)(MEM32(ecx)) & 0xFFFFFFFFu; _fb = (uint32_t)(1) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp MEM32(ecx), 1 (32-bit) */
+    if (CMP_EQ(_fa, _fb)) goto loc_00344C04; /* je: equal / zero */
+
+loc_00344BED: ;
+    PUSH32(esp, 0xFFFFFFF4u);
+    PUSH32(esp, 0x00344BF4u); RECOMP_ABI_CALL(0x00346900u, sub_00346900); /* call 0x00346900 */
+
+loc_00344BF4: ;
+    PUSH32(esp, 0x3E669C);
+    PUSH32(esp, 0x00344BFEu); RECOMP_ABI_CALL(0x00346CB0u, sub_00346CB0); /* call 0x00346CB0 */
+
+loc_00344BFE: ;
+    _fb = (uint32_t)(8) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
+    esp = esp + 8;
+    _fa = (uint32_t)(esp) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* add result */
+    eax = 0; /* xor self */
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* xor result */
+    esp += 4; return; /* ret */
+
+loc_00344C04: ;
+    eax = MEM32(ecx + 4);
+    if (eax == 2 && ngb_movie_skip_now()) {
+        eax = 3;                 /* MWPLY_STAT_PLAYEND: as if it had played */
+        esp += 4; return;
+    }
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fb = (uint32_t)(2) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp eax, 2 (32-bit) */
+    if (CMP_NE(_fa, _fb)) goto loc_00344C36; /* jne: not equal / not zero */
+
+loc_00344C0C: ;
+    eax = MEM32(ecx + 0x3C);
+    PUSH32(esp, eax);
+    PUSH32(esp, 0x00344C15u); RECOMP_ABI_CALL(0x0034E4B0u, sub_0034E4B0); /* call 0x0034E4B0 */
+
+loc_00344C15: ;
+    _fb = (uint32_t)(4) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
+    esp = esp + 4;
+    _fa = (uint32_t)(esp) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* add result */
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fb = (uint32_t)(4) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp eax, 4 (32-bit) */
+    if (CMP_EQ(_fa, _fb)) goto loc_00344C31; /* je: equal / zero */
+
+loc_00344C1D: ;
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fb = (uint32_t)(6) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp eax, 6 (32-bit) */
+    if (CMP_EQ(_fa, _fb)) goto loc_00344C31; /* je: equal / zero */
+
+loc_00344C22: ;
+    ecx = 0; /* xor self */
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* xor result */
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fb = (uint32_t)(0) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp eax, 0 (32-bit) */
+    SET_LO8(ecx, (CMP_GE(_fas, _fbs)) ? 1 : 0); /* setge */
+    ecx--;
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fb = (_fa == 0x7FFFFFFFu); /* dec result/SF/OF; CF unchanged */
+    ecx = ecx & 3;
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* and result */
+    ecx++;
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fb = (_fa == 0x80000000u); /* inc result/SF/OF; CF unchanged */
+    eax = ecx;
+    esp += 4; return; /* ret */
+
+loc_00344C31: ;
+    eax = 2;
+
+loc_00344C36: ;
+    esp += 4; return; /* ret */
+
+}

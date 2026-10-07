@@ -42,39 +42,20 @@
 #include "recomp_icall_feedback.h"
 #include "usb/ohci.h"
 extern void xbox_InputInit(void);
-extern void (*xbox_FileReadHook)(const char *host_path, uint64_t offset, size_t len);
 #if defined(NGB_NV2A_VK)
 #include "launcher.h"
-#include "usb/usb_gamepad.h"
 
-/* Skip intro movie: the boot movie (the prologue, 2_VI_WIDE_B.sfd in
- * widescreen, 4_VI_STD_B.sfd in 4:3) is skippable with Start on the console;
- * while it streams, press Start for the player. Only those two files: the
- * story movies (pre_movie*.sfd) are left alone. */
-static volatile uint64_t s_intro_read_ms;
+/* Skip intro movie: see src/movie_skip.c. The kernel's open hook tells it
+ * which movie the title is about to play. */
+extern int ngb_skip_intro;
+extern void ngb_movie_read(const char *host_path);
+extern void (*xbox_FileReadHook)(const char *host_path, uint64_t offset, size_t len);
 
-static void intro_read_hook(const char *path, uint64_t off, size_t len)
+static void movie_read_hook(const char *host_path, uint64_t off, size_t len)
 {
     (void)off; (void)len;
-    if (path && (strstr(path, "2_VI_WIDE_B.sfd") || strstr(path, "4_VI_STD_B.sfd")))
-        s_intro_read_ms = GetTickCount64();
-}
-
-static void *intro_skip_thread(void *arg)
-{
-    (void)arg;
-    for (;;) {
-        uint64_t now = GetTickCount64();
-        if (s_intro_read_ms && now - s_intro_read_ms < 600) {
-            usb_gamepad_inject = 0x10;          /* Start */
-            usleep(150 * 1000);
-            usb_gamepad_inject = 0;
-            usleep(350 * 1000);
-        } else {
-            usleep(50 * 1000);
-        }
-    }
-    return NULL;
+    if (host_path)
+        ngb_movie_read(host_path);
 }
 #endif
 #if !defined(_WIN32)
@@ -101,6 +82,7 @@ extern ptrdiff_t g_xbox_mem_offset;
 /* Renderer choice (choose_renderer): the GPU model, and whether it has a window. */
 static bool s_use_gpu, s_headless;
 static bool s_widescreen;
+static char s_game_dir[4096];
 static int s_show_settings;
 #define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
@@ -606,7 +588,6 @@ static void feedback_on_signal(int sig)
 
 /* ── Boot (guest thread) ───────────────────────────────────── */
 
-static char s_game_dir[4096];
 
 /* Everything from loading the XBE to the entry point runs on the thread that
  * will execute guest code: the guest register file and the TIB the kernel
@@ -794,11 +775,9 @@ int main(int argc, char **argv)
             snprintf(v, sizeof v, "%d", cfg.scale);
             setenv("NV2A_SCALE", v, 1);
         }
-        if (cfg.skip_intro && s_use_gpu) {
-            pthread_t t;
-            xbox_FileReadHook = intro_read_hook;
-            pthread_create(&t, NULL, intro_skip_thread, NULL);
-            pthread_detach(t);
+        if (cfg.skip_intro) {
+            ngb_skip_intro = 1;
+            xbox_FileReadHook = movie_read_hook;
         }
     }
     /* Widescreen (16:9 and 16:10 alike: the game's anamorphic mode, shown

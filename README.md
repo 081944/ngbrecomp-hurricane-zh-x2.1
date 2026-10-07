@@ -41,8 +41,9 @@ the executable. Hard-disk images and saves go to `~/.local/share/NinjaGaidenBlac
 
 A settings screen comes up first (keyboard, mouse or controller): aspect ratio (4:3,
 16:9, 16:10 for the Steam Deck, or stretch), window size, windowed/fullscreen, render
-resolution (1x-4x), V-Sync, skipping the intro movie, and whether to show the screen at
-all. They are saved to `~/.config/NinjaGaidenBlack/settings.ini`; `--settings` brings
+resolution (1x-4x), V-Sync, skipping the intro movies (the boot movie and the New Game
+prologue, which the game itself will not let you skip; story movies are untouched), and
+whether to show the screen at all. They are saved to `~/.config/NinjaGaidenBlack/settings.ini`; `--settings` brings
 the screen back if it is turned off. In game, F11 or Alt+Enter toggles fullscreen.
 
 The environment still overrides the file, for testing: `NGB_WIDESCREEN=0|1`,
