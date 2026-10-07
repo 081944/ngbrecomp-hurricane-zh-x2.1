@@ -299,7 +299,8 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
             nv2a_vk_sample_threads();
 #endif
         xbox_PeekSample("sample");
-        {   /* NGB_DUMP_RAM=path: the guest's low 64 MB to path.N */
+        {   /* NGB_DUMP_RAM=path: the guest's low 64 MB, then the 128 MB
+             * contiguous window, to path.N */
             const char *path = getenv("NGB_DUMP_RAM");
             static int seq;
             if (path && *path) {
@@ -310,6 +311,10 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
                 if (f) {
                     fwrite((const void *)(uintptr_t)xbox_GetMemoryOffset(), 1,
                            64u << 20, f);
+                    /* then the contiguous window (0x80000000), where the
+                     * title's heaps live */
+                    fwrite((const void *)((uintptr_t)xbox_GetMemoryOffset()
+                                          + 0x80000000u), 1, 128u << 20, f);
                     fclose(f);
                     fprintf(stderr, "[DUMP] RAM -> %s\n", name);
                 }
