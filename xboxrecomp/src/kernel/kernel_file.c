@@ -172,11 +172,28 @@ NTSTATUS __stdcall xbox_NtCreateFile(
      * Half-Life 2's CRT probes partition0 this way during startup and treats
      * the failure as fatal. Redirecting to the directory that holds the image
      * gives a handle that is valid for exactly what the caller is going to do
-     * with it, which is NtQueryVolumeInformationFile. */
+     * with it, which is NtQueryVolumeInformationFile.
+     *
+     * Only for a partition image (PartitionN.img). Any other file opened as a
+     * directory fails, as on POSIX: Ninja Gaiden Black probes "bgm.afs\" so,
+     * and took the success for a folder of its music, every track then
+     * looked for inside it ("the disc is dirty or damaged"). CreateFileW with
+     * FILE_FLAG_BACKUP_SEMANTICS would open the file, so it is refused here. */
     if ((CreateOptions & XBOX_FILE_DIRECTORY_FILE) &&
         GetFileAttributesW(win_path) != INVALID_FILE_ATTRIBUTES &&
         !(GetFileAttributesW(win_path) & FILE_ATTRIBUTE_DIRECTORY)) {
         WCHAR *slash = wcsrchr(win_path, L'\\');
+        const WCHAR *name = slash ? slash + 1 : win_path;
+        size_t len = wcslen(name);
+        int image = len > 13 && _wcsnicmp(name, L"Partition", 9) == 0 &&
+                    _wcsicmp(name + len - 4, L".img") == 0;
+        if (!image) {
+            if (IoStatusBlock) {
+                IoStatusBlock->Status = STATUS_OBJECT_PATH_NOT_FOUND;
+                IoStatusBlock->Information = 0;
+            }
+            return STATUS_OBJECT_PATH_NOT_FOUND;
+        }
         if (slash && slash != win_path) {
             *slash = 0;
             xbox_log(XBOX_LOG_INFO, XBOX_LOG_FILE,
