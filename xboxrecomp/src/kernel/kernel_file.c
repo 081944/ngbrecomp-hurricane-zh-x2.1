@@ -192,8 +192,13 @@ NTSTATUS __stdcall xbox_NtCreateFile(
             xbox_share_to_win32(ShareAccess), NULL, OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS, NULL);
     } else {
-        if (CreateOptions & XBOX_FILE_NO_INTERMEDIATE_BUFFERING)
-            flags_and_attrs |= FILE_FLAG_NO_BUFFERING;
+        /* XBOX_FILE_NO_INTERMEDIATE_BUFFERING is not passed on as
+         * FILE_FLAG_NO_BUFFERING (the POSIX backend ignores it too): Windows
+         * then demands every read's buffer, length and offset be multiples
+         * of the drive's sector size, which the title's disc reads (sized for
+         * the DVD's 2048-byte sectors, into buffers anywhere) need not be, and
+         * the read fails -- "the disc is dirty or damaged". Wine does not
+         * check, so it never showed under Proton. */
         if (FileAttributes & XBOX_FILE_ATTRIBUTE_READONLY)
             flags_and_attrs |= FILE_ATTRIBUTE_READONLY;
         h = CreateFileW(win_path, xbox_access_to_win32(DesiredAccess),
