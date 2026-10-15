@@ -1,8 +1,9 @@
 # Third-party components
 
-This project's own code is under the GNU General Public License, version 2 ([LICENSE](LICENSE)); the
-`xboxrecomp/` directory keeps its MIT license. The project is built from, and its release packages
-contain, the following parts, each under its own license.
+This project's own code is under the GNU General Public License, version 2 or (at your option) any
+later version (GPL-2.0-or-later, [LICENSE](LICENSE)); the `xboxrecomp/` directory keeps its MIT
+license. The project is built from, and its release packages contain, the following parts, each under
+its own license.
 
 ## In this repository
 
