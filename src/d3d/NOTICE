@@ -1,15 +1,16 @@
 src/d3d/gpu/ (state.h, shaders.*, vertex.*, texture.*, backend.h, ext.h) is taken from TGP482's
 Xbox XBE Recomp SDK (https://github.com/TGP482/Xbox-XBERecomp, runtime/gpu, commit 65e959d4,
 2026-10-11; MIT License, Copyright (c) 2026 TGP482), the general form of the renderer of
-SCDA-XBERecomp (https://github.com/TGP482/SCDA-XBERecomp, used with the author's permission),
-whose xdk/d3d8.cpp and gpu/d3d12.cpp src/d3d/hle.cpp and src/d3d/vk/backend.cpp follow. Adapted
-to this project: Vulkan in place of Direct3D 12, Ninja Gaiden Black's D3D8LTCG conventions.
+SCDA-XBERecomp (https://github.com/TGP482/SCDA-XBERecomp; MIT License, Copyright (c) 2026 TGP482,
+Joshhhuaaa), whose xdk/d3d8.cpp and gpu/d3d12.cpp src/d3d/hle.cpp and src/d3d/vk/backend.cpp
+follow. Adapted to this project: Vulkan in place of Direct3D 12, Ninja Gaiden Black's D3D8LTCG conventions.
 src/d3d/compat/ maps that code's host interfaces (guest memory, logging, DXGI format names) onto
 this runtime.
 
 MIT License
 
 Copyright (c) 2026 TGP482
+Copyright (c) 2026 TGP482, Joshhhuaaa
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

@@ -65,6 +65,11 @@ cp "$repo/packaging/shader-seed/states.bin" "$repo/packaging/shader-seed/pipelin
    "$pkg/share/NinjaGaidenBlack/shader-seed/"
 cp "$repo"/assets/fonts/OFL-*.txt "$repo/assets/prompts/License-Xelu.txt" "$pkg/licenses/"
 cp "$repo/LICENSE" "$repo/THIRD_PARTY.md" "$pkg/licenses/"
+toolkit=$(cd "${XBOXRECOMP_DIR:-$repo/xboxrecomp}" && pwd)
+cp "$repo/src/d3d/NOTICE" "$pkg/licenses/NOTICE-renderer.txt"
+cp "$toolkit/LICENSE" "$pkg/licenses/LICENSE-xboxrecomp.txt"
+cp "$toolkit/NOTICE" "$pkg/licenses/NOTICE-xboxrecomp.txt"
+cp "$toolkit/LICENSES/LGPL-2.1.txt" "$pkg/licenses/"
 cat > "$pkg/README.txt" <<'TXT'
 Ninja Gaiden Black - static recompilation for Windows (Vulkan)
 

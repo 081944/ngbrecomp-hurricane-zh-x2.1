@@ -250,7 +250,8 @@ once a frame, so at 120 it plays at double speed).
 
 The game is drawn by a renderer that implements its Direct3D calls on Vulkan (`src/d3d`,
 `docs/renderer.md`; its shader translation, vertex and texture code come from TGP482's
-SCDA-XBERecomp / Xbox-XBERecomp, MIT, used with the author's permission). xemu's NV2A
+[SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) /
+[Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp), MIT). xemu's NV2A
 emulation still runs the GPU's command stream (the game's fences and vertical blanks come from
 it) but draws nothing; the renderer draws on the same Vulkan device and the same window, so the
 settings, the F1 menu and the FPS counter work as before. Render resolution, texture filtering

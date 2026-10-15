@@ -129,8 +129,9 @@ How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNIC
 - [xboxrecomp](https://github.com/sp00nznet/xboxrecomp) by sp00nznet: the recompiler and Xbox
   runtime this is built on
 - [xemu](https://xemu.app): the NV2A GPU model and the APU's voice processor
-- TGP482's SCDA-XBERecomp / Xbox-XBERecomp: the renderer's shader, vertex and texture code (used
-  with permission)
+- TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) and
+  [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp): the renderer's shader, vertex and
+  texture code (MIT)
 - Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
 - Keyboard and mouse prompts: Xelu's Free Controller & Key Prompts (CC0)
 - Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)
