@@ -38,7 +38,7 @@ GPU. It is the default; `NGB_RENDERER=xemu` selects xemu's renderer.
 4. Pixel shaders, fog, alpha test, blending, stencil, shadows, CopyRects, render to texture.
    Goal: chapter 1 gameplay.
 5. Parity: every scene, the quality settings (render scale, filtering, shadow resolution),
-   the host overlay and menus, then the switch of default.
+   the recomp's menus, then the switch of default.
 
 ## Status (2026-10-12)
 

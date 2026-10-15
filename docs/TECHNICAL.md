@@ -79,8 +79,7 @@ late frame is shown at once instead of waiting a refresh -- Vulkan's FIFO relaxe
 counter, and skipping the intros (the boot movie and the New Game
 prologue, which the game itself will not let you skip; story movies are untouched; from the
 next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
-`--settings` shows the old settings screen before the game; the F1 overlay menu is off
-(`NGB_F1_MENU=1` brings it and Back+Start back).
+`--settings` shows the old settings screen before the game.
 
 All Difficulties (Startup, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
 without clearing the one before (or dying for Ninja Dog). The game's menus ask one function (sub_001DB520, now in
@@ -254,7 +253,7 @@ The game is drawn by a renderer that implements its Direct3D calls on Vulkan (`s
 [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp), MIT). xemu's NV2A
 emulation still runs the GPU's command stream (the game's fences and vertical blanks come from
 it) but draws nothing; the renderer draws on the same Vulkan device and the same window, so the
-settings, the F1 menu and the FPS counter work as before. Render resolution, texture filtering
+settings and the FPS counter work as before. Render resolution, texture filtering
 and shadow resolution apply to it. It needs Vulkan 1.3 (dynamic rendering, push descriptors);
 without them the game falls back to xemu's drawing.
 
