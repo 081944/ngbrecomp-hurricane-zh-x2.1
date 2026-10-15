@@ -21,6 +21,10 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <dbghelp.h>
+#include <mmsystem.h>
+#include <unistd.h>   /* (mingw's: usleep) */
+#include <pthread.h>
+#include "platform/vcpu.h"
 #else
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -34,6 +38,9 @@
 #include "platform/vcpu.h"
 #endif
 #include <stdio.h>
+#if !defined(_WIN32)
+#include <sys/prctl.h>
+#endif
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -41,6 +48,7 @@
 #include <xbox/xboxrecomp.h>
 #include "recomp_icall_feedback.h"
 #include "usb/ohci.h"
+#include "usb/usb_gamepad.h"
 extern void xbox_InputInit(void);
 #if defined(NGB_NV2A_VK)
 #include "launcher.h"
@@ -51,16 +59,92 @@ extern int ngb_skip_intro;
 extern void ngb_movie_read(const char *host_path);
 extern void (*xbox_FileReadHook)(const char *host_path, uint64_t offset, size_t len);
 
-static void movie_read_hook(const char *host_path, uint64_t off, size_t len)
+/* Skipping the boot "Warnings" screen (always; NGB_KEEP_WARNINGS=1 shows it). The screen reads
+ * its assets from demo.afs (the last of them at offset 0x151000) and then
+ * nothing until it ends; the title it leads to starts with more reads. So
+ * after that read, press Start -- what a player does to skip it -- and
+ * again only while nothing more has been read, so no press can reach the
+ * title screen or a menu. It keeps trying for 15 s: on a slow first start
+ * (pipelines being built) the screen takes Start only seconds later. The
+ * music and sound streams, and demo.afs (read on behind the screen), do
+ * not count as the title's reads. */
+#if defined(NGB_NV2A_VK)
+void nv2a_present_set_blank(_Bool blank);   /* nv2a_window.h */
+#endif
+static volatile int s_warning_reads;    /* reads seen since the trigger */
+static volatile int s_warning_armed;
+
+static void *warning_skip_thread(void *arg)
 {
-    (void)off; (void)len;
-    if (host_path)
-        ngb_movie_read(host_path);
+    (void)arg;
+    for (int tries = 0; tries < 37; tries++) {
+        usleep(tries ? 400000 : 500000);
+        if (__atomic_load_n(&s_warning_reads, __ATOMIC_ACQUIRE))
+            break;                      /* moved on: done */
+        usb_gamepad_inject |= 0x10;     /* Start */
+        usleep(150000);
+        usb_gamepad_inject &= ~0x10;
+    }
+#if defined(NGB_NV2A_VK)
+    usleep(300000);                     /* the screen's fade out */
+    nv2a_present_set_blank(false);
+#endif
+    return NULL;
+}
+
+#if defined(NGB_NV2A_VK)
+/* The screen is drawn before it reads anything of its own, and before it
+ * there is only black: with Skip intro the window stays black from the
+ * start until the skip is done -- or, should it never start, 15 s. */
+static void *warning_unblank_thread(void *arg)
+{
+    (void)arg;
+    usleep(15000000);
+    if (!__atomic_load_n(&s_warning_armed, __ATOMIC_ACQUIRE))
+        nv2a_present_set_blank(false);
+    return NULL;
 }
 #endif
-#if !defined(_WIN32)
-#include "install.h"
+
+static void warning_read(const char *host_path, uint64_t off)
+{
+    const char *base = host_path;   /* the file's name: after the last / or (Windows) \ */
+    for (const char *c = host_path; *c; c++)
+        if (*c == '/' || *c == '\\')
+            base = c + 1;
+    if (__atomic_load_n(&s_warning_armed, __ATOMIC_ACQUIRE)) {
+        /* (demo.afs goes on being read behind the screen, the attract
+         * demo's data streamed in 64 KB pieces: not the title) */
+        if (strcmp(base, "bgm.afs") && strcmp(base, "sse.afs") && strcmp(base, "demo.afs"))
+            __atomic_store_n(&s_warning_reads, 1, __ATOMIC_RELEASE);
+        return;
+    }
+    if (!strcmp(base, "demo.afs") && off == 0x151000) {
+        static int once;
+
+        pthread_t th;
+        if (once++)
+            return;
+        __atomic_store_n(&s_warning_armed, 1, __ATOMIC_RELEASE);
+#if defined(NGB_NV2A_VK)
+        nv2a_present_set_blank(true);   /* skipped unseen */
 #endif
+        if (pthread_create(&th, NULL, warning_skip_thread, NULL) == 0)
+            pthread_detach(th);
+    }
+}
+
+static void movie_read_hook(const char *host_path, uint64_t off, size_t len)
+{
+    (void)len;
+    if (host_path) {
+        ngb_movie_read(host_path);
+        warning_read(host_path, off);
+    }
+}
+#endif
+#include "install.h"
+#include "port.h"
 #if defined(NGB_NV2A_VK)
 #include "nv2a_vk_runtime.h"
 #include "nv2a_vk.h"
@@ -212,17 +296,23 @@ static LONG watch_exception(PEXCEPTION_POINTERS ep, uint32_t xbox_va, int is_wri
     }
     if (xbox_va + 8 > s_watch_va && xbox_va < s_watch_va + s_watch_len &&
         (long long)GetTickCount64() - t0 >= after && s_watch_hits++ < 400) {
-        Dl_info di;
         void *rip = (void *)(uintptr_t)ep->ContextRecord->Rip;
-        fprintf(stderr, "[WATCH] write 0x%08X by %s (esp=%08X ret %08X %08X %08X %08X)\n",
-                xbox_va, dladdr(rip, &di) && di.dli_sname ? di.dli_sname : "?",
-                g_esp, MEM32_HOST(g_esp), MEM32_HOST(g_esp + 4),
+#if defined(_WIN32)
+        const char *who = "?";
+#else
+        Dl_info di;
+        const char *who = dladdr(rip, &di) && di.dli_sname ? di.dli_sname : "?";
+#endif
+        fprintf(stderr, "[WATCH] write 0x%08X by %s at %p (esp=%08X ret %08X %08X %08X %08X)\n",
+                xbox_va, who, rip, g_esp, MEM32_HOST(g_esp), MEM32_HOST(g_esp + 4),
                 MEM32_HOST(g_esp + 8), MEM32_HOST(g_esp + 12));
+#if !defined(_WIN32)
         if (getenv("NGB_WATCH_BT") && s_watch_hits % 50 == 1) {
             void *frames[64];
             int n = backtrace(frames, 64);
             backtrace_symbols_fd(frames, n, 2);
         }
+#endif
     }
     watch_protect(0);
     t_watch_stepping = 1;
@@ -462,16 +552,8 @@ static void prof_start(void)
 static void exe_dir(char *out, size_t n)
 {
     char *slash;
-#if defined(_WIN32)
-    DWORD len = GetModuleFileNameA(NULL, out, (DWORD)n);
-    if (len == 0 || len >= n) { out[0] = 0; return; }
-    slash = strrchr(out, '\\');
-#else
-    ssize_t len = readlink("/proc/self/exe", out, n - 1);
-    if (len <= 0) { out[0] = 0; return; }
-    out[len] = 0;
+    if (ngb_exe_path(out, n) < 0) { out[0] = 0; return; }
     slash = strrchr(out, '/');
-#endif
     if (slash) slash[1] = 0; else out[0] = 0;
 }
 
@@ -484,7 +566,7 @@ static void save_dir_path(char *out, size_t n)
 #if defined(_WIN32)
     const char *base = getenv("LOCALAPPDATA");
     if (env && *env) { snprintf(out, n, "%s", env); return; }
-    snprintf(out, n, "%s\\NinjaGaidenBlack", base && *base ? base : ".");
+    snprintf(out, n, "%s/NinjaGaidenBlack", base && *base ? base : ".");
 #else
     const char *xdg = getenv("XDG_DATA_HOME"), *home = getenv("HOME");
     if (env && *env) { snprintf(out, n, "%s", env); return; }
@@ -548,12 +630,20 @@ static void set_default(const char *name, const char *value)
 #endif
 }
 
-/* NGB_RENDERER: "vulkan" (default when built with the GPU model), "null"
- * (the GPU model without a window -- for headless runs), or "none" (no GPU
- * model: the plain-RAM aperture and the fence mirror, as before it existed). */
+/* NGB_RENDERER: "d3d" (default when built with the GPU model: the Direct3D
+ * renderer, src/d3d, draws on the GPU model's device and window), "xemu"
+ * (the GPU model's own NV2A renderer draws), "mirror" (xemu draws and shows,
+ * the Direct3D renderer draws unseen, for comparing), "null" (the GPU model
+ * without a window -- for headless runs), or "none" (no GPU model: the
+ * plain-RAM aperture and the fence mirror, as before it existed). */
 
 static void choose_renderer(void)
 {
+#if defined(NGB_NV2A_VK)
+    set_default("NGB_RENDERER", "d3d");   /* read again by src/d3d (d3d.c, hle.cpp, vk/backend.cpp) */
+    if (!strcmp(getenv("NGB_RENDERER"), "d3d") && !getenv("NGB_D3D_KEEP_NV2A"))
+        set_default("NV2A_NO_PREWARM", "1");   /* xemu's renderer draws nothing: none of its pipelines */
+#endif
     const char *r = getenv("NGB_RENDERER");
 #if defined(NGB_NV2A_VK)
     s_use_gpu = !(r && !strcmp(r, "none"));
@@ -601,6 +691,8 @@ static void *guest_main(void *unused)
     (void)unused;
 #if !defined(_WIN32)
     s_guest_thread = pthread_self();
+#endif
+#if XBOX_HAS_VCPU
     /* The boot thread runs the title's main thread inline: it is a guest
      * thread like the ones the title creates (platform/vcpu.h). */
     vcpu_attach(VCPU_PRIO_NORMAL);
@@ -674,6 +766,11 @@ static void *guest_main(void *unused)
     watch_arm();
     printf("Entry point: 0x%08X, ESP: 0x%08X\nStarting game...\n",
            NGB_ENTRY_POINT, g_esp);
+    {
+        /* The PC settings in the game's Options menu (src/pc_menu.c). */
+        extern void ngb_pc_menu_init(void);
+        ngb_pc_menu_init();
+    }
     xbe_entry_point();
 
     printf("Game returned.\n");
@@ -685,7 +782,36 @@ static void *guest_main(void *unused)
 
 int main(int argc, char **argv)
 {
-    /* --settings: show the settings screen even if it is turned off. */
+#if defined(_WIN32)
+    /* Sleeps and waits to the millisecond, not the 15.6 ms default tick: the
+     * virtual CPU's time slices, the kernel's timers and the frame pacing
+     * all sleep briefly. */
+    timeBeginPeriod(1);
+    /* A GUI program, so no console window opens; started from one, its
+     * output goes there, else to log.txt in the save folder. */
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        freopen("CONOUT$", "w", stdout);
+        freopen("CONOUT$", "w", stderr);
+    } else {
+        char log[4096];
+        save_dir_path(log, sizeof log - 8);
+        ngb_mkdir(log);
+        strcat(log, "/log.txt");
+        FILE *f = fopen(log, "w");      /* emptied, then both append */
+        if (f) {
+            fclose(f);
+            freopen(log, "a", stdout);
+            freopen(log, "a", stderr);
+        }
+    }
+#else
+    /* NGB_PTRACE_ANY=1: let any process of this user attach a debugger
+     * (Yama's ptrace_scope 1 allows only ancestors), for stack dumps. */
+    if (getenv("NGB_PTRACE_ANY"))
+        prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
+    /* --settings: show the settings screen before the game (the settings
+     * are in the game's own menus; there is no screen otherwise). */
     for (int i = 1; i < argc; i++)
         if (!strcmp(argv[i], "--settings")) {
             s_show_settings = 1;
@@ -693,8 +819,11 @@ int main(int argc, char **argv)
             argc--;
             i--;
         }
-#if defined(_WIN32)
-    const char *dir = argc > 1 ? argv[1] : getenv("NGB_GAME_DIR");
+#if defined(NGB_NV2A_VK)
+    {
+        extern void ngb_set_argv(char **argv);   /* src/ingame_menu.c: Return to Main Menu */
+        ngb_set_argv(argv);
+    }
 #endif
 
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -702,15 +831,6 @@ int main(int argc, char **argv)
     choose_renderer();
     bringup_defaults();
 
-#if defined(_WIN32)
-    if (dir && *dir) {
-        snprintf(s_game_dir, sizeof(s_game_dir), "%s", dir);
-    } else {
-        char base[4096];
-        exe_dir(base, sizeof(base));
-        snprintf(s_game_dir, sizeof(s_game_dir), "%sgame", base);
-    }
-#else
     {
         /* A game folder, or a disc image/archive installed on first use. */
         char base[4096], save[4096];
@@ -720,7 +840,6 @@ int main(int argc, char **argv)
                           s_game_dir, sizeof(s_game_dir)) != 0)
             return 1;
     }
-#endif
 
     printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
     printf("Game directory: %s\n", s_game_dir);
@@ -757,7 +876,7 @@ int main(int argc, char **argv)
      * same meaning still win, for testing. */
     NgbSettings cfg;
     ngb_settings_load(&cfg);
-    if (s_use_gpu && !s_headless && (cfg.show_launcher || s_show_settings) &&
+    if (s_use_gpu && !s_headless && s_show_settings &&
         !getenv("NGB_NO_SETTINGS")) {
         if (!ngb_launcher_run(&cfg))
             return 0;
@@ -767,16 +886,96 @@ int main(int argc, char **argv)
         if ((e = getenv("NGB_WIDESCREEN")))
             cfg.aspect = *e == '0' ? ASPECT_4_3 : ASPECT_16_9;
         if ((e = getenv("NGB_FULLSCREEN")))
-            cfg.fullscreen = *e != '0';
+            cfg.fullscreen = *e == '0' ? 0 : *e == '2' ? 2 : 1;
         if ((e = getenv("NGB_VSYNC")))
-            cfg.vsync = *e != '0';
+            cfg.vsync = *e == '2' ? 2 : *e != '0';
         if (!getenv("NV2A_SCALE") && cfg.scale > 1) {
             char v[8];
             snprintf(v, sizeof v, "%d", cfg.scale);
             setenv("NV2A_SCALE", v, 1);
         }
-        if (cfg.skip_intro) {
+        if (!getenv("NV2A_TEX_REPLACE")) {
+            /* Texture packs: <data>/textures/<id>.png replace the title's
+             * textures (NV2A_TEX_DUMP=dir writes the ids it uses). */
+            char dir[4096];
+            save_dir_path(dir, sizeof dir - 16);
+            strcat(dir, "/textures");
+            setenv("NV2A_TEX_REPLACE", dir, 1);
+        }
+        if (!getenv("NV2A_SHADER_CACHE")) {
+            /* Compiled shaders, so a new effect only stutters once. */
+            const char *xdg = getenv("XDG_CACHE_HOME"), *home = ngb_home();
+            char dir[4096];
+#if defined(_WIN32)
+            if ((!xdg || !*xdg) && getenv("LOCALAPPDATA"))   /* %LOCALAPPDATA%\NinjaGaidenBlack\shaders */
+                xdg = getenv("LOCALAPPDATA");
+#endif
+            if (xdg && *xdg)
+                snprintf(dir, sizeof dir, "%s/NinjaGaidenBlack/shaders", xdg);
+            else if (home && *home)
+                snprintf(dir, sizeof dir, "%s/.cache/NinjaGaidenBlack/shaders", home);
+            else
+                dir[0] = 0;
+            if (dir[0])
+                setenv("NV2A_SHADER_CACHE", dir, 1);
+        }
+        if (!getenv("NV2A_SHADER_SEED")) {
+            /* Shipped beside the binary: <prefix>/bin/NinjaGaidenBlack and
+             * <prefix>/share/NinjaGaidenBlack/shader-seed (on Windows the folder's
+             * share/NinjaGaidenBlack, beside the .exe). */
+            char exe[4096], seed[4200];
+            if (ngb_exe_path(exe, sizeof exe) > 0) {
+                char *slash = strrchr(exe, '/');
+                if (slash) {
+                    *slash = 0;
+                    snprintf(seed, sizeof seed,
+                             "%s/../share/NinjaGaidenBlack/shader-seed", exe);
+                    if (access(seed, 4) != 0)
+                        snprintf(seed, sizeof seed, "%s/share/NinjaGaidenBlack/shader-seed", exe);
+                    if (access(seed, 4) == 0)
+                        setenv("NV2A_SHADER_SEED", seed, 1);
+                }
+            }
+        }
+        if (!getenv("NV2A_SHADER_SEED_XBE")) {
+            /* The seed's vertex programs come from the user's own copy. */
+            char xbe[4200];
+            snprintf(xbe, sizeof xbe, "%s/default.xbe", s_game_dir);
+            setenv("NV2A_SHADER_SEED_XBE", xbe, 1);
+        }
+        ngb_menu_set_running(&cfg);
+        if (!getenv("NV2A_SHADOW_SCALE")) {
+            char v[8];
+            snprintf(v, sizeof v, "%d", cfg.shadow_scale);
+            setenv("NV2A_SHADOW_SCALE", v, 1);
+        }
+        if (!getenv("NV2A_TEX_FILTER")) {
+            char v[8];
+            snprintf(v, sizeof v, "%d", cfg.anisotropy);
+            setenv("NV2A_TEX_FILTER", cfg.anisotropy ? v : "original", 1);
+        }
+        nv2a_set_quality(cfg.scale, cfg.anisotropy, cfg.shadow_scale, cfg.msaa);
+        {
+            extern void ngb_set_all_difficulties(int on);   /* src/cheats.c */
+            extern void ngb_set_all_costumes(int on);
+            ngb_set_all_difficulties(cfg.all_difficulties);
+            ngb_set_all_costumes(cfg.all_costumes);
+        }
+        if (cfg.show_fps && !getenv("NV2A_SHOW_FPS"))
+            setenv("NV2A_SHOW_FPS", "1", 1);
+        /* The boot "Warnings" screen is always skipped (its scrolling text drew badly, and it says only
+         * what the box does); the boot movie and the prologue with Skip intro. */
+        if (cfg.skip_intro)
             ngb_skip_intro = 1;
+        if (!getenv("NGB_KEEP_WARNINGS")) {
+            if (!s_headless) {
+                pthread_t th;
+                nv2a_present_set_blank(true);
+                if (pthread_create(&th, NULL, warning_unblank_thread, NULL) == 0)
+                    pthread_detach(th);
+            }
+            xbox_FileReadHook = movie_read_hook;
+        } else if (cfg.skip_intro) {
             xbox_FileReadHook = movie_read_hook;
         }
     }
@@ -791,6 +990,14 @@ int main(int argc, char **argv)
 #endif
     if (s_widescreen)
         xbox_XcVideoFlags |= XC_VIDEO_FLAGS_WIDESCREEN;
+#if defined(NGB_NV2A_VK)
+    if (s_widescreen) {   /* the 3D's shape: the game is kept in its 4:3 mode on a wide screen (src/pc_menu.c) */
+        extern void ngb_game_set_aspect_constant(double a);
+        extern void ngb_game_aspect_init(int widescreen);
+        ngb_game_set_aspect_constant(ngb_settings_aspect_ratio(&cfg));
+        ngb_game_aspect_init(1);   /* widescreen for the boot movie, 4:3 from the title (src/pc_menu.c) */
+    }
+#endif
 #if defined(NGB_NV2A_VK)
     if (s_use_gpu && !s_headless &&
         nv2a_window_create("Ninja Gaiden Black", cfg.width, cfg.height,
@@ -832,5 +1039,9 @@ int main(int argc, char **argv)
     }
 #endif
     for (;;)
+#if defined(_WIN32)
+        Sleep(INFINITE);
+#else
         pause();
+#endif
 }

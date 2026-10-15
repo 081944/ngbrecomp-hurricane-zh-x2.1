@@ -1,0 +1,28 @@
+# Cross-compile for Windows x64 from Linux with llvm-mingw (clang, lld, libc++, UCRT) against
+# MSYS2's CLANG64 packages (SDL2, glib, glslang, SPIRV-Tools, OpenSSL) unpacked into a sysroot.
+# packaging/windows/build.sh fetches both into build/windows-deps.
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR AMD64)
+set(NGB_WIN_DEPS "${CMAKE_CURRENT_LIST_DIR}/../../build/windows-deps" CACHE PATH "llvm-mingw and the CLANG64 sysroot")
+file(GLOB _llvm_mingw "${NGB_WIN_DEPS}/llvm-mingw-*-ucrt-*")
+list(GET _llvm_mingw 0 _llvm_mingw)
+set(_triple x86_64-w64-mingw32)
+set(CMAKE_C_COMPILER "${_llvm_mingw}/bin/${_triple}-clang")
+set(CMAKE_CXX_COMPILER "${_llvm_mingw}/bin/${_triple}-clang++")
+set(CMAKE_RC_COMPILER "${_llvm_mingw}/bin/${_triple}-windres")
+set(CMAKE_AR "${_llvm_mingw}/bin/llvm-ar")
+set(CMAKE_RANLIB "${_llvm_mingw}/bin/llvm-ranlib")
+set(NGB_WIN_SYSROOT "${NGB_WIN_DEPS}/sysroot/clang64")
+set(CMAKE_FIND_ROOT_PATH "${NGB_WIN_SYSROOT}" "${_llvm_mingw}/${_triple}")
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+set(CMAKE_PREFIX_PATH "${NGB_WIN_SYSROOT}")
+# pkg-config: the sysroot's .pc files only
+set(ENV{PKG_CONFIG_LIBDIR} "${NGB_WIN_SYSROOT}/lib/pkgconfig:${NGB_WIN_SYSROOT}/share/pkgconfig")
+set(ENV{PKG_CONFIG_SYSROOT_DIR} "${NGB_WIN_DEPS}/sysroot")
+set(ENV{PKG_CONFIG_PATH} "")
+# The sysroot's headers for every target (glslang's for the renderer, which links it through xboxrecomp)
+set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES "${NGB_WIN_SYSROOT}/include")
+set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "${NGB_WIN_SYSROOT}/include")

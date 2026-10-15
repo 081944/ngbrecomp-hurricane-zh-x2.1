@@ -46,7 +46,7 @@ RUN wget -qO /tmp/sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download
 
 # glslang with its C interface, static, without the optimizer (and so
 # without SPIRV-Tools): the renderer compiles its shaders at run time.
-ARG GLSLANG_VERSION=15.4.0
+ARG GLSLANG_VERSION=16.6.0
 RUN git clone --depth 1 -b ${GLSLANG_VERSION} https://github.com/KhronosGroup/glslang /tmp/glslang \
     && cmake -S /tmp/glslang -B /tmp/glslang-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -54,3 +54,9 @@ RUN git clone --depth 1 -b ${GLSLANG_VERSION} https://github.com/KhronosGroup/gl
          -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     && cmake --build /tmp/glslang-build && cmake --install /tmp/glslang-build \
     && rm -rf /tmp/glslang /tmp/glslang-build
+
+# Qt 6 Widgets for the first-run setup window (ngb-setup), bundled with its
+# xcb and Wayland platform plugins.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        qt6-base-dev qt6-qpa-plugins qt6-wayland libgl1-mesa-dev \
+    && rm -rf /var/lib/apt/lists/*

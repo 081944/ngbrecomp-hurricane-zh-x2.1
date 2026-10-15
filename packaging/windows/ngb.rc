@@ -1,0 +1,24 @@
+// The program's icon and version information (Windows builds, CMakeLists.txt).
+1 ICON "ngb.ico"
+
+// Common controls 6: the setup's task dialog and the progress bar in the system's style
+1 24 "ngb.manifest"
+
+1 VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "FileDescription", "Ninja Gaiden Black (static recompilation)"
+      VALUE "ProductName", "Ninja Gaiden Black static recompilation"
+      VALUE "OriginalFilename", "NinjaGaidenBlack.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

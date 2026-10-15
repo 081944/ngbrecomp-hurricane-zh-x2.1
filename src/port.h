@@ -1,0 +1,132 @@
+/*
+ * port.h -- the few host calls that differ between Linux and Windows, for the hand-written code.
+ *
+ * ngb_mkdir: make a directory (0 on success). ngb_exe_path: the running program's path, with '/'
+ * separators (its length, or -1). ngb_home: the user's home ($HOME; on Windows %USERPROFILE%).
+ * ngb_mem_write/ngb_mem_read: this process's memory, whatever its protection; 0 when the address is
+ * not mapped (the game's read-only constants, before its image is). On Windows also setenv and
+ * unsetenv, which its C runtime does not have.
+ */
+#ifndef NGB_PORT_H
+#define NGB_PORT_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <unistd.h>   /* (mingw's: usleep, access) */
+#include <windows.h>
+
+static inline int ngb_mkdir(const char *path) { return _mkdir(path); }
+
+static inline long ngb_exe_path(char *out, size_t n)
+{
+    DWORD len = GetModuleFileNameA(NULL, out, (DWORD)n);
+    if (!len || len >= n)
+        return -1;
+    for (DWORD i = 0; i < len; i++)
+        if (out[i] == '\\')
+            out[i] = '/';
+    return (long)len;
+}
+
+static inline const char *ngb_home(void)
+{
+    const char *h = getenv("HOME");
+    return h && *h ? h : getenv("USERPROFILE");
+}
+
+static inline int ngb_mem_write(void *addr, const void *src, size_t len)
+{
+    SIZE_T done = 0;
+    return WriteProcessMemory(GetCurrentProcess(), addr, src, len, &done) && done == len;
+}
+
+static inline int ngb_mem_read(const void *addr, void *dst, size_t len)
+{
+    SIZE_T done = 0;
+    return ReadProcessMemory(GetCurrentProcess(), addr, dst, len, &done) && done == len;
+}
+
+#ifndef __cplusplus
+static inline int setenv(const char *name, const char *value, int overwrite)
+{
+    if (!overwrite && getenv(name))
+        return 0;
+    return _putenv_s(name, value);
+}
+
+static inline int unsetenv(const char *name) { return _putenv_s(name, ""); }
+
+#endif
+
+#else /* Linux */
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static inline int ngb_mkdir(const char *path) { return mkdir(path, 0755); }
+
+static inline long ngb_exe_path(char *out, size_t n)
+{
+    ssize_t len = readlink("/proc/self/exe", out, n - 1);
+    if (len <= 0)
+        return -1;
+    out[len] = 0;
+    return (long)len;
+}
+
+static inline const char *ngb_home(void) { return getenv("HOME"); }
+
+static inline int ngb_mem_fd(void)
+{
+    static int fd = -2;
+    if (fd == -2)
+        fd = open("/proc/self/mem", O_RDWR);
+    return fd;
+}
+
+static inline int ngb_mem_write(void *addr, const void *src, size_t len)
+{
+    return ngb_mem_fd() >= 0 && pwrite(ngb_mem_fd(), src, len, (off_t)(uintptr_t)addr) == (ssize_t)len;
+}
+
+static inline int ngb_mem_read(const void *addr, void *dst, size_t len)
+{
+    return ngb_mem_fd() >= 0 && pread(ngb_mem_fd(), dst, len, (off_t)(uintptr_t)addr) == (ssize_t)len;
+}
+#endif
+
+#include <stdio.h>
+
+/* The settings' folder, made if make: $XDG_CONFIG_HOME or ~/.config, on Windows %APPDATA%, then
+ * NinjaGaidenBlack. */
+static inline void ngb_config_dir(char *out, size_t n, int make)
+{
+    const char *xdg = getenv("XDG_CONFIG_HOME");
+#ifdef _WIN32
+    const char *appdata = getenv("APPDATA");
+    if ((!xdg || !*xdg) && appdata && *appdata) {
+        snprintf(out, n, "%s/NinjaGaidenBlack", appdata);
+        if (make)
+            ngb_mkdir(out);
+        return;
+    }
+#endif
+    if (xdg && *xdg) {
+        snprintf(out, n, "%s/NinjaGaidenBlack", xdg);
+    } else {
+        const char *home = ngb_home();
+        snprintf(out, n, "%s/.config", home ? home : ".");
+        if (make)
+            ngb_mkdir(out);
+        snprintf(out, n, "%s/.config/NinjaGaidenBlack", home ? home : ".");
+    }
+    if (make)
+        ngb_mkdir(out);
+}
+
+#endif
