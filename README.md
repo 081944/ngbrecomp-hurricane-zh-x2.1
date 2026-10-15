@@ -5,8 +5,9 @@
 **A PC port of Ninja Gaiden Black by static recompilation.**
 
 A native Linux and Windows version of *Ninja Gaiden Black* (Xbox, 2005), made by statically
-recompiling the game's own code to run directly on a PC — not an emulator. It draws with Vulkan, plays
-at a steady 60 fps on modest hardware (including the Steam Deck), and adds PC options: higher
+recompiling the game's own code to run directly on a PC — not an emulator. It draws with its own
+Vulkan renderer, which takes over the game's Direct3D calls instead of emulating the Xbox GPU. It
+plays at a steady 60 fps on modest hardware (including the Steam Deck) and adds PC options: higher
 resolutions, widescreen and ultrawide, keyboard and mouse, rebindable controls and more.
 
 **You need your own copy of the game.** This project contains none of the game's data (graphics,
