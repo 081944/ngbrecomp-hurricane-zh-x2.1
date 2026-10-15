@@ -130,25 +130,92 @@ static int mkdirs(const char *path)
 }
 
 /* 0 when dir's default.xbe is the one this build was made from. */
+/* The retail XBE's sections, in order: their sizes and FNV-1a hashes. A disc image made with a
+ * "media patch" (so a modded console runs it from a burned DVD) has a changed header and
+ * certificate, but the game itself -- these sections -- is the same, and so is this build. */
+static const struct { const char *name; uint32_t size; uint64_t fnv; } s_xbe_sections[] = {
+    { ".text",     3576960, 0x4f583bc03974eb5dull }, { "D3DX",          552, 0x802e93d06050ddc2ull },
+    { "DSOUND",     116108, 0x1c717f4fb13d38d9ull }, { "XONLINE",    100604, 0xf7f32cba9715d707ull },
+    { "XNET",        73112, 0x5dd132e95dd1b4ecull }, { "PSFD00",      11192, 0xd033e2d3a400c0d7ull },
+    { "XGRPH",        4388, 0xdb9d2b60f04aec39ull }, { "D3D",         68272, 0x54c712be5b41551bull },
+    { "XPP",         32308, 0x10b3b979adbff38eull }, { ".rdata",     216700, 0x722ca73485b1ee65ull },
+    { ".data",      283752, 0x2990cb7806d3c3d8ull }, { "DOLBY",       29036, 0x08826a2af878f54full },
+    { "XON_RD",       5388, 0xa7c8c48ee45f6184ull }, { "$$XTIMAGE",   10240, 0xe4449f60879ad7d0ull },
+    { "$$XSIMAGE",    4096, 0x0eb831e2c2d793a4ull }, { ".XTLID",       1808, 0x04d0097419f217b7ull },
+};
+
+static uint64_t fnv1a(const unsigned char *p, size_t n, uint64_t h)
+{
+    for (size_t i = 0; i < n; i++)
+        h = (h ^ p[i]) * 0x100000001b3ull;
+    return h;
+}
+
+static uint32_t le32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+
 int ngb_check_xbe(const char *dir)
 {
     char p[4096];
-    unsigned char buf[1 << 16];
-    uint64_t h = 0xcbf29ce484222325ull, size = 0;
-    size_t n;
+    unsigned char *d;
+    long size;
     FILE *f;
+    int ok = 1, nsec = (int)(sizeof s_xbe_sections / sizeof s_xbe_sections[0]);
 
     snprintf(p, sizeof p, "%s/default.xbe", dir);
     f = fopen(p, "rb");
     if (!f)
         return -1;
-    while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
-        for (size_t i = 0; i < n; i++)
-            h = (h ^ buf[i]) * 0x100000001b3ull;
-        size += n;
+    fseek(f, 0, SEEK_END);
+    size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    d = size > 0 && size < (64l << 20) ? malloc((size_t)size) : NULL;
+    if (!d || fread(d, 1, (size_t)size, f) != (size_t)size) {
+        fclose(f);
+        free(d);
+        return 1;
     }
     fclose(f);
-    return size == NGB_XBE_SIZE && h == NGB_XBE_FNV ? 0 : 1;
+    if ((uint64_t)size == NGB_XBE_SIZE && fnv1a(d, (size_t)size, 0xcbf29ce484222325ull) == NGB_XBE_FNV) {
+        free(d);
+        return 0;                                   /* the very file */
+    }
+    /* Otherwise the game's sections, wherever the header puts them. */
+    if (size < 0x180 || memcmp(d, "XBEH", 4) != 0 || le32(d + 0x11C) != (uint32_t)nsec) {
+        fprintf(stderr, "%s: not this game's XBE (%ld bytes)\n", p, size);
+        free(d);
+        return 1;
+    }
+    {
+        uint32_t base = le32(d + 0x104), table = le32(d + 0x120) - base;
+        for (int i = 0; i < nsec; i++) {
+            const unsigned char *h = d + table + (size_t)i * 56;
+            uint32_t raw, rsz;
+            uint64_t got;
+            if (table + (size_t)(i + 1) * 56 > (size_t)size) {
+                ok = 0;
+                break;
+            }
+            raw = le32(h + 12);
+            rsz = le32(h + 16);
+            if (rsz != s_xbe_sections[i].size || (uint64_t)raw + rsz > (uint64_t)size) {
+                fprintf(stderr, "%s: section %s is %u bytes, not %u\n", p, s_xbe_sections[i].name, rsz,
+                        s_xbe_sections[i].size);
+                ok = 0;
+                continue;
+            }
+            got = fnv1a(d + raw, rsz, 0xcbf29ce484222325ull);
+            if (got != s_xbe_sections[i].fnv) {
+                fprintf(stderr, "%s: section %s differs (%016llx)\n", p, s_xbe_sections[i].name,
+                        (unsigned long long)got);
+                ok = 0;
+            }
+        }
+    }
+    free(d);
+    if (ok)
+        fprintf(stderr, "%s: a modified header (a media patch?), the game's sections as in the retail "
+                        "release: accepted\n", p);
+    return ok ? 0 : 1;
 }
 
 /* ---- XDVDFS ------------------------------------------------------------ */
