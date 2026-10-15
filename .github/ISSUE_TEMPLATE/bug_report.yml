@@ -1,0 +1,63 @@
+name: Bug report
+description: Something goes wrong in the game, the installer or the menus.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check the [known issues](../blob/master/README.md#known-issues) first.
+        Never attach game files or disc images.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you are running (for example v0.9.0), or the commit if you built it.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux (AppImage)
+        - Steam Deck
+        - Windows
+        - Windows under Proton / Wine
+        - Linux (built from source)
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      description: For example "AMD RX 6700 XT, Mesa 25.1" or "NVIDIA RTX 3060, 575.64".
+  - type: dropdown
+    id: aspect
+    attributes:
+      label: Aspect ratio setting
+      options:
+        - "16:9"
+        - "16:10"
+        - "21:9"
+        - "4:3"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where in the game
+      description: Chapter and place, or the menu, and what you did just before.
+  - type: textarea
+    id: files
+    attributes:
+      label: Trace or log
+      description: |
+        For a graphics glitch: press F7 while it is on screen and attach the `ngb-trace-<n>` folder it
+        writes to your home folder (`C:\Users\<you>` on Windows), zipped.
+        For a crash or a problem starting: the log (the terminal's output on Linux, `log.txt` beside
+        the saves in `%LOCALAPPDATA%\NinjaGaidenBlack` on Windows).
