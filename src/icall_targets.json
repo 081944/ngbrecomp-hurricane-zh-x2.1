@@ -484,5 +484,53 @@
   "flags": 2,
   "seen": "unresolved",
   "source": "icall-feedback"
+ },
+ {
+  "start": "0x0030C4B0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x000FCEC0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x000FD3C0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x000F7980",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x002351C0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x002352D0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x002663C0",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
+ },
+ {
+  "start": "0x00292E80",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "data-table-scan"
  }
 ]

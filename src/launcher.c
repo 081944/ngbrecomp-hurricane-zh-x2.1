@@ -19,48 +19,106 @@
 
 #include "launcher.h"
 #include "launcher_font.h"
+#include "port.h"
 
 /* ---------- settings file ---------- */
 
 static void config_path(char *out, size_t n, int make_dir)
 {
-    const char *xdg = getenv("XDG_CONFIG_HOME");
-    const char *home = getenv("HOME");
     char dir[1024];
-    if (xdg && *xdg)
-        snprintf(dir, sizeof dir, "%s/NinjaGaidenBlack", xdg);
-    else
-        snprintf(dir, sizeof dir, "%s/.config/NinjaGaidenBlack", home ? home : ".");
-    if (make_dir) {
-        char parent[1024];
-        snprintf(parent, sizeof parent, "%s", dir);
-        char *slash = strrchr(parent, '/');
-        if (slash) { *slash = 0; mkdir(parent, 0755); }
-        mkdir(dir, 0755);
-    }
+    ngb_config_dir(dir, sizeof dir, make_dir);
     snprintf(out, n, "%s/settings.ini", dir);
 }
 
-static const char *const ASPECT_NAMES[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "stretch" };
+static const char *const ASPECT_NAMES[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+
+/* Window sizes offered for each aspect ratio, smallest first. */
+static const int SIZES_4_3[][2] = {
+    { 960, 720 }, { 1024, 768 }, { 1280, 960 }, { 1440, 1080 },
+    { 1600, 1200 }, { 1920, 1440 }, { 2880, 2160 }, { 0, 0 } };
+static const int SIZES_16_9[][2] = {
+    { 1280, 720 }, { 1600, 900 }, { 1920, 1080 }, { 2560, 1440 },
+    { 3200, 1800 }, { 3840, 2160 }, { 0, 0 } };
+static const int SIZES_16_10[][2] = {
+    { 1280, 800 }, { 1440, 900 }, { 1680, 1050 }, { 1920, 1200 },
+    { 2560, 1600 }, { 3840, 2400 }, { 0, 0 } };
+static const int SIZES_21_9[][2] = {     /* the "21:9" of the displays: 64:27 (2560 x 1080), 43:18 (3440 x 1440) */
+    { 1720, 720 }, { 2560, 1080 }, { 3440, 1440 }, { 5120, 2160 }, { 0, 0 } };
+
+static const int (*sizes_for(int aspect))[2]
+{
+    return aspect == ASPECT_4_3 ? SIZES_4_3
+         : aspect == ASPECT_16_10 ? SIZES_16_10 : aspect == ASPECT_21_9 ? SIZES_21_9 : SIZES_16_9;
+}
+
+static int nsizes(int aspect)
+{
+    int n = 0;
+    while (sizes_for(aspect)[n][0])
+        n++;
+    return n;
+}
+
+static int size_index(const NgbSettings *s)
+{
+    const int (*z)[2] = sizes_for(s->aspect);
+    for (int i = 0; z[i][0]; i++)
+        if (z[i][0] == s->width && z[i][1] == s->height)
+            return i;
+    return -1;
+}
+
+int ngb_settings_size_count(int aspect) { return nsizes(aspect); }
+
+void ngb_settings_size_at(int aspect, int i, int *w, int *h)
+{
+    *w = sizes_for(aspect)[i][0];
+    *h = sizes_for(aspect)[i][1];
+}
+
+int ngb_settings_size_index(const NgbSettings *s) { return size_index(s); }
+
+/* A window size of the current aspect: the listed one nearest in height. */
+static void snap_size(NgbSettings *s)
+{
+    const int (*z)[2] = sizes_for(s->aspect);
+    int best = 0;
+    if (size_index(s) >= 0)
+        return;
+    for (int i = 1; z[i][0]; i++)
+        if (abs(z[i][1] - s->height) < abs(z[best][1] - s->height))
+            best = i;
+    s->width = z[best][0];
+    s->height = z[best][1];
+}
+
+void ngb_settings_snap_size(NgbSettings *s) { snap_size(s); }
 
 void ngb_settings_load(NgbSettings *s)
 {
     char path[1100], line[256];
     FILE *f;
 
+    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, 4:3 movies... */
     s->aspect = ASPECT_16_9;
     s->width = 1280;
     s->height = 720;
     s->fullscreen = 0;
     s->scale = 1;
     s->vsync = 0;
+    s->show_fps = 0;
+    s->anisotropy = 16;
+    s->msaa = 1;
+    s->shadow_scale = 4;
     s->skip_intro = 0;
     s->show_launcher = 1;
 
     config_path(path, sizeof path, 0);
     f = fopen(path, "r");
+    printf("Settings: %s%s\n", path, f ? "" : " (not there yet: the defaults)");
     if (!f)
         return;
+    s->width = s->height = 0;
     while (fgets(line, sizeof line, f)) {
         char key[64], val[128];
         if (sscanf(line, " %63[^= ] = %127[^\r\n]", key, val) != 2)
@@ -76,12 +134,31 @@ void ngb_settings_load(NgbSettings *s)
                 s->height = h;
             }
         } else if (!strcmp(key, "fullscreen")) {
-            s->fullscreen = atoi(val) != 0;
+            s->fullscreen = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
         } else if (!strcmp(key, "render_scale")) {
             int v = atoi(val);
-            s->scale = v < 1 ? 1 : v > 4 ? 4 : v;
+            s->scale = v < 1 ? 1 : v > 10 ? 10 : v;
         } else if (!strcmp(key, "vsync")) {
-            s->vsync = atoi(val) != 0;
+            s->vsync = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
+        } else if (!strcmp(key, "shadow_resolution")) {
+            int v = atoi(val);
+            s->shadow_scale = v >= 10 ? 10 : v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
+        } else if (!strcmp(key, "texture_filter")) {          /* before anisotropic_filtering */
+            s->anisotropy = strcmp(val, "original") ? 16 : 0;
+        } else if (!strcmp(key, "anisotropic_filtering")) {
+            int v = atoi(val);
+            s->anisotropy = v >= 16 ? 16 : v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 0;
+        } else if (!strcmp(key, "msaa")) {
+            int v = atoi(val);
+            s->msaa = v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
+        } else if (!strcmp(key, "unlock_all_difficulties")) {
+            s->all_difficulties = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_all_costumes")) {
+            s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "movie_ratio")) {
+            s->movie_43 = !strcmp(val, "4:3");
+        } else if (!strcmp(key, "show_fps")) {
+            s->show_fps = atoi(val) != 0;
         } else if (!strcmp(key, "skip_intro")) {
             s->skip_intro = atoi(val) != 0;
         } else if (!strcmp(key, "show_settings_at_startup")) {
@@ -89,6 +166,7 @@ void ngb_settings_load(NgbSettings *s)
         }
     }
     fclose(f);
+    snap_size(s);
 }
 
 void ngb_settings_save(const NgbSettings *s)
@@ -108,6 +186,13 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "fullscreen = %d\n", s->fullscreen);
     fprintf(f, "render_scale = %d\n", s->scale);
     fprintf(f, "vsync = %d\n", s->vsync);
+    fprintf(f, "show_fps = %d\n", s->show_fps);
+    fprintf(f, "anisotropic_filtering = %d\n", s->anisotropy);
+    fprintf(f, "msaa = %d\n", s->msaa);
+    fprintf(f, "unlock_all_difficulties = %d\n", s->all_difficulties);
+    fprintf(f, "unlock_all_costumes = %d\n", s->all_costumes);
+    fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
+    fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
     fprintf(f, "skip_intro = %d\n", s->skip_intro);
     fprintf(f, "show_settings_at_startup = %d\n", s->show_launcher);
     fclose(f);
@@ -118,7 +203,7 @@ double ngb_settings_aspect_ratio(const NgbSettings *s)
     switch (s->aspect) {
     case ASPECT_4_3:   return 4.0 / 3.0;
     case ASPECT_16_10: return 16.0 / 10.0;
-    case ASPECT_STRETCH: return -1.0;
+    case ASPECT_21_9:  return 64.0 / 27.0;
     default:           return 16.0 / 9.0;
     }
 }
@@ -126,7 +211,7 @@ double ngb_settings_aspect_ratio(const NgbSettings *s)
 /* ---------- drawing ---------- */
 
 #define LW 960            /* logical size of the screen */
-#define LH 600
+#define LH 748
 
 static SDL_Texture *s_font;
 static int s_glyph_x[95];
@@ -202,63 +287,72 @@ static void fill(SDL_Renderer *r, int x, int y, int w, int h, SDL_Color c)
 
 /* ---------- the screen ---------- */
 
-static const int SIZES[][2] = {
-    { 960, 720 }, { 1024, 768 }, { 1280, 720 }, { 1280, 800 }, { 1280, 960 },
-    { 1440, 1080 }, { 1600, 900 }, { 1920, 1080 }, { 1920, 1200 },
-    { 2560, 1440 }, { 2560, 1600 }, { 3840, 2160 },
-};
-#define NSIZES (int)(sizeof SIZES / sizeof SIZES[0])
+enum { ROW_ASPECT, ROW_SIZE, ROW_DISPLAY, ROW_SCALE, ROW_TEXFILTER, ROW_MSAA, ROW_SHADOW,
+       ROW_VSYNC, ROW_FPS, ROW_SKIP, ROW_START, ROW_QUIT, NROWS };
+_Static_assert(ROW_START == NGB_SETTINGS_ITEMS, "settings rows");
 
-enum { ROW_ASPECT, ROW_SIZE, ROW_DISPLAY, ROW_SCALE, ROW_VSYNC, ROW_SKIP,
-       ROW_SHOW, ROW_START, ROW_QUIT, NROWS };
-
-static int size_index(const NgbSettings *s)
-{
-    for (int i = 0; i < NSIZES; i++)
-        if (SIZES[i][0] == s->width && SIZES[i][1] == s->height)
-            return i;
-    return -1;
-}
-
-static void change(NgbSettings *s, int row, int dir)
+void ngb_settings_change(NgbSettings *s, int row, int dir)
 {
     switch (row) {
     case ROW_ASPECT:
         s->aspect = (s->aspect + dir + ASPECT_COUNT) % ASPECT_COUNT;
+        snap_size(s);
         break;
     case ROW_SIZE: {
-        int i = size_index(s);
-        if (i < 0) i = dir > 0 ? -1 : NSIZES;
-        i = (i + dir + NSIZES) % NSIZES;
-        s->width = SIZES[i][0];
-        s->height = SIZES[i][1];
+        int n = nsizes(s->aspect), i = size_index(s);
+        if (i < 0) i = dir > 0 ? -1 : n;
+        i = (i + dir + n) % n;
+        s->width = sizes_for(s->aspect)[i][0];
+        s->height = sizes_for(s->aspect)[i][1];
         break;
     }
-    case ROW_DISPLAY: s->fullscreen = !s->fullscreen; break;
-    case ROW_SCALE:   s->scale = (s->scale - 1 + dir + 4) % 4 + 1; break;
-    case ROW_VSYNC:   s->vsync = !s->vsync; break;
+    case ROW_DISPLAY: s->fullscreen = (s->fullscreen + (dir < 0 ? 2 : 1)) % 3; break;
+    case ROW_SCALE:   s->scale = (s->scale - 1 + dir + 10) % 10 + 1; break;
+    case ROW_VSYNC:   s->vsync = (s->vsync + (dir < 0 ? 2 : 1)) % 3; break;
+    case ROW_FPS:     s->show_fps = !s->show_fps; break;
+    case ROW_TEXFILTER: {
+        static const int STEPS[] = { 0, 2, 4, 8, 16 };
+        int i = 0;
+        while (i < 4 && STEPS[i] != s->anisotropy) i++;
+        s->anisotropy = STEPS[(i + dir + 5) % 5];
+        break;
+    }
+    case ROW_MSAA: {
+        static const int STEPS[] = { 1, 2, 4, 8 };
+        int i = 0;
+        while (i < 3 && STEPS[i] != s->msaa) i++;
+        s->msaa = STEPS[(i + dir + 4) % 4];
+        break;
+    }
+    case ROW_SHADOW: {
+        static const int STEPS[] = { 1, 2, 4, 8, 10 };
+        int i = 0;
+        while (i < 4 && STEPS[i] != s->shadow_scale) i++;
+        s->shadow_scale = STEPS[(i + dir + 5) % 5];
+        break;
+    }
     case ROW_SKIP:    s->skip_intro = !s->skip_intro; break;
-    case ROW_SHOW:    s->show_launcher = !s->show_launcher; break;
     default: break;
     }
 }
 
-static void row_text(const NgbSettings *s, int row, const char **label, char *val, size_t n)
+void ngb_settings_row_text(const NgbSettings *s, int row, const char **label, char *val, size_t n)
 {
-    static const char *const ASPECT_LABEL[ASPECT_COUNT] = {
-        "4:3 (original)", "16:9 widescreen", "16:10 (Steam Deck)",
-        "Stretch to window" };
-    static const char *const SCALE_LABEL[4] = {
-        "Native (1x)", "2x", "3x", "4x" };
+    static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+    static const char *const SCALE_LABEL[10] = {
+        "Native (1x)", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x" };
     val[0] = 0;
     switch (row) {
     case ROW_ASPECT:  *label = "Aspect ratio";  snprintf(val, n, "%s", ASPECT_LABEL[s->aspect]); break;
     case ROW_SIZE:    *label = "Window size";   snprintf(val, n, "%d x %d", s->width, s->height); break;
-    case ROW_DISPLAY: *label = "Display";       snprintf(val, n, "%s", s->fullscreen ? "Fullscreen" : "Windowed"); break;
+    case ROW_DISPLAY: *label = "Display";       snprintf(val, n, "%s", s->fullscreen == 2 ? "Borderless" : s->fullscreen ? "Fullscreen" : "Windowed"); break;
     case ROW_SCALE:   *label = "Render resolution"; snprintf(val, n, "%s", SCALE_LABEL[s->scale - 1]); break;
-    case ROW_VSYNC:   *label = "V-Sync";        snprintf(val, n, "%s", s->vsync ? "On" : "Off"); break;
-    case ROW_SKIP:    *label = "Skip intro movies"; snprintf(val, n, "%s", s->skip_intro ? "Yes" : "No"); break;
-    case ROW_SHOW:    *label = "Show this screen at startup"; snprintf(val, n, "%s", s->show_launcher ? "Yes" : "No"); break;
+    case ROW_VSYNC:   *label = "V-Sync";        snprintf(val, n, "%s", s->vsync == 2 ? "Adaptive" : s->vsync ? "On" : "Off"); break;
+    case ROW_FPS:     *label = "Show FPS";      snprintf(val, n, "%s", s->show_fps ? "On" : "Off"); break;
+    case ROW_TEXFILTER: *label = "Anisotropic filtering"; if (s->anisotropy) snprintf(val, n, "%dx", s->anisotropy); else snprintf(val, n, "Off"); break;
+    case ROW_MSAA:    *label = "Anti-aliasing (MSAA)"; if (s->msaa > 1) snprintf(val, n, "%dx", s->msaa); else snprintf(val, n, "Off"); break;
+    case ROW_SHADOW:  *label = "Shadow resolution"; if (s->shadow_scale == 1) snprintf(val, n, "Original"); else snprintf(val, n, "%dx", s->shadow_scale); break;
+    case ROW_SKIP:    *label = "Skip intros and warnings"; snprintf(val, n, "%s", s->skip_intro ? "Yes" : "No"); break;
     case ROW_START:   *label = "Start game"; break;
     case ROW_QUIT:    *label = "Quit"; break;
     }
@@ -299,7 +393,7 @@ static void draw(SDL_Renderer *r, const NgbSettings *s, int sel)
         const char *label;
         char val[96];
         int y = row_y(row);
-        row_text(s, row, &label, val, sizeof val);
+        ngb_settings_row_text(s, row, &label, val, sizeof val);
         if (row >= ROW_START) {
             int w = 260, x = LW / 2 - w / 2;
             fill(r, x, y + 2, w, ROW_H - 6, row == sel ? bar : dim);
@@ -317,7 +411,7 @@ static void draw(SDL_Renderer *r, const NgbSettings *s, int sel)
     }
     draw_text(r, "Up/Down: choose    Left/Right: change    Enter / A: select    Start: play    Esc / B: quit",
               LW / 2, LH - 58, 17, grey, 1);
-    draw_text(r, "In game: F11 or Alt+Enter toggles fullscreen.  Run with --settings to see this screen again.",
+    draw_text(r, "In game: F1 or Back+Start opens these options, F11 toggles fullscreen, F10 the FPS counter.",
               LW / 2, LH - 34, 15, grey, 1);
     SDL_RenderPresent(r);
 }
@@ -331,8 +425,10 @@ int ngb_launcher_run(NgbSettings *s)
     Uint32 repeat_at = 0;
     int held_dir = 0;            /* stick/d-pad auto-repeat: -2 up, 2 down, -1/1 */
 
+#if !defined(_WIN32)
     if (!getenv("SDL_VIDEODRIVER"))
         SDL_SetHint(SDL_HINT_VIDEODRIVER, "wayland,x11");
+#endif
     if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "settings screen: %s\n", SDL_GetError());
         return 1;                /* no screen: just start */
@@ -435,11 +531,11 @@ int ngb_launcher_run(NgbSettings *s)
             if (move)
                 sel = (sel + move + NROWS) % NROWS;
             if (dir && sel < ROW_START)
-                change(s, sel, dir);
+                ngb_settings_change(s, sel, dir);
             if (act) {
                 if (sel == ROW_START) result = 1;
                 else if (sel == ROW_QUIT) result = 0;
-                else change(s, sel, 1);
+                else ngb_settings_change(s, sel, 1);
             }
         }
         /* Held d-pad or stick: repeat after a pause. */
@@ -447,7 +543,7 @@ int ngb_launcher_run(NgbSettings *s)
             if (held_dir == 2 || held_dir == -2)
                 sel = (sel + held_dir / 2 + NROWS) % NROWS;
             else if (sel < ROW_START)
-                change(s, sel, held_dir);
+                ngb_settings_change(s, sel, held_dir);
             repeat_at = SDL_GetTicks() + 140;
         }
         draw(r, s, sel);

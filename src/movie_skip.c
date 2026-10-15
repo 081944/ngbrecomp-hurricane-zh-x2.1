@@ -9,12 +9,15 @@
  * change: while a movie the player chose to skip is playing, "playing"
  * reads as "ended".
  *
- * Skipped: the New Game prologue (ninja_gaiden.sfd) and the boot movie
- * (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd). Neither is skippable in the game --
- * no button ends them -- and the story movies (pre_movie*.sfd) are left
- * alone. Which movie is playing comes from the movie file the title last
- * read (ngb_movie_read, from the kernel's read hook): it opens every movie
- * at boot to probe them, so the last one opened says nothing.
+ * Skipped with Skip Intros: the New Game prologue (ninja_gaiden.sfd) and the
+ * boot movie (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd). Which movie is playing
+ * comes from the movie file the title last read (ngb_movie_read, from the
+ * kernel's read hook): it opens every movie at boot to probe them, so the
+ * last one opened says nothing.
+ *
+ * And any movie, by pressing Start, A or B (ngb_skip_button, src/keyboard.c)
+ * -- once every button has been let go since it began, so neither the press
+ * that started it nor one held through it ends it.
  */
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
@@ -24,13 +27,21 @@
 
 int ngb_skip_intro;
 static volatile int s_skip_current;
+static int s_released;   /* the buttons let go since this movie began */
+int ngb_skip_button(void);
 
 void ngb_movie_read(const char *host_path)
 {
-    const char *base = strrchr(host_path, '/');
-    if (!base || !strstr(host_path, "/movie/") || !strstr(base, ".sfd"))
+    const char *base = NULL, *dir = NULL;   /* the name and the folder it is in (either separator) */
+    for (const char *c = host_path; *c; c++)
+        if (*c == '/' || *c == '\\') {
+            dir = base;
+            base = c;
+        }
+    if (!base || !dir || strncasecmp(dir + 1, "movie", 5) || base - dir != 6 || !strstr(base, ".sfd"))
         return;
     base++;
+    s_released = 0;
     s_skip_current = ngb_skip_intro &&
         (!strcasecmp(base, "ninja_gaiden.sfd") || !strcasecmp(base, "2_VI_WIDE_B.sfd") ||
          !strcasecmp(base, "4_VI_STD_B.sfd"));
@@ -38,6 +49,12 @@ void ngb_movie_read(const char *host_path)
 
 static int ngb_movie_skip_now(void)
 {
+    if (s_skip_current)
+        return 1;
+    if (!ngb_skip_button())
+        s_released = 1;
+    else if (s_released)
+        s_skip_current = 1;   /* (until the next movie is read) */
     return s_skip_current;
 }
 
@@ -78,6 +95,10 @@ loc_00344BFE: ;
 
 loc_00344C04: ;
     eax = MEM32(ecx + 4);
+    {   /* preparing or playing: the game's widescreen mode for it (src/pc_menu.c); ended: not */
+        extern void ngb_movie_playing(int playing);
+        ngb_movie_playing(eax == 1 || eax == 2);
+    }
     if (eax == 2 && ngb_movie_skip_now()) {
         eax = 3;                 /* MWPLY_STAT_PLAYEND: as if it had played */
         esp += 4; return;

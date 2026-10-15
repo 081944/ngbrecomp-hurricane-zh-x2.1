@@ -4,27 +4,56 @@
  */
 #ifndef NGB_LAUNCHER_H
 #define NGB_LAUNCHER_H
+#include <stddef.h>
 
-enum { ASPECT_4_3, ASPECT_16_9, ASPECT_16_10, ASPECT_STRETCH, ASPECT_COUNT };
+enum { ASPECT_4_3, ASPECT_16_9, ASPECT_16_10, ASPECT_21_9, ASPECT_COUNT };
 
 typedef struct NgbSettings {
     int aspect;          /* ASPECT_* */
     int width, height;   /* window size */
     int fullscreen;
-    int scale;           /* render scale 1..4 */
+    int scale;           /* render scale 1..10 */
     int vsync;
+    int show_fps;        /* frame rate and frame time overlay */
+    int anisotropy;      /* 0 the console's texture filtering; 2, 4, 8, 16 trilinear + anisotropic */
+    int msaa;            /* MSAA samples: 1 (off), 2, 4, 8 */
+    int shadow_scale;    /* shadow map resolution multiple: 1, 2, 4 or 8 */
     int skip_intro;
     int show_launcher;   /* show the settings screen at startup */
+    int all_difficulties;
+    int all_costumes;       /* every costume at New Game's Costume Selection */
+    int movie_43;           /* the game's Movie Display Ratio 4:3 (kept here: src/pc_menu.c) */
+    /* Hard, Very Hard and Master Ninja offered without clearing the one before */
 } NgbSettings;
 
 void ngb_settings_load(NgbSettings *s);
 void ngb_settings_save(const NgbSettings *s);
 
-/* Width/height of the aspect, for the presenter (negative: stretch). */
+/* The settings shown on the settings screens, in order: aspect, window
+ * size, display, render resolution, anisotropic filtering, MSAA, shadow resolution,
+ * V-Sync, FPS counter, skip intros. */
+#define NGB_SETTINGS_ITEMS 10
+/* Step setting item one way (dir -1/+1); its label and current value. */
+void ngb_settings_change(NgbSettings *s, int item, int dir);
+void ngb_settings_row_text(const NgbSettings *s, int item, const char **label,
+                           char *val, size_t n);
+
+/* The window sizes offered for an aspect ratio, smallest first; the index of
+ * the settings' own (-1: none of them). */
+int ngb_settings_size_count(int aspect);
+void ngb_settings_size_at(int aspect, int i, int *w, int *h);
+int ngb_settings_size_index(const NgbSettings *s);
+void ngb_settings_snap_size(NgbSettings *s);   /* the nearest size of s's aspect */
+
+/* Width/height of the aspect, for the presenter. */
 double ngb_settings_aspect_ratio(const NgbSettings *s);
 
 /* Runs the settings screen in its own window. Returns 1 to start the game,
  * 0 to quit. Saves the settings when the game is started. */
 int ngb_launcher_run(NgbSettings *s);
+
+/* The settings the game was started with, for the in-game menu (F1 or
+ * Back+Start), which starts from them and changes them. */
+void ngb_menu_set_running(const NgbSettings *s);
 
 #endif

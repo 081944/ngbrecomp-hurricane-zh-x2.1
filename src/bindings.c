@@ -1,0 +1,482 @@
+/*
+ * bindings.c -- the controls in play, changeable (the Controls page of the
+ * recomp's settings, src/pause_tab.c).
+ *
+ * Each action has two keys or mouse buttons and a controller button; they
+ * are kept in controls.ini beside settings.ini. In play the keyboard and
+ * mouse press the pad as their bindings say (src/keyboard.c), and the
+ * controller's buttons are moved to the actions they are bound to
+ * (xbox_pad_remap, called by xboxrecomp's input). The menus keep their own
+ * controls -- the controller as it is, the keyboard's arrows, Enter, Esc, Q
+ * and E and the mouse pointing -- so no binding can lock them up. The game's
+ * own Button Settings is replaced by this (src/pc_menu.c).
+ */
+#include <SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#include "bindings.h"
+#include "port.h"
+#include "input/xinput_xbox.h"
+
+int ngb_menu_up(void);   /* src/menu_mouse.c */
+
+/* What an action presses on the game's pad. */
+enum { T_BTN, T_AN, T_AN2, T_AXIS };
+typedef struct {
+    const char *name, *ini, *help;
+    int key0, key1, pad;
+    unsigned char kind;
+    unsigned short a, b;          /* T_BTN: the bit; T_AN: the index (T_AN2 two); T_AXIS: 0-3 LX LY RX RY, b 1 negative */
+} Action;
+
+#define M(b) (BIND_MOUSE | (b))
+#define P(p) (BIND_PAD | (p))
+static const Action s_act[A_COUNT] = {
+    { "Attack", "attack", "A quick strike.", M(1), SDL_SCANCODE_J, P(P_X), T_AN, XBOX_BUTTON_X, 0 },
+    { "Special Attack", "special_attack", "A strong strike.", M(3), SDL_SCANCODE_K, P(P_Y), T_AN, XBOX_BUTTON_Y, 0 },
+    { "Jump", "jump", "Jump; at a wall, run along it.", SDL_SCANCODE_SPACE, 0, P(P_A), T_AN, XBOX_BUTTON_A, 0 },
+    { "Projectile Weapon", "projectile", "Throws the projectile weapon.", SDL_SCANCODE_E, 0, P(P_B), T_AN, XBOX_BUTTON_B, 0 },
+    { "Ninpo", "ninpo", "Casts the ninpo (Special Attack and Projectile together).", SDL_SCANCODE_F, 0, 0,
+      T_AN2, XBOX_BUTTON_Y, XBOX_BUTTON_B },
+    { "Wind Run", "wind_run", "Runs at the nearest enemy (Attack and Jump together).", SDL_SCANCODE_C, 0, 0,
+      T_AN2, XBOX_BUTTON_X, XBOX_BUTTON_A },
+    { "Guard", "guard", "Blocks; with a direction, rolls.", SDL_SCANCODE_LSHIFT, SDL_SCANCODE_RSHIFT, P(P_LT),
+      T_AN, XBOX_BUTTON_LTRIGGER, 0 },
+    { "Center Camera", "center_camera", "Turns the camera behind Ryu.", SDL_SCANCODE_Q, M(2), P(P_RT), T_AN,
+      XBOX_BUTTON_RTRIGGER, 0 },
+    { "Display Map", "map", "Shows the map.", SDL_SCANCODE_TAB, 0, P(P_BLACK), T_AN, XBOX_BUTTON_BLACK, 0 },
+    { "Karma Window On/Off", "karma_window", "Shows or hides the karma window.", SDL_SCANCODE_R, 0, P(P_WHITE), T_AN,
+      XBOX_BUTTON_WHITE, 0 },
+    { "Pause", "pause", "The pause menu.", SDL_SCANCODE_ESCAPE, SDL_SCANCODE_RETURN, P(P_START), T_BTN,
+      XBOX_GAMEPAD_START, 0 },
+    { "Back", "back", "The controller's Back button.", SDL_SCANCODE_BACKSPACE, 0, P(P_BACK), T_BTN,
+      XBOX_GAMEPAD_BACK, 0 },
+    { "First-Person View", "first_person", "Looks through Ryu's eyes (the left stick's button).", SDL_SCANCODE_Z,
+      0, P(P_LS), T_BTN, XBOX_GAMEPAD_LEFT_THUMB, 0 },
+    { "Right Stick Button", "right_stick", "The right stick's button.", SDL_SCANCODE_V, 0, P(P_RS), T_BTN,
+      XBOX_GAMEPAD_RIGHT_THUMB, 0 },
+    { "Move Forward", "move_forward", "Moves Ryu (the left stick).", SDL_SCANCODE_W, 0, 0, T_AXIS, 1, 0 },
+    { "Move Back", "move_back", "Moves Ryu (the left stick).", SDL_SCANCODE_S, 0, 0, T_AXIS, 1, 1 },
+    { "Move Left", "move_left", "Moves Ryu (the left stick).", SDL_SCANCODE_A, 0, 0, T_AXIS, 0, 1 },
+    { "Move Right", "move_right", "Moves Ryu (the left stick).", SDL_SCANCODE_D, 0, 0, T_AXIS, 0, 0 },
+    { "Camera Up", "camera_up", "Turns the camera (the right stick; the mouse too).", SDL_SCANCODE_KP_8, 0, 0,
+      T_AXIS, 3, 0 },
+    { "Camera Down", "camera_down", "Turns the camera (the right stick; the mouse too).", SDL_SCANCODE_KP_5, 0, 0,
+      T_AXIS, 3, 1 },
+    { "Camera Left", "camera_left", "Turns the camera (the right stick; the mouse too).", SDL_SCANCODE_KP_4, 0, 0,
+      T_AXIS, 2, 1 },
+    { "Camera Right", "camera_right", "Turns the camera (the right stick; the mouse too).", SDL_SCANCODE_KP_6, 0,
+      0, T_AXIS, 2, 0 },
+    { "D-Pad Up", "dpad_up", "The controller's directional pad.", SDL_SCANCODE_UP, 0, P(P_DU), T_BTN,
+      XBOX_GAMEPAD_DPAD_UP, 0 },
+    { "D-Pad Down", "dpad_down", "The controller's directional pad.", SDL_SCANCODE_DOWN, 0, P(P_DD), T_BTN,
+      XBOX_GAMEPAD_DPAD_DOWN, 0 },
+    { "D-Pad Left", "dpad_left", "The controller's directional pad.", SDL_SCANCODE_LEFT, 0, P(P_DL), T_BTN,
+      XBOX_GAMEPAD_DPAD_LEFT, 0 },
+    { "D-Pad Right", "dpad_right", "The controller's directional pad.", SDL_SCANCODE_RIGHT, 0, P(P_DR), T_BTN,
+      XBOX_GAMEPAD_DPAD_RIGHT, 0 },
+};
+
+static int s_bind[A_COUNT][3];
+static int s_loaded;
+static volatile unsigned s_gen = 1;
+static int s_pad_identity = 1;
+
+static const char *const s_pad_name[P_COUNT] = {
+    "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Start", "Back", "LS", "RS",
+    "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
+};
+static const char *const s_mouse_name[6] = { "", "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse 4", "Mouse 5" };
+
+const char *ngb_bind_name(int a) { return a >= 0 && a < A_COUNT ? s_act[a].name : ""; }
+const char *ngb_bind_help(int a) { return a >= 0 && a < A_COUNT ? s_act[a].help : ""; }
+int ngb_bind_pad_fixed(int a) { return a >= 0 && a < A_COUNT && s_act[a].kind == T_AXIS; }
+unsigned ngb_bind_generation(void) { return s_gen; }
+
+static void identity_check(void)
+{
+    s_pad_identity = 1;
+    for (int a = 0; a < A_COUNT; a++)
+        if (s_bind[a][2] != s_act[a].pad)
+            s_pad_identity = 0;
+}
+
+void ngb_bind_defaults(void)
+{
+    for (int a = 0; a < A_COUNT; a++) {
+        s_bind[a][0] = s_act[a].key0;
+        s_bind[a][1] = s_act[a].key1;
+        s_bind[a][2] = s_act[a].pad;
+    }
+    identity_check();
+    s_gen++;
+}
+
+/* ---------- names ---------- */
+
+void ngb_bind_input_name(int in, char *out, int n)
+{
+    if (!in)
+        snprintf(out, n, "-");
+    else if (in & BIND_PAD)
+        snprintf(out, n, "%s", (in & 0xFF) < P_COUNT ? s_pad_name[in & 0xFF] : "?");
+    else if (in & BIND_MOUSE)
+        snprintf(out, n, "%s", (in & 0xFF) >= 1 && (in & 0xFF) <= 5 ? s_mouse_name[in & 0xFF] : "Mouse ?");
+    else {
+        const char *s = SDL_GetScancodeName((SDL_Scancode)in);
+        snprintf(out, n, "%s", s && *s ? s : "?");
+    }
+}
+
+void ngb_bind_input_short(int in, char *out, int n)
+{
+    out[0] = 0;
+    if (!in || (in & BIND_MOUSE) || (in & BIND_PAD))
+        return;
+    switch (in) {
+    case SDL_SCANCODE_SPACE:     snprintf(out, n, "SPC"); return;
+    case SDL_SCANCODE_TAB:       snprintf(out, n, "TAB"); return;
+    case SDL_SCANCODE_LSHIFT: case SDL_SCANCODE_RSHIFT: snprintf(out, n, "^"); return;
+    case SDL_SCANCODE_LCTRL: case SDL_SCANCODE_RCTRL:   snprintf(out, n, "CTL"); return;
+    case SDL_SCANCODE_LALT: case SDL_SCANCODE_RALT:     snprintf(out, n, "ALT"); return;
+    case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: snprintf(out, n, "ENT"); return;
+    case SDL_SCANCODE_ESCAPE:    snprintf(out, n, "ESC"); return;
+    case SDL_SCANCODE_BACKSPACE: snprintf(out, n, "BS"); return;
+    case SDL_SCANCODE_CAPSLOCK:  snprintf(out, n, "CAP"); return;
+    case SDL_SCANCODE_UP:        snprintf(out, n, "\x01"); return;
+    case SDL_SCANCODE_DOWN:      snprintf(out, n, "\x02"); return;
+    case SDL_SCANCODE_LEFT:      snprintf(out, n, "\x03"); return;
+    case SDL_SCANCODE_RIGHT:     snprintf(out, n, "\x04"); return;
+    default: break;
+    }
+    if (in >= SDL_SCANCODE_KP_1 && in <= SDL_SCANCODE_KP_0) {
+        snprintf(out, n, "N%c", in == SDL_SCANCODE_KP_0 ? '0' : '1' + (in - SDL_SCANCODE_KP_1));
+        return;
+    }
+    if (in >= SDL_SCANCODE_F1 && in <= SDL_SCANCODE_F12) {
+        snprintf(out, n, "F%d", in - SDL_SCANCODE_F1 + 1);
+        return;
+    }
+    const char *s = SDL_GetScancodeName((SDL_Scancode)in);
+    if (s && s[0] && !s[1]) {                      /* letters, digits, punctuation: itself */
+        snprintf(out, n, "%c", s[0] >= 'a' && s[0] <= 'z' ? s[0] - 32 : s[0]);
+        return;
+    }
+    int j = 0;                                     /* else its first letters */
+    for (int i = 0; s && s[i] && j < 3 && j < n - 1; i++)
+        if (s[i] != ' ')
+            out[j++] = s[i] >= 'a' && s[i] <= 'z' ? s[i] - 32 : s[i];
+    out[j] = 0;
+}
+
+static int parse_input(const char *t)
+{
+    while (*t == ' ')
+        t++;
+    char s[64];
+    snprintf(s, sizeof s, "%s", t);
+    for (int i = (int)strlen(s) - 1; i >= 0 && s[i] == ' '; i--)
+        s[i] = 0;
+    if (!s[0] || !strcmp(s, "-"))
+        return 0;
+    for (int i = 1; i <= 5; i++)
+        if (!SDL_strcasecmp(s, s_mouse_name[i]))
+            return BIND_MOUSE | i;
+    if (!SDL_strncasecmp(s, "Pad ", 4))
+        for (int i = 0; i < P_COUNT; i++)
+            if (!SDL_strcasecmp(s + 4, s_pad_name[i]))
+                return BIND_PAD | i;
+    SDL_Scancode sc = SDL_GetScancodeFromName(s);
+    return sc != SDL_SCANCODE_UNKNOWN ? (int)sc : -1;
+}
+
+/* ---------- the file ---------- */
+
+static void file_path(char *out, size_t n, int make_dir)
+{
+    char dir[1024];
+    ngb_config_dir(dir, sizeof dir, make_dir);
+    snprintf(out, n, "%s/controls.ini", dir);
+}
+
+static void save(void)
+{
+    char path[1100];
+    file_path(path, sizeof path, 1);
+    FILE *f = fopen(path, "w");
+    if (!f)
+        return;
+    fprintf(f, "# Ninja Gaiden Black controls in play (the Controls page writes this file):\n"
+               "# action = key or mouse button, another, Pad <button>\n");
+    for (int a = 0; a < A_COUNT; a++) {
+        char k0[64], k1[64], p[64];
+        ngb_bind_input_name(s_bind[a][0], k0, sizeof k0);
+        ngb_bind_input_name(s_bind[a][1], k1, sizeof k1);
+        if (s_bind[a][2])
+            snprintf(p, sizeof p, "Pad %s", s_pad_name[s_bind[a][2] & 0xFF]);
+        else
+            snprintf(p, sizeof p, "-");
+        fprintf(f, "%s = %s, %s, %s\n", s_act[a].ini, k0, k1, p);
+    }
+    fclose(f);
+}
+
+void ngb_bind_load(void)
+{
+    s_loaded = 1;
+    ngb_bind_defaults();
+    char path[1100], line[512];
+    file_path(path, sizeof path, 0);
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return;
+    while (fgets(line, sizeof line, f)) {
+        char key[64], val[400];
+        if (line[0] == '#' || sscanf(line, " %63[^= ] = %399[^\r\n]", key, val) != 2)
+            continue;
+        for (int a = 0; a < A_COUNT; a++) {
+            if (strcmp(key, s_act[a].ini))
+                continue;
+            char *save_p = NULL, *tok = strtok_r(val, ",", &save_p);
+            for (int slot = 0; slot < 3 && tok; slot++, tok = strtok_r(NULL, ",", &save_p)) {
+                int in = parse_input(tok);
+                if (in < 0)
+                    continue;                          /* not known here: the default */
+                if (slot < 2 && (in & BIND_PAD))
+                    continue;
+                if (slot == 2 && (in && !(in & BIND_PAD)))
+                    continue;
+                if (slot == 2 && s_act[a].kind == T_AXIS)
+                    continue;
+                s_bind[a][slot] = in;
+            }
+        }
+    }
+    fclose(f);
+    identity_check();
+    s_gen++;
+}
+
+static void ensure(void)
+{
+    if (!s_loaded)
+        ngb_bind_load();
+}
+
+int ngb_bind_get(int a, int slot)
+{
+    ensure();
+    return a >= 0 && a < A_COUNT && slot >= 0 && slot < 3 ? s_bind[a][slot] : 0;
+}
+
+void ngb_bind_set(int a, int slot, int in)
+{
+    ensure();
+    if (a < 0 || a >= A_COUNT || slot < 0 || slot > 2)
+        return;
+    if (slot == 2 && ngb_bind_pad_fixed(a))
+        return;
+    if (in) {
+        for (int o = 0; o < A_COUNT; o++)
+            for (int s = 0; s < 3; s++) {
+                if (s_bind[o][s] != in || (o == a && s == slot))
+                    continue;
+                if (slot == 2)
+                    s_bind[o][s] = s_bind[a][2];       /* a controller button: swapped */
+                else
+                    s_bind[o][s] = 0;                  /* a key: moved here */
+            }
+    }
+    s_bind[a][slot] = in;
+    if (slot < 2 && s_bind[a][0] == 0 && s_bind[a][1]) {   /* the first slot first */
+        s_bind[a][0] = s_bind[a][1];
+        s_bind[a][1] = 0;
+    }
+    identity_check();
+    s_gen++;
+    save();
+}
+
+int ngb_bind_prompt(int b)
+{
+    ensure();
+    for (int a = 0; a < A_COUNT; a++)
+        if (s_act[a].kind == T_AN && s_act[a].a == b)
+            return s_bind[a][0] ? s_bind[a][0] : s_bind[a][1];
+    return 0;
+}
+
+/* ---------- in play ---------- */
+
+static int input_down(int in, const Uint8 *k, Uint32 mouse)
+{
+    if (!in || (in & BIND_PAD))
+        return 0;
+    if (in & BIND_MOUSE)
+        return (mouse & SDL_BUTTON(in & 0xFF)) != 0;
+    return in < SDL_NUM_SCANCODES && k[in];
+}
+
+static void press(XBOX_INPUT_STATE *st, const Action *t, int v, int axes[4])
+{
+    BYTE *an = st->Gamepad.bAnalogButtons;
+    switch (t->kind) {
+    case T_BTN:
+        if (v > 30)
+            st->Gamepad.wButtons |= t->a;
+        break;
+    case T_AN2:
+        if (v > an[t->b])
+            an[t->b] = (BYTE)v;
+        /* fall through */
+    case T_AN:
+        if (v > an[t->a])
+            an[t->a] = (BYTE)v;
+        break;
+    case T_AXIS:
+        if (v > 30)
+            axes[t->a] += t->b ? -32767 : 32767;
+        break;
+    }
+}
+
+static SHORT clamp_axis(int v)
+{
+    return (SHORT)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
+}
+
+/* The keyboard and mouse in play (src/keyboard.c): the pad as their bindings press it. */
+void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y)
+{
+    ensure();
+    int axes[4] = { 0, 0, look_x, look_y };
+    st->Gamepad.wButtons = 0;
+    memset(st->Gamepad.bAnalogButtons, 0, sizeof st->Gamepad.bAnalogButtons);
+    for (int a = 0; a < A_COUNT; a++)
+        if (input_down(s_bind[a][0], k, mouse) || input_down(s_bind[a][1], k, mouse))
+            press(st, &s_act[a], 255, axes);
+    st->Gamepad.sThumbLX = clamp_axis(axes[0]);
+    st->Gamepad.sThumbLY = clamp_axis(axes[1]);
+    st->Gamepad.sThumbRX = clamp_axis(axes[2]);
+    st->Gamepad.sThumbRY = clamp_axis(axes[3]);
+}
+
+/* A controller's state, each input 0-255 (P_*). */
+static void pad_inputs(const XBOX_INPUT_STATE *st, int v[P_COUNT])
+{
+    const BYTE *an = st->Gamepad.bAnalogButtons;
+    WORD b = st->Gamepad.wButtons;
+    static const unsigned char ai[8] = { P_A, P_B, P_X, P_Y, P_BLACK, P_WHITE, P_LT, P_RT };
+    for (int i = 0; i < 8; i++)
+        v[ai[i]] = an[i];
+    static const struct { WORD bit; int p; } bm[8] = {
+        { XBOX_GAMEPAD_START, P_START }, { XBOX_GAMEPAD_BACK, P_BACK }, { XBOX_GAMEPAD_LEFT_THUMB, P_LS },
+        { XBOX_GAMEPAD_RIGHT_THUMB, P_RS }, { XBOX_GAMEPAD_DPAD_UP, P_DU }, { XBOX_GAMEPAD_DPAD_DOWN, P_DD },
+        { XBOX_GAMEPAD_DPAD_LEFT, P_DL }, { XBOX_GAMEPAD_DPAD_RIGHT, P_DR },
+    };
+    for (int i = 0; i < 8; i++)
+        v[bm[i].p] = b & bm[i].bit ? 255 : 0;
+}
+
+/* xboxrecomp's input, each controller read (weak there): in play the
+ * controller's buttons go to the actions they are bound to. */
+void xbox_pad_remap(XBOX_INPUT_STATE *st)
+{
+    ensure();
+    if (s_pad_identity || ngb_menu_up() || getenv("NGB_NO_PAD_REMAP"))
+        return;
+    int v[P_COUNT], axes[4] = { 0 };
+    pad_inputs(st, v);
+    st->Gamepad.wButtons = 0;
+    memset(st->Gamepad.bAnalogButtons, 0, sizeof st->Gamepad.bAnalogButtons);
+    for (int a = 0; a < A_COUNT; a++) {
+        int in = s_bind[a][2];
+        if ((in & BIND_PAD) && (in & 0xFF) < P_COUNT && v[in & 0xFF])
+            press(st, &s_act[a], v[in & 0xFF], axes);
+    }
+}
+
+/* ---------- waiting for an input ---------- */
+
+static volatile int s_cap_action = -1, s_cap_slot, s_cap_result;
+static Uint64 s_cap_since;
+static int s_cap_prev[P_COUNT];
+
+int ngb_bind_capturing(void) { return s_cap_action >= 0; }
+
+void ngb_bind_capture_begin(int a, int slot)
+{
+    ensure();
+    s_cap_result = 0;
+    s_cap_slot = slot;
+    s_cap_since = SDL_GetTicks64();
+    XBOX_INPUT_STATE st;
+    memset(s_cap_prev, 0, sizeof s_cap_prev);
+    if (xbox_InputGetState(0, &st) == 0)
+        pad_inputs(&st, s_cap_prev);
+    __atomic_store_n(&s_cap_action, a, __ATOMIC_RELEASE);
+}
+
+void ngb_bind_capture_cancel(void)
+{
+    s_cap_action = -1;
+}
+
+int ngb_bind_capture_tick(void)
+{
+    int a = s_cap_action;
+    if (a < 0)
+        return 0;
+    int r = __atomic_load_n(&s_cap_result, __ATOMIC_ACQUIRE);
+    if (!r && s_cap_slot == 2) {                   /* the controller: its next button down */
+        XBOX_INPUT_STATE st;
+        int v[P_COUNT] = { 0 };
+        if (!xbox_InputKeyboardActive() && xbox_InputGetState(0, &st) == 0) {
+            pad_inputs(&st, v);
+            for (int p = 0; p < P_COUNT && !r; p++)
+                if (v[p] > 120 && s_cap_prev[p] <= 120)
+                    r = BIND_PAD | p;
+            memcpy(s_cap_prev, v, sizeof v);
+        }
+        if (!r && SDL_GetTicks64() - s_cap_since > 6000)
+            r = -1;                                    /* none: as it was */
+    }
+    if (!r)
+        return 1;
+    if (r > 0)
+        ngb_bind_set(a, s_cap_slot, r);
+    s_cap_action = -1;
+    return 0;
+}
+
+/* The window's thread, every event (src/ingame_menu.c): while waiting for
+ * a key, the next key or mouse button down is it (Esc: none); true when
+ * the event was taken. */
+int ngb_bind_event(const SDL_Event *ev)
+{
+    if (s_cap_action < 0)
+        return 0;
+    if (ev->type == SDL_KEYDOWN) {
+        if (ev->key.repeat || __atomic_load_n(&s_cap_result, __ATOMIC_ACQUIRE))
+            return 1;
+        SDL_Scancode sc = ev->key.keysym.scancode;
+        int r = sc == SDL_SCANCODE_ESCAPE || s_cap_slot == 2 ? -1 : (int)sc;
+        __atomic_store_n(&s_cap_result, r, __ATOMIC_RELEASE);
+        return 1;
+    }
+    if (ev->type == SDL_MOUSEBUTTONDOWN) {
+        if (__atomic_load_n(&s_cap_result, __ATOMIC_ACQUIRE))
+            return 1;
+        int b = ev->button.button;
+        int m = b == SDL_BUTTON_LEFT ? 1 : b == SDL_BUTTON_MIDDLE ? 2 : b == SDL_BUTTON_RIGHT ? 3
+              : b == SDL_BUTTON_X1 ? 4 : b == SDL_BUTTON_X2 ? 5 : 0;
+        int r = s_cap_slot == 2 ? (b == SDL_BUTTON_RIGHT ? -1 : 0) : m ? BIND_MOUSE | m : 0;
+        if (r)
+            __atomic_store_n(&s_cap_result, r, __ATOMIC_RELEASE);
+        return 1;
+    }
+    return ev->type == SDL_KEYUP || ev->type == SDL_MOUSEBUTTONUP || ev->type == SDL_MOUSEWHEEL;
+}

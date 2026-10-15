@@ -1,0 +1,61 @@
+/*
+ * bindings.h -- the controls in play: for each action, two keys or mouse
+ * buttons and a controller button (src/bindings.c). The menus keep their own
+ * fixed controls; the Controls page (src/pause_tab.c) changes these.
+ */
+#ifndef NGB_BINDINGS_H
+#define NGB_BINDINGS_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+enum {
+    A_ATTACK, A_SPECIAL, A_JUMP, A_PROJECTILE, A_NINPO, A_WINDRUN, A_GUARD, A_CAMERA,
+    A_MAP, A_KARMA, A_PAUSE, A_BACK, A_LSTICK, A_RSTICK,
+    A_MOVE_UP, A_MOVE_DOWN, A_MOVE_LEFT, A_MOVE_RIGHT,
+    A_CAM_UP, A_CAM_DOWN, A_CAM_LEFT, A_CAM_RIGHT,
+    A_DPAD_UP, A_DPAD_DOWN, A_DPAD_LEFT, A_DPAD_RIGHT,
+    A_COUNT
+};
+
+/* An input: 0 none; a key (its SDL scancode, 1-511); a mouse button
+ * (BIND_MOUSE | 1 left, 2 middle, 3 right, 4 and 5 the side ones); a
+ * controller input (BIND_PAD | one of the P_ below). */
+#define BIND_MOUSE 0x1000
+#define BIND_PAD   0x2000
+enum { P_A, P_B, P_X, P_Y, P_BLACK, P_WHITE, P_LT, P_RT, P_START, P_BACK, P_LS, P_RS,
+       P_DU, P_DD, P_DL, P_DR, P_COUNT };
+
+#define BIND_KEYS 2              /* keyboard and mouse slots an action has */
+
+const char *ngb_bind_name(int action);        /* "Attack" */
+const char *ngb_bind_help(int action);        /* a line about it */
+int ngb_bind_get(int action, int slot);       /* slots 0-1 the keys, 2 the controller */
+int ngb_bind_pad_fixed(int action);           /* the sticks: not the controller's to change */
+/* Sets a slot: a key taken from another action leaves it; a controller button
+ * taken from another action swaps with it. Saved at once. */
+void ngb_bind_set(int action, int slot, int input);
+void ngb_bind_defaults(void);
+void ngb_bind_load(void);
+/* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a
+ * short one for a keycap (1-3 characters; "" for a mouse button). */
+void ngb_bind_input_name(int input, char *out, int n);
+void ngb_bind_input_short(int input, char *out, int n);
+/* The keyboard or mouse input shown for the pad's button b (XBOX_BUTTON_*)
+ * in play's prompts; 0 none. */
+int ngb_bind_prompt(int analog_button);
+unsigned ngb_bind_generation(void);           /* changes when the bindings do */
+
+/* Waiting for an input for a slot: the next key or mouse button (slots 0-1,
+ * from the window's events) or controller button (slot 2, polled). */
+void ngb_bind_capture_begin(int action, int slot);
+void ngb_bind_capture_cancel(void);
+/* Each frame while capturing: 1 still waiting, 0 done (set or cancelled). */
+int ngb_bind_capture_tick(void);
+int ngb_bind_capturing(void);
+
+#ifdef __cplusplus
+}
+#endif
+#endif

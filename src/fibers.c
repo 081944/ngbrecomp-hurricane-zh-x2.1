@@ -27,8 +27,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <pthread.h>
+#ifdef _WIN32
+#include <windows.h>   /* the host contexts are Windows fibers */
+#else
+#include <sys/mman.h>
+#endif
 
 #include "recomp/gen/recomp_types.h"
 
@@ -41,7 +45,7 @@ extern void sub_0032A1AF(void);   /* XAPI fiber start routine (lifted) */
 
 typedef struct HostFiber {
     uint32_t guest;               /* fiber record VA; 0 = free slot */
-    void *host_sp;                /* saved host stack pointer */
+    void *host_sp;                /* saved host stack pointer (Windows: the fiber) */
     void *stack;                  /* host stack, NULL for a thread's own */
     int started;
     uint32_t ebx, esi, edi, seh_ebp, esp, fs0;
@@ -50,6 +54,7 @@ typedef struct HostFiber {
 static HostFiber s_fibers[MAX_FIBERS];
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 
+#ifndef _WIN32
 /* x86-64 SysV: save the callee-saved registers and the stack pointer, load
  * the other context's. A context that has never run starts in
  * fiber_host_entry via the return address planted below its stack top. */
@@ -81,6 +86,7 @@ __asm__(
     "  ret\n"
     ".size ngb_ctx_switch, .-ngb_ctx_switch\n");
 void ngb_ctx_switch(void **save_sp, void *load_sp);
+#endif
 
 static __thread HostFiber *t_running;   /* the fiber this host thread runs */
 
@@ -118,6 +124,39 @@ static void fiber_host_entry(void)
     abort();
 }
 
+#ifdef _WIN32
+/* Windows: each fiber's host context is a Windows fiber (they keep everything the x64 ABI wants
+ * kept, the TEB's stack bounds among it); the thread's own context, the fiber it was made into. */
+static void WINAPI fiber_win_entry(void *arg)
+{
+    (void)arg;
+    fiber_host_entry();
+}
+
+static void fiber_prepare(HostFiber *f)
+{
+    f->host_sp = CreateFiber(HOST_FIBER_STACK, fiber_win_entry, f);
+    f->stack = f->host_sp;
+    if (!f->host_sp) {
+        fprintf(stderr, "[FIBER] no host fiber for fiber 0x%08X\n", f->guest);
+        abort();
+    }
+}
+
+static void fiber_reset(HostFiber *f)
+{
+    DeleteFiber(f->host_sp);
+    f->stack = f->host_sp = NULL;
+    fiber_prepare(f);
+}
+
+static void ngb_ctx_switch(void **save_sp, void *load_sp)
+{
+    if (!*save_sp)   /* the running thread's own context, made a fiber the first time */
+        *save_sp = IsThreadAFiber() ? GetCurrentFiber() : ConvertThreadToFiber(NULL);
+    SwitchToFiber(load_sp);
+}
+#else
 /* Give a never-run fiber a host stack whose first switch lands in
  * fiber_host_entry. */
 static void fiber_prepare(HostFiber *f)
@@ -141,13 +180,6 @@ static void fiber_prepare(HostFiber *f)
     f->host_sp = sp;
 }
 
-/* What a switched-out fiber's record holds in its saved-esp field. XAPI's
- * own switch kept the guest esp there; ours keeps it in HostFiber, so the
- * field only has to tell "ours, still alive" from "CreateFiber wrote this". */
-static uint32_t fiber_stamp(const HostFiber *f)
-{
-    return 0xF1BE0000u | (uint32_t)(f - s_fibers);
-}
 
 /* Point an existing host stack back at fiber_host_entry. */
 static void fiber_reset(HostFiber *f)
@@ -156,6 +188,15 @@ static void fiber_reset(HostFiber *f)
     f->stack = NULL;
     munmap(stack, HOST_FIBER_STACK);
     fiber_prepare(f);
+}
+#endif
+
+/* What a switched-out fiber's record holds in its saved-esp field. XAPI's
+ * own switch kept the guest esp there; ours keeps it in HostFiber, so the
+ * field only has to tell "ours, still alive" from "CreateFiber wrote this". */
+static uint32_t fiber_stamp(const HostFiber *f)
+{
+    return 0xF1BE0000u | (uint32_t)(f - s_fibers);
 }
 
 /* SwitchToFiber(LPVOID lpFiber), stdcall. */
