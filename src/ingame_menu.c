@@ -158,7 +158,7 @@ void ngb_pc_set_setting(int which, int value)
         ngb_settings_save(&s_running);
 }
 
-/* Opens the F1 menu at the next frame (the main menu's "RECOMP SETTINGS"). */
+/* Opens the recomp settings menu at the next frame (the main menu's "RECOMP SETTINGS"). */
 void ngb_menu_open(void)
 {
     s_want = 1;
@@ -247,8 +247,9 @@ static int tab_pop(void)
 static uint32_t pad_bits(void);
 static uint32_t s_tab_prev, s_tab_rbit;
 
-/* The F1 menu (and Back+Start) is off: the settings are in the game's own
- * menus. NGB_F1_MENU=1 brings it back. */
+/* F1 (and Back+Start) no longer open the settings menu: it is reached from the
+ * game's own menus (RECOMP SETTINGS, the pause menu's Settings tab).
+ * NGB_F1_MENU=1 brings the keys back. */
 static int f1_menu(void)
 {
     static int on = -1;

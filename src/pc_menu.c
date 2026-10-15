@@ -66,7 +66,7 @@ static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OU
 /* Video Settings with the console's widescreen option (page 4) and without
  * (page 6) -- their rows were Screen Adjustment, Movie Display Ratio,
  * Default Settings, Exit and Screen Adjustment, Exit -- and PC Settings. */
-/* (without the PC Settings row: the PC settings are in the F1 menu only) */
+/* (without the PC Settings row: the PC settings are in RECOMP SETTINGS only) */
 static const uint8_t s_rows_ws[] = { ROW_SCREEN, ROW_MOVIE, ROW_DEFAULT, ROW_EXIT };
 static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
 static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_BACK };

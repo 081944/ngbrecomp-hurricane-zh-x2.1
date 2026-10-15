@@ -1416,7 +1416,7 @@ static uint32_t sprite_def(uint32_t id)
     return 0;
 }
 
-/* For src/text_hd.c. */
+/* For src/menu_font.c. */
 uint32_t *ngb_guest_texture(uint32_t hdr, uint32_t pal_hdr, int *w, int *h)
 {
     return read_texture(hdr, pal_hdr, w, h);
