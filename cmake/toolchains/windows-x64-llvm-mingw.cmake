@@ -1,5 +1,5 @@
 # Cross-compile for Windows x64 from Linux with llvm-mingw (clang, lld, libc++, UCRT) against
-# MSYS2's CLANG64 packages (SDL2, glib, glslang, SPIRV-Tools, OpenSSL) unpacked into a sysroot.
+# MSYS2's CLANG64 packages (SDL2, glib, glslang, SPIRV-Tools) unpacked into a sysroot.
 # packaging/windows/build.sh fetches both into build/windows-deps.
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)

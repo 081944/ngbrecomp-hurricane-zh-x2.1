@@ -106,7 +106,7 @@ folder (zipped), it shows exactly what went wrong.
 
 The build needs the game's code, so it starts from your own disc image.
 
-Requirements: clang, CMake, Ninja, Python 3, git, SDL2, GLib, glslang, SPIRV-Tools and OpenSSL (Qt 6
+Requirements: clang, CMake, Ninja, Python 3, git, SDL2, GLib, glslang and SPIRV-Tools (Qt 6
 Widgets for the setup window, optional). The recompiler and Xbox runtime,
 [xboxrecomp](https://github.com/sp00nznet/xboxrecomp) with this port's changes, is included in
 `xboxrecomp/`.

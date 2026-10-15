@@ -10,7 +10,7 @@
 #
 # The recompiled code must already be generated (tools/pipeline.sh). The
 # AppImage holds the program and the libraries a system may lack (SDL2,
-# glib, libepoxy; libstdc++ and OpenSSL linked in). It holds no game data:
+# glib, libepoxy; libstdc++ linked in). It holds no game data:
 # the first launch asks for the player's disc image and installs the files
 # into ~/.local/share/NinjaGaidenBlack/game (see src/install.c).
 set -euo pipefail
@@ -43,7 +43,6 @@ cmake -S /work/ngb-recomp -B /out/build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc -fuse-ld=lld" \
-    -DOPENSSL_USE_STATIC_LIBS=TRUE \
     -DCMAKE_PREFIX_PATH=/usr/local >/out/configure.log
 ninja -C /out/build -j'"$jobs"' >/out/build.log
 

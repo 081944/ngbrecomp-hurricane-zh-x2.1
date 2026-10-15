@@ -45,9 +45,9 @@ if(WIN32)
     # include path that "platform/xbox_winnt.h" resolves against.
     target_link_libraries(xbox_kernel PUBLIC platform kernel32 bcrypt)
 else()
-    # Linux: platform layer (POSIX host primitives) + OpenSSL for crypto.
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(xbox_kernel PUBLIC platform OpenSSL::Crypto)
+    # Linux: platform layer (POSIX host primitives). The kernel's crypto
+    # (kernel_crypto.c) is portable code of its own, so no OpenSSL.
+    target_link_libraries(xbox_kernel PUBLIC platform)
 endif()
 
 if(MSVC)

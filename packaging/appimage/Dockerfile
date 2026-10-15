@@ -27,10 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/llvm.sh
 
 # The runtime's own: glib (the xemu GPU model's QEMU shim), libepoxy (the
-# toolkit's OpenGL D3D backend, linked though unused here), OpenSSL (Xbox
-# crypto, linked statically).
+# toolkit's OpenGL D3D backend, linked though unused here).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libglib2.0-dev libepoxy-dev libssl-dev \
+        libglib2.0-dev libepoxy-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # SDL2, newer than 22.04's 2.0.20 (Steam Deck and current pads, PipeWire),
