@@ -104,6 +104,9 @@ static LONG CALLBACK nv2a_veh(PEXCEPTION_POINTERS ep)
     uintptr_t a;
     uint32_t off;
 
+#if defined(_WIN32) && XBOX_HAS_VCPU
+    vcpu_win_unredirect(ep);   /* the faulting instruction's context, not the preemption trampoline's */
+#endif
     if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
         return EXCEPTION_CONTINUE_SEARCH;
     a = ep->ExceptionRecord->ExceptionInformation[1];

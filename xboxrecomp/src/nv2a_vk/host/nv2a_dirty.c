@@ -19,6 +19,7 @@
  * downloads of what it drew, and re-uploading them would be wasted work at
  * best. NV2A_DIRTY_TRACK=0 restores the old always-dirty answers.
  */
+#include "platform/vcpu.h"   /* vcpu_win_unredirect */
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -163,6 +164,9 @@ static LONG CALLBACK dirty_veh(PEXCEPTION_POINTERS ep)
     unsigned p;
     const uint8_t *a;
 
+#if defined(_WIN32) && XBOX_HAS_VCPU
+    vcpu_win_unredirect(ep);   /* the faulting instruction's context, not the preemption trampoline's */
+#endif
     if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
         return EXCEPTION_CONTINUE_SEARCH;
     a = (const uint8_t *)ep->ExceptionRecord->ExceptionInformation[1];

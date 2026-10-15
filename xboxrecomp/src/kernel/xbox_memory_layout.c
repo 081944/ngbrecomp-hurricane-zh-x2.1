@@ -14,6 +14,7 @@
 
 #include "xbox_memory_layout.h"
 #include "kernel.h"
+#include "platform/vcpu.h"   /* vcpu_win_unredirect */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -443,6 +444,9 @@ static LONG CALLBACK ac97_write_veh(PEXCEPTION_POINTERS ep)
     DWORD code = ep->ExceptionRecord->ExceptionCode;
     DWORD old;
 
+#if defined(_WIN32) && XBOX_HAS_VCPU
+    vcpu_win_unredirect(ep);   /* the faulting instruction's context, not the preemption trampoline's */
+#endif
     if (!g_ac97_page)
         return EXCEPTION_CONTINUE_SEARCH;
 
@@ -1499,6 +1503,9 @@ static LONG CALLBACK watch_veh(PEXCEPTION_POINTERS ep)
     DWORD code = ep->ExceptionRecord->ExceptionCode;
     DWORD old;
 
+#if defined(_WIN32) && XBOX_HAS_VCPU
+    vcpu_win_unredirect(ep);   /* the faulting instruction's context, not the preemption trampoline's */
+#endif
     if (!g_watch_page)
         return EXCEPTION_CONTINUE_SEARCH;
 

@@ -84,6 +84,11 @@ unsigned long vcpu_win_suspend_thread(void *thread);
 unsigned long vcpu_win_resume_thread(void *thread);
 /* The record of the guest thread with this thread id, or NULL. */
 vcpu_thread *vcpu_win_find(unsigned long tid);
+/* An exception handler's first step (its EXCEPTION_POINTERS): a thread suspended while Windows was
+ * delivering it an exception may have been sent through the preemption trampoline, so the context
+ * the handler sees is the trampoline's, not the faulting instruction's. Undone here (the preemption
+ * is tried again later); 1 when it was. */
+int vcpu_win_unredirect(void *exception_pointers);
 #endif
 
 #ifdef __cplusplus

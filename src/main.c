@@ -326,6 +326,9 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
     uint32_t xbox_va;
     int is_write;
 
+#if defined(_WIN32) && XBOX_HAS_VCPU
+    vcpu_win_unredirect(ep);   /* the faulting instruction's context, not the preemption trampoline's */
+#endif
     if (s_watch_len && (ep->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP ||
                         ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)) {
         uintptr_t fa = ep->ExceptionRecord->ExceptionInformation[1];

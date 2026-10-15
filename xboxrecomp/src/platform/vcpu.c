@@ -581,6 +581,21 @@ static int redirect(vcpu_thread *t)
     return 1;
 }
 
+int vcpu_win_unredirect(void *exception_pointers)
+{
+    EXCEPTION_POINTERS *ep = exception_pointers;
+    CONTEXT *c = ep->ContextRecord;
+    DWORD64 at = (DWORD64)ep->ExceptionRecord->ExceptionAddress;
+
+    if (c->Rip != (DWORD64)vcpu_win_trampoline || at == c->Rip || *(DWORD64 *)c->Rsp != at)
+        return 0;
+    c->Rip = at;
+    c->Rsp += 8;
+    if (t_self)
+        t_self->redirected = 0;
+    return 1;
+}
+
 /* Caller holds s_lock. */
 static void win_preempt(vcpu_thread *h)
 {
