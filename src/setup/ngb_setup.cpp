@@ -53,7 +53,7 @@ public:
 
         /* Page 0: choosing */
         auto *intro = new QLabel(QString(
-            "This program contains none of the game. To play, choose your own copy "
+            "The game itself is not included. To play, choose your own copy "
             "of the Xbox game (the retail USA release):"
             "<ul style='margin-left:-20px'>"
             "<li>a disc image: <i>.iso</i>, including a full Redump dump, or the "

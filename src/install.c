@@ -451,7 +451,7 @@ static int win_welcome(const char *installed)
         snprintf(path, sizeof path, "%%LOCALAPPDATA%%%s", rest);
     }
     snprintf(text, sizeof text,
-             "This program contains none of the game. To play, choose your own copy of the "
+             "The game itself is not included. To play, choose your own copy of the "
              "Xbox game (the retail USA release):\n\n"
              "\u2022  a disc image: .iso, including a full Redump dump, or the .7z / .zip it came in\n"
              "\u2022  or a folder of extracted files, with default.xbe\n\n"

@@ -68,7 +68,7 @@ cp "$repo/LICENSE" "$repo/THIRD_PARTY.md" "$pkg/licenses/"
 cat > "$pkg/README.txt" <<'TXT'
 Ninja Gaiden Black - static recompilation for Windows (Vulkan)
 
-This program contains none of the game. Start NinjaGaidenBlack.exe and choose your own copy of
+The game itself is not included. Start NinjaGaidenBlack.exe and choose your own copy of
 the retail USA Xbox release: a disc image (.iso, a full Redump dump, or the .7z/.zip it came in)
 or a folder of extracted files with default.xbe. A disc image is installed once (about 6 GB) into
 %LOCALAPPDATA%\NinjaGaidenBlack\game; saves are kept there too, settings in
