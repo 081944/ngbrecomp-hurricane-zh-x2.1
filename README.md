@@ -96,7 +96,6 @@ Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 
 - At 21:9, objects at the far left and right of the screen can appear a moment late (the game
   decides what to draw for a narrower view).
-- At 21:9, the chapter title card shown right after a chapter is cleared can be misaligned.
 - The Windows build has been tested under Proton; reports from real Windows machines are welcome.
 
 When reporting a graphics glitch, pressing **F7** while it is on screen records the next few seconds of
