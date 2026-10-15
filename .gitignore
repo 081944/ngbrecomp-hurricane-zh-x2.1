@@ -61,3 +61,6 @@ sprite_*.ppm
 ngb_positions.txt
 cover.txt
 __pycache__/
+
+# appimagetool, downloaded by packaging/appimage/build.sh
+packaging/appimage/.cache/
