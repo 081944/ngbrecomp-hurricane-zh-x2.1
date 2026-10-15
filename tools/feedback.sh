@@ -7,7 +7,7 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")/.." && pwd)
-toolkit=${XBOXRECOMP_DIR:-$here/../xboxrecomp}
+toolkit=${XBOXRECOMP_DIR:-$here/xboxrecomp}
 secs=${1:-60}
 runs=$here/runs
 mkdir -p "$runs"

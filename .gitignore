@@ -55,3 +55,9 @@ recomp_log.txt
 *.afs
 runs/
 xbox_kernel.log
+
+# Debugging output
+sprite_*.ppm
+ngb_positions.txt
+cover.txt
+__pycache__/

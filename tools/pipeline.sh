@@ -4,13 +4,13 @@
 #   tools/pipeline.sh [path/to/disc.iso]
 #
 # The disc (or the .7z it came in) is only read; the extracted files go to
-# game_files/ and the toolkit's analysis output stays in the xboxrecomp clone,
+# game_files/ and the toolkit's analysis output stays in xboxrecomp/ (ignored),
 # where its tools expect it. Needs python3 with capstone: the first run makes
-# a venv in the toolkit clone for that.
+# a venv in xboxrecomp/ for that.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")/.." && pwd)
-toolkit=${XBOXRECOMP_DIR:-$here/../xboxrecomp}
+toolkit=${XBOXRECOMP_DIR:-$here/xboxrecomp}
 toolkit=$(cd "$toolkit" && pwd)
 iso=${1:-$here/disc/ngb.xiso}
 files=$here/game_files

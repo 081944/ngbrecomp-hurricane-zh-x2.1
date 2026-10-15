@@ -1,0 +1,56 @@
+# Third-party components
+
+This project's own code is under the GNU General Public License, version 2 ([LICENSE](LICENSE)); the
+`xboxrecomp/` directory keeps its MIT license. The project is built from, and its release packages
+contain, the following parts, each under its own license.
+
+## In this repository
+
+| Component | Where | License |
+|---|---|---|
+| TGP482's Xbox XBE Recomp SDK / SCDA-XBERecomp renderer code (used with the author's permission) | `src/d3d/gpu`, and followed by `src/d3d/hle.cpp`, `src/d3d/vk/backend.cpp` | MIT — see `src/d3d/NOTICE` |
+| EB Garamond | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-EBGaramond.txt`) |
+| Liberation Serif | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-Liberation.txt`) |
+| Xelu's Free Controller & Key Prompts | `assets/prompts/keys` | CC0 (`assets/prompts/License-Xelu.txt`) |
+
+## The runtime: xboxrecomp
+
+[xboxrecomp](https://github.com/sp00nznet/xboxrecomp) (the recompiler and the Xbox runtime this game
+runs on, in `xboxrecomp/` with this port's changes) is MIT licensed (`xboxrecomp/LICENSE`); its
+`NOTICE` lists what it contains or fetches under other licenses, among them:
+
+| Component | License |
+|---|---|
+| xemu's NV2A GPU model and Vulkan renderer, MCPX APU (`src/nv2a_vk`, `src/apu`) | LGPL-2.1-or-later |
+| volk, Vulkan Memory Allocator, Vulkan-Headers | MIT / Apache-2.0 |
+| SPIRV-Reflect | Apache-2.0 |
+| stb (stb_truetype, stb_image) | MIT / public domain |
+| xxHash | BSD-2-Clause |
+
+## Libraries in the release packages
+
+| Library | License | Package |
+|---|---|---|
+| SDL2 | zlib | both |
+| GLib, libintl, libiconv | LGPL-2.1-or-later | both (Windows: libintl, libiconv) |
+| PCRE2 | BSD-3-Clause | both |
+| glslang | BSD-3-Clause and others (see its LICENSE) | both |
+| SPIRV-Tools | Apache-2.0 | both |
+| OpenSSL | Apache-2.0 | both |
+| libepoxy | MIT | Linux |
+| Qt 6 (the setup window) | LGPL-3.0 | Linux |
+| LLVM libc++, libunwind | Apache-2.0 with LLVM exception | Windows |
+| mingw-w64 winpthreads | MIT and ZPL-2.1 | Windows |
+
+The LGPL libraries are shared libraries inside the packages and can be replaced by other builds of the
+same version.
+
+## The game
+
+*Ninja Gaiden Black* © Koei Tecmo / Team Ninja. None of the game's data (graphics, sound, movies,
+text) is in this repository, and its recompiled code is generated from the player's own copy when
+building (`tools/pipeline.sh`); the game's data is installed from it on the first start. The
+repository does include C translations of some of the game's functions, taken from that generated code
+and modified for this port (the menus, the mouse, the cheats: `src/main_menu.c`, `src/pause_tab.c`,
+`src/menu_mouse.c` and others, listed in `src/manual_functions.json`), and the Direct3D functions of
+the Xbox SDK the game was built with (`src/d3d/d3d_orig.c`), behind the renderer's hooks.

@@ -1,82 +1,144 @@
-# Ninja Gaiden Black — static recompilation
+![Ninja Gaiden Black Recompiled](docs/images/banner.jpg)
 
-A native Linux (and, later, Windows) build of *Ninja Gaiden Black* (Xbox, NTSC-U,
-title ID `5443000D`), made with [xboxrecomp](https://github.com/sp00nznet/xboxrecomp).
-The game's x86 code is lifted to C and compiled for the host. Nothing is emulated
-at the CPU level. You need your own disc image; no game data is in this repo.
+# Ninja Gaiden Black Recompiled
 
-The toolkit changes this project needs live on the `linux-vulkan` branch of
-`../xboxrecomp`.
+**A PC port of Ninja Gaiden Black by static recompilation.**
 
-## Status
+A native Linux and Windows version of *Ninja Gaiden Black* (Xbox, 2005), made by statically
+recompiling the game's own code to run directly on a PC — not an emulator. It draws with Vulkan, plays
+at a steady 60 fps on modest hardware (including the Steam Deck), and adds PC options: higher
+resolutions, widescreen and ultrawide, keyboard and mouse, rebindable controls and more.
 
-| Stage | State |
-|---|---|
-| Disc extraction, XBE parse, disassembly (11.5k functions), lift to C (2.2M lines) | done, `tools/pipeline.sh` |
-| Native Linux build (clang, ~10 s at `-j16`, <400 MB per chunk) | done |
-| XAPI start-up: hard-disk partitions, utility drive, CRT, threads | boots |
-| Direct3D init: GPU interrupt, vblank, pushbuffer fence | passes (fence is mirrored, not executed) |
-| DirectSound init: APU registers, DSP effects download | passes (DSP mailbox acknowledged, not executed) |
-| File table: opens every `.afs` on the disc | done |
-| Main loop | **running** (~24 M indirect calls/s), submitting GPU work every frame |
-| GPU (NV2A pushbuffer → Vulkan) | **not started**: frames are black |
-| Audio output, controller input, saves | not started |
-| Windows build | not started |
+**You need your own copy of the game.** This project contains none of the game's data (graphics,
+sound, movies, text): on first start it asks for your disc image and installs the game from it. It is made for the **retail USA
+release** (NTSC-U, title ID `5443000D`) and checks for it.
 
-## Build and run (Linux)
+## Features
+
+- Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
+- Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
+- 16:9, 16:10 and 21:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
+  corners, menus keep the game's own 16:9 look
+- Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
+  controller, mouse support in the menus
+- Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
+- Smooth frame pacing and low input latency; shaders prepared in the background (no first-time
+  stutter)
+
+## Getting started
+
+### Linux and Steam Deck
+
+1. Download `NinjaGaidenBlack-x86_64.AppImage` from the releases page and make it executable
+   (`chmod +x`, or Properties → Allow executing).
+2. Run it. On the first start a window asks for your copy of the game: a disc image (`.iso`, a full
+   Redump dump, or the `.7z`/`.zip` it came in) or a folder of extracted files with `default.xbe`.
+   The game is installed once (about 6 GB).
+3. On a Steam Deck, add the AppImage to Steam (Add a Non-Steam Game) to play it in Game Mode, and
+   choose 16:10 in the settings.
+
+Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
+
+### Windows
+
+1. Download `NinjaGaidenBlack-windows-x64.zip` and extract it anywhere.
+2. Run `NinjaGaidenBlack.exe` and choose your disc image as above.
+
+Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
+
+### Where things are kept
+
+| | Linux | Windows |
+|---|---|---|
+| Installed game, saves | `~/.local/share/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack` |
+| Settings (`settings.ini`, `controls.ini`) | `~/.config/NinjaGaidenBlack` | `%APPDATA%\NinjaGaidenBlack` |
+| Shader cache | `~/.cache/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack\shaders` |
+| Log | the terminal | `log.txt` beside the saves (or the console it was started from) |
+
+## Settings
+
+Everything is in the game's own menus: **RECOMP SETTINGS** on the main menu, and the **Settings** tab
+of the pause menu. Changes apply at once and are saved.
+
+- **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
+  anisotropic), anti-aliasing (MSAA), shadow resolution
+- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
+  borderless, V-Sync (Off, On, Adaptive), frame-rate counter
+- **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
+- **Cheats** (for the session only): infinite health, ninpo, essence; golden scarabs
+- **Controls**: rebind every action (two keys or mouse buttons and a controller button each)
+
+The game's own Options (sound, movie aspect, controller vibration and so on) are where they always
+were.
+
+## Controls
+
+A controller works as on the Xbox. The keyboard and mouse can be used at any time — the game follows
+whichever was touched last, and its button prompts change to match.
+
+| Action | Keys | | Action | Keys |
+|---|---|---|---|---|
+| Move | W A S D | | Camera | mouse (numpad 8 4 5 6) |
+| Attack | left mouse, J | | Special attack | right mouse, K |
+| Jump | Space | | Projectile | E |
+| Ninpo | F | | Wind run | C |
+| Guard / roll | Shift | | Center camera | Q, middle mouse |
+| Map | Tab | | Karma window | R |
+| Pause | Esc, Enter | | First-person view | Z |
+
+In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
+Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
+
+Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
+
+## Known issues
+
+- At 21:9, objects at the far left and right of the screen can appear a moment late (the game
+  decides what to draw for a narrower view).
+- At 21:9, the chapter title card shown right after a chapter is cleared can be misaligned.
+- The Windows build has been tested under Proton; reports from real Windows machines are welcome.
+
+When reporting a graphics glitch, pressing **F7** while it is on screen records the next few seconds of
+drawing to `~/ngb-trace-<n>` (Linux) — attach that folder, it shows exactly what went wrong.
+
+## Building from source
+
+The build needs the game's code, so it starts from your own disc image.
+
+Requirements: clang, CMake, Ninja, Python 3, git, SDL2, GLib, glslang, SPIRV-Tools and OpenSSL (Qt 6
+Widgets for the setup window, optional). The recompiler and Xbox runtime,
+[xboxrecomp](https://github.com/sp00nznet/xboxrecomp) with this port's changes, is included in
+`xboxrecomp/`.
 
 ```sh
-# Once: extract your disc and generate the C (about 2 minutes)
-mkdir -p disc && cp /path/to/ngb.xiso disc/ngb.xiso      # or pass the path
-tools/pipeline.sh disc/ngb.xiso
-
-cmake -S . -B build/linux -G Ninja -DCMAKE_C_COMPILER=clang
+xboxrecomp/third_party/fetch.sh                # once: Vulkan headers, volk, VMA and the like
+tools/pipeline.sh /path/to/your/ngb.iso        # extract, disassemble and lift to C (a few minutes)
+cmake -S . -B build/linux -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
 ninja -C build/linux
-build/linux/NinjaGaidenBlack game_files
+build/linux/NinjaGaidenBlack
 ```
 
-The game directory is the first argument, then `NGB_GAME_DIR`, then `game/` next to
-the executable. Hard-disk images and saves go to `~/.local/share/NinjaGaidenBlack`
-(sparse files; `NGB_SAVE_DIR` overrides).
+Packages: `packaging/appimage/build.sh` (in a Docker container, for an AppImage that runs on older
+systems) and `packaging/windows/build.sh` (cross-compiled from Linux with llvm-mingw).
 
-A settings screen comes up first (keyboard, mouse or controller): aspect ratio (4:3,
-16:9, 16:10 for the Steam Deck, or stretch), window size, windowed/fullscreen, render
-resolution (1x-4x), V-Sync, skipping the intro movies (the boot movie and the New Game
-prologue, which the game itself will not let you skip; story movies are untouched), and
-whether to show the screen at all. They are saved to `~/.config/NinjaGaidenBlack/settings.ini`; `--settings` brings
-the screen back if it is turned off. In game, F11 or Alt+Enter toggles fullscreen.
+How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNICAL.md) and
+[docs/renderer.md](docs/renderer.md). For contributors and coding agents: [AGENTS.md](AGENTS.md).
 
-The environment still overrides the file, for testing: `NGB_WIDESCREEN=0|1`,
-`NGB_FULLSCREEN=0|1`, `NGB_VSYNC=0|1`, `NV2A_SCALE=n`, `NGB_NO_SETTINGS=1` (skip the
-screen), `NGB_AUDIO=0` (mute).
+## Credits
 
-## Bring-up tools
+- [xboxrecomp](https://github.com/sp00nznet/xboxrecomp) by sp00nznet: the recompiler and Xbox
+  runtime this is built on
+- [xemu](https://xemu.app): the NV2A GPU model and the APU's voice processor
+- TGP482's SCDA-XBERecomp / Xbox-XBERecomp: the renderer's shader, vertex and texture code (used
+  with permission)
+- Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
+- Keyboard and mouse prompts: Xelu's Free Controller & Key Prompts (CC0)
+- Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)
 
-- `kill -USR1 <pid>` prints the guest thread's host backtrace (every lifted function
-  is a named `sub_XXXXXXXX`) and its guest registers. It needs no ptrace, so use it
-  instead of gdb: gdb swallows the TF single-steps that the register traps depend on.
-- `RECOMP_WATCHDOG_SECS=N` dumps guest state and exits after N seconds.
-- `tools/feedback.sh [secs]` runs an instrumented build, records every
-  indirect-branch target it reaches, reseeds function detection and regenerates.
-  Run it after the game reaches new code.
-- `XBOX_LOG_LEVEL=4` and `RECOMP_KERNEL_LOG_BUDGET=100000` give a full kernel and
-  file trace.
+*Ninja Gaiden* is a trademark of Koei Tecmo. This project is not affiliated with or endorsed by Koei
+Tecmo or Team Ninja.
 
-The defaults in `bringup_defaults()` (`src/main.c`) stand in for hardware that isn't
-modelled yet. Each one should disappear when the real thing exists.
+## License
 
-## Roadmap
-
-1. **NV2A renderer on Vulkan.** The game's statically linked D3D (D3D8LTCG) writes
-   NV2A pushbuffers itself, so the renderer has to execute those, not D3D calls.
-   The plan is to port xemu's PGRAPH Vulkan backend (`hw/xbox/nv2a/pgraph/vk`,
-   LGPL, about 20k lines) behind a small QEMU-shim, fed by a PFIFO thread that
-   follows `DMA_PUT`. That also makes the fence mirror honest. One backend serves
-   Linux and Windows.
-2. **Display and input:** SDL window/swapchain, gamepad → the emulated USB pad
-   (OHCI is already modelled).
-3. **Audio:** the APU voice processor exists; it needs a host output (SDL) and a GP
-   DSP for effects. Then the DSP ack goes away.
-4. **Steam Deck performance:** pipeline cache (no shader-compile stutter), render
-   resolution scaling, PGO and LTO for the lifted code, frame pacing at 60/30 Hz.
-5. **Windows build:** cross-compiled with clang + xwin, run under Proton for testing.
+This project's code is under the GNU General Public License, version 2 ([LICENSE](LICENSE)). The
+parts it is built from keep their own licenses: see [THIRD_PARTY.md](THIRD_PARTY.md).
