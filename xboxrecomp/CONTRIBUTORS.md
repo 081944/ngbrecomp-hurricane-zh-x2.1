@@ -710,6 +710,24 @@ nothing about it.
   frame counter counted the wrong method, `WAIT_FOR_IDLE` was swallowed as a
   flip, and the real flip methods fell through to the unhandled path.
 
+### gamboozino — [@gamboozino](https://github.com/gamboozino)
+The `linux-vulkan` work behind [Ninja Gaiden Black Recompiled](https://github.com/gamboozino/ngbrecomp),
+the first title taken through the pipeline to a native, playable Linux and Windows release.
+- **A POSIX host that runs a real title** — the 4 GB guest window reserved up front, vectored
+  exception handling over `sigaction`, real thread suspension, and a single virtual CPU that
+  schedules the guest's threads the way the console's one core did.
+- **The same scheduler on Windows** — preemption by `SuspendThread` and a context redirect into a
+  trampoline, the guest window reserved with placeholders, and per-thread IRQL under clang-mingw
+  (whose `__declspec(thread)` silently became a global shared by every thread).
+- **xemu's NV2A model and Vulkan renderer in the runtime** — dirty-page tracking for GPU memory,
+  render and shadow-map scale, SPIR-V and pipeline caches prepared ahead, texture dumping and
+  replacement, and frame pacing with mailbox, FIFO and adaptive V-Sync.
+- **The APU audible and steady** — voices resampled to 48 kHz, a stereo downmix with reverb, and
+  an SDL2 sink paced by the output device.
+- **Lifter, kernel and tooling fixes** found by playing the game: flag joins across mixed-width
+  and SSE compares, `cvtss2si` rounding, switch tables, interrupt lines, thread objects and events,
+  and differential testing against Unicorn (`difftest`, `insn_fuzz`).
+
 ---
 
 ## Issue reports and testing
