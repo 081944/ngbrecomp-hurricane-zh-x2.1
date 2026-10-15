@@ -2,7 +2,7 @@
  * port.h -- the few host calls that differ between Linux and Windows, for the hand-written code.
  *
  * ngb_mkdir: make a directory (0 on success). ngb_exe_path: the running program's path, with '/'
- * separators (its length, or -1). ngb_home: the user's home ($HOME; on Windows %USERPROFILE%).
+ * separators (its length, or -1). ngb_home: the user's home ($HOME; on Windows %USERPROFILE%, else $HOME).
  * ngb_mem_write/ngb_mem_read: this process's memory, whatever its protection; 0 when the address is
  * not mapped (the game's read-only constants, before its image is). On Windows also setenv and
  * unsetenv, which its C runtime does not have.
@@ -35,8 +35,9 @@ static inline long ngb_exe_path(char *out, size_t n)
 
 static inline const char *ngb_home(void)
 {
-    const char *h = getenv("HOME");
-    return h && *h ? h : getenv("USERPROFILE");
+    /* %USERPROFILE% first: a HOME there can be a Unix path (Proton passes Linux's through) */
+    const char *h = getenv("USERPROFILE");
+    return h && *h ? h : getenv("HOME");
 }
 
 static inline int ngb_mem_write(void *addr, const void *src, size_t len)

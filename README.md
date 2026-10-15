@@ -100,7 +100,8 @@ Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 - The Windows build has been tested under Proton; reports from real Windows machines are welcome.
 
 When reporting a graphics glitch, pressing **F7** while it is on screen records the next few seconds of
-drawing to `~/ngb-trace-<n>` (Linux) — attach that folder, it shows exactly what went wrong.
+drawing to `~/ngb-trace-<n>` on Linux, or `C:\Users\<you>\ngb-trace-<n>` on Windows — attach that
+folder (zipped), it shows exactly what went wrong.
 
 ## Building from source
 
