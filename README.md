@@ -128,8 +128,9 @@ How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNIC
 ## Credits
 
 - [xboxrecomp](https://github.com/sp00nznet/xboxrecomp) by sp00nznet: the recompiler and Xbox
-  runtime this is built on
-- [xemu](https://xemu.app): the NV2A GPU model and the APU's voice processor
+  runtime this is built on (MIT)
+- [xemu](https://xemu.app): the NV2A GPU model and the APU's voice processor (the files used here are
+  LGPL-2.1-or-later; xemu as a whole is GPL-2.0)
 - TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) and
   [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp): the renderer's shader, vertex and
   texture code (MIT)
