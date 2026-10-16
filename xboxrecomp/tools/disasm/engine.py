@@ -614,6 +614,30 @@ class DisasmEngine:
         # ...through the register the load just filled.
         return jmp_ops[0].mem.base == dst.reg and jmp_ops[0].mem.index == 0
 
+    def probes_after_padding(self, addr: int) -> bool:
+        """
+        Read-only: does `addr` look like where the compiler put a function --
+        16-byte aligned, right after int3 (0xCC) padding, and not padding
+        itself?
+
+        MSVC pads between functions with int3 up to the next 16 bytes. A
+        frameless leaf (`mov ecx, [esp+4]` ... `ret`) has no prologue to
+        recognise, and when a byte table sits just before its padding the
+        linear sweep walks the table as code and runs on through the padding
+        into the function: Ninja Gaiden Black's 0x000F7980, 0x002351C0 and
+        0x002352D0 (each after `06 05 cc cc`). Their seeds were then rejected
+        as mid-instruction, the functions were never generated, and the first
+        indirect call to one -- 0x000F7980, hitting the Chapter 3 drones with
+        the bow -- ran off into wild pointers and crashed.
+        """
+        if addr & 0xF:
+            return False
+        section = self.image.get_section_at_va(addr)
+        if section is None or not section.executable:
+            return False
+        data = self.image.read_bytes_at_va(addr - 1, 2)
+        return bool(data) and len(data) == 2 and data[0] == 0xCC and data[1] != 0xCC
+
     def probes_as_prologue(self, addr: int) -> bool:
         """
         Read-only: do the bytes at `addr` start with a recognisable MSVC

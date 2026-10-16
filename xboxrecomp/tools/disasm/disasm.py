@@ -64,12 +64,15 @@ class Disassembler:
     def _trust_mid_instruction_seed(self, addr: int) -> bool:
         """A seed inside an instruction the sweep decoded: keep it anyway?
 
-        Yes when a run reached it (observed_seeds), or when it decodes as a
-        prologue, which means the sweep is the one out of phase. See the
-        seeding loop in run() for the cases behind each.
+        Yes when a run reached it (observed_seeds), when it decodes as a
+        prologue, or when it sits where the compiler puts functions (16-byte
+        aligned after int3 padding): either way the sweep is the one out of
+        phase. See the seeding loop in run() and
+        probes_after_padding for the cases behind each.
         """
         return (addr in self.observed_seeds
-                or self.engine.probes_as_prologue(addr))
+                or self.engine.probes_as_prologue(addr)
+                or self.engine.probes_after_padding(addr))
 
     def run(self) -> bool:
         """

@@ -20,17 +20,21 @@ from tools.disasm.disasm import Disassembler  # noqa: E402
 
 
 class _Engine:
-    def __init__(self, prologues):
+    def __init__(self, prologues, padded=()):
         self._prologues = set(prologues)
+        self._padded = set(padded)
 
     def probes_as_prologue(self, addr):
         return addr in self._prologues
 
+    def probes_after_padding(self, addr):
+        return addr in self._padded
 
-def _disasm(observed, prologues):
+
+def _disasm(observed, prologues, padded=()):
     d = Disassembler.__new__(Disassembler)
     d.observed_seeds = set(observed)
-    d.engine = _Engine(prologues)
+    d.engine = _Engine(prologues, padded)
     return d
 
 
@@ -43,6 +47,12 @@ class ObservedSeedTest(unittest.TestCase):
         # The HL2 RTTI case: six bytes into a mov, decodes as nothing.
         d = _disasm(observed=(), prologues=())
         self.assertFalse(d._trust_mid_instruction_seed(0x00202C2E))
+
+    def test_seed_after_int3_padding_is_trusted(self):
+        # Ninja Gaiden Black's frameless leaf at 0x000F7980 (`mov ecx,
+        # [esp+4]`), after a byte table and int3 padding the sweep ran through.
+        d = _disasm(observed=(), prologues=(), padded={0x000F7980})
+        self.assertTrue(d._trust_mid_instruction_seed(0x000F7980))
 
     def test_prologue_seed_is_trusted(self):
         d = _disasm(observed=(), prologues={0x00069538})
