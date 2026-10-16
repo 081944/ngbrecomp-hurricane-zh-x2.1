@@ -23,6 +23,8 @@ BASE = 0x00011000
 PROLOGUE = bytes.fromhex("558BEC5DC3")
 # mov eax, [ebp+8]; xor eax, eax; pop ebp; ret -- reads the caller's frame.
 FRAMELESS = bytes.fromhex("8B450833C05DC3")
+# pushfd; pushad; xor eax, eax; popad; popfd; ret -- names no ebp operand.
+PUSHAD_ONLY = bytes.fromhex("9C6033C0619DC3")
 
 # Every global config._install writes, so one test cannot leak into another.
 _CONFIG_GLOBALS = (
@@ -64,6 +66,15 @@ class EbpInitTest(unittest.TestCase):
         self.assertLess(push, assign,
                         "push no longer precedes the assignment; this test's "
                         "premise needs rechecking:\n" + c)
+
+    def test_pushad_popad_function_declares_ebp(self):
+        """pushad / popad save and restore ebp too: a function whose operands never name ebp still
+        needs the local, inherited from the caller's frame (it failed to compile otherwise)."""
+        c = self._translate(PUSHAD_ONLY)
+        self.assertIn("/* pushad */", c)
+        self.assertIn("uint32_t ebp = 0;", c)
+        self.assertIn("ebp = g_ebp;", c)
+        self.assertLess(c.index("uint32_t ebp = 0;"), c.index("/* pushad */"), c)
 
     def test_frameless_function_still_inherits_the_caller_frame(self):
         """The initialiser must not displace the frameless inheritance."""

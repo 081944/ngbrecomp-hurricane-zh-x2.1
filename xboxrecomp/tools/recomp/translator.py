@@ -2023,6 +2023,10 @@ class FunctionTranslator:
         if seh_funcs and any(insn.call_target in seh_funcs
                              for insn in instructions):
             used_regs.add("ebp")
+        # pushad / popad save and restore ebp along with the others (Lifter._lift_push_pop_all), so they
+        # name it even in a function whose operands never do.
+        if any(insn.mnemonic in ("pushal", "popal") for insn in instructions):
+            used_regs.add("ebp")
 
         # Build call targets list
         call_targets = set()
