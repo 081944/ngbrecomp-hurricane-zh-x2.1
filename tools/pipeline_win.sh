@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tools/pipeline.sh for a Windows host (Git Bash): the same five steps with the same arguments, but
 #   - the XBE is given directly (an already extracted, verified copy; nothing is unpacked here),
-#   - the Python is a given interpreter (a Windows venv has Scripts/python.exe, not .venv/bin/python).
+#   - the Python is a given interpreter (a Windows venv has Scripts/python.exe, not .venv/bin/python),
+#   - calls into patched-in code that hand their flags back are listed in src/flags_after_call.json.
 #
 #   NGB_PY=<python.exe with capstone> tools/pipeline_win.sh path/to/default.xbe
 set -euo pipefail
@@ -28,6 +29,7 @@ echo "== recomp"
     --game-name "Ninja Gaiden Black" \
     --exclude-manual "$here/src/recomp_manual.c" \
     --manual-functions "$here/src/manual_functions.json" \
+    --flags-after-call "$here/src/flags_after_call.json" \
     --gen-dir "$here/src/recomp/gen" > "$here/recomp_log.txt" 2>&1 \
     || { tail -20 "$here/recomp_log.txt"; exit 1; }
 tail -3 "$here/recomp_log.txt"

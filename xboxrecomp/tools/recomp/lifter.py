@@ -4068,6 +4068,18 @@ def lift_basic_block(lifter, bb, flag_state=None):
                                  " /* ZF in: a zero count keeps it */")
         stmts.extend(results)
 
+        # A call whose callee hands its flags back (patched-in code that ends `cmp ...; ret` for the
+        # caller's jcc): flags are each lifted function's own, so redo the callee's last compare here,
+        # from the registers and memory it left (--flags-after-call; cmp/test only, which change nothing).
+        after = getattr(lifter, "flags_after_call", {}).get(curr.address) if curr.is_call else None
+        if after is not None:
+            stmts.append(f"/* flags as 0x{curr.address:08X}'s callee left them: {after.mnemonic} "
+                         f"{after.op_str} */")
+            stmts.extend(lifter.lift_instruction(after))
+            last_flag_setter, last_flag_ops = normalise_zero_test(after.mnemonic, list(after.operands))
+            i += 1
+            continue
+
         # Track flag-setting instructions
         if (curr.mnemonic in _BARE_STRING_COMPARES
                 and not _has_xmm_operand(curr.operands)):

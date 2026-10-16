@@ -70,6 +70,30 @@ def _parse_force_returns(items):
     return out
 
 
+def _load_flags_after_call(path):
+    """--flags-after-call JSON {"0x<call VA>": "<hex bytes>"} -> {call VA: Instruction}. Each value is one
+    cmp or test (they write only the flags, so lifting them again in the caller changes nothing else),
+    decoded at the call's return address."""
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_32
+    from .disasm import Disassembler
+    with open(path, "r", encoding="utf-8") as fh:
+        entries = json.load(fh)
+    d = Disassembler()
+    cs = Cs(CS_ARCH_X86, CS_MODE_32)
+    cs.detail = True
+    out = {}
+    for site, hexbytes in entries.items():
+        if site.startswith("#"):
+            continue
+        va = int(site, 16)
+        raw = bytes.fromhex(hexbytes)
+        decoded = list(cs.disasm(raw, va + 5))
+        if len(decoded) != 1 or decoded[0].size != len(raw) or decoded[0].mnemonic not in ("cmp", "test"):
+            raise SystemExit(f"--flags-after-call {site}: {hexbytes} is not exactly one cmp/test")
+        out[va] = d._decode_instruction(decoded[0])
+    return out
+
+
 def _load_addrs(path):
     """Load a JSON address list (or {addr: name} map) as a set of ints."""
     if not path:
@@ -250,6 +274,12 @@ def main():
                              "not implement yet: the body still runs, only "
                              "the answer changes, and the emitted code is "
                              "inert unless RECOMP_FORCE_RETURN is set")
+    parser.add_argument("--flags-after-call", metavar="JSON",
+                        help="Call sites whose callee leaves the flags the caller "
+                             "branches on: {\"0x<call VA>\": \"<hex bytes of the "
+                             "callee's last cmp/test>\"}. After each such call the "
+                             "compare is lifted again in the caller (lifted "
+                             "functions keep flags to themselves)")
     parser.add_argument("--coalesce-functions", metavar="JSON", action="append",
                         help="Explicit owner bounds and false interior starts "
                              "to merge before translation; repeatable")
@@ -325,6 +355,8 @@ def main():
             os.path.dirname(os.path.abspath(__file__)), "output",
             "icall_sites.json"),
     )
+    if args.flags_after_call:
+        translator.translator.lifter.flags_after_call = _load_flags_after_call(args.flags_after_call)
 
     t_load = time.time() - t0
     print(f"Loaded {len(translator.func_db)} functions, "
