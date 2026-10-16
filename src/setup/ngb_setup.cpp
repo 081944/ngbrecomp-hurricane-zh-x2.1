@@ -2,13 +2,16 @@
  * ngb-setup -- the first-run window: asks for the player's own disc and
  * installs it (src/install.c), with progress.
  *
- *   ngb-setup --install-to <dir>
+ *   ngb-setup --install-to <dir> [--portable]
  *
  * The game runs it when it finds no game files. On success it prints the
- * game folder and exits 0; closed, it exits 1. Anything else (no display,
+ * game folder and exits 0; closed, it exits 1. --portable offers portable mode
+ * (src/main.c): chosen, it makes portable.txt, prints "portable:" and the disc
+ * image or folder picked, and exits 0 -- the game starts again with it. Anything else (no display,
  * missing libraries) and the game falls back to a desktop file dialog.
  */
 #include <QApplication>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QDir>
 #include <QDragEnterEvent>
@@ -35,7 +38,7 @@
 
 class SetupWindow : public QWidget {
 public:
-    explicit SetupWindow(const QString &installTo) : m_installTo(installTo)
+    SetupWindow(const QString &installTo, bool offerPortable) : m_installTo(installTo)
     {
         setWindowTitle("Ninja Gaiden Black - Setup");
         setWindowIcon(QIcon(":/ngb.png"));
@@ -90,6 +93,12 @@ public:
         auto *cl = new QVBoxLayout(choose);
         cl->setContentsMargins(0, 0, 0, 0);
         cl->addWidget(scroll, 1);
+        char base[4096];
+        if (offerPortable && ngb_portable_base(base, sizeof base)) {   /* issue #4 */
+            m_portable = new QCheckBox("Keep the game, saves and settings next to the program (portable)");
+            m_portable->setToolTip("In " + shortPath(QFile::decodeName(base)) + "/userdata");
+            cl->addWidget(m_portable);
+        }
         cl->addLayout(buttons);
 
         /* Page 1: installing */
@@ -132,12 +141,14 @@ public:
         const int w = qMin(qMax(560, fontMetrics().averageCharWidth() * 80), avail.width() - 32);
         const int inner = w - 40 - scroll->verticalScrollBar()->sizeHint().width();
         const int h = 18 + head->sizeHint().height() + 10 + intro->heightForWidth(inner)
-                      + 2 * cl->spacing() + buttons->sizeHint().height() + 16 + 8;
+                      + 2 * cl->spacing() + buttons->sizeHint().height() + 16 + 8
+                      + (m_portable ? m_portable->sizeHint().height() + cl->spacing() : 0);
         resize(w, qMin(qMax(h, 300), avail.height() - 48));
     }
 
     bool installed() const { return m_done; }
-    void installForTest(const QString &src) { install(src); }
+    void installForTest(const QString &src) { chosen(src); }
+    QString portableSource() const { return m_portableSrc; }
     QString gameDir() const { return m_gameDir; }
 
 protected:
@@ -151,7 +162,7 @@ protected:
     {
         const QList<QUrl> urls = e->mimeData()->urls();
         if (!urls.isEmpty() && urls.first().isLocalFile())
-            install(urls.first().toLocalFile());
+            chosen(urls.first().toLocalFile());
     }
 
     void closeEvent(QCloseEvent *e) override
@@ -173,7 +184,7 @@ private:
                         "Xbox disc images and archives (*.iso *.xiso *.7z *.zip *.xbe);;"
                         "All files (*)");
         if (!f.isEmpty())
-            install(f);
+            chosen(f);
     }
 
     void chooseFolder()
@@ -181,7 +192,24 @@ private:
         QString d = ask(QFileDialog::Directory,
                         "Choose the folder with the game's files (default.xbe)", QString());
         if (!d.isEmpty())
-            install(d);
+            chosen(d);
+    }
+
+    /* Portable mode ticked: the game starts again with it (src/install.c), its folders beside it. */
+    void chosen(const QString &src)
+    {
+        if (m_portable && m_portable->isChecked()) {
+            if (ngb_portable_enable()) {
+                m_portableSrc = src;
+                m_done = true;
+                close();
+                return;
+            }
+            QMessageBox::warning(this, "Ninja Gaiden Black",
+                                 "Portable mode needs a folder the program can write to. The game "
+                                 "is installed in your profile instead.");
+        }
+        install(src);
     }
 
     /* A file dialog no bigger than the screen (Qt's own one, when the desktop
@@ -277,7 +305,8 @@ private:
                                  "The game could not be installed.\n\n" + err);
     }
 
-    QString m_installTo, m_gameDir;
+    QString m_installTo, m_gameDir, m_portableSrc;
+    QCheckBox *m_portable = nullptr;
     QStackedWidget *m_pages;
     QLabel *m_status;
     QProgressBar *m_bar;
@@ -303,7 +332,7 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    SetupWindow w(installTo);
+    SetupWindow w(installTo, args.contains("--portable"));
     w.show();
     /* Tests: NGB_SETUP_SHOT=prefix saves the window every second as
      * prefix-N.png; NGB_SETUP_AUTO=path installs it as if chosen. */
@@ -322,6 +351,9 @@ int main(int argc, char **argv)
     app.exec();
     if (!w.installed())
         return 1;
-    std::printf("%s\n", QFile::encodeName(w.gameDir()).constData());
+    if (!w.portableSource().isEmpty())
+        std::printf("portable:%s\n", QFile::encodeName(w.portableSource()).constData());
+    else
+        std::printf("%s\n", QFile::encodeName(w.gameDir()).constData());
     return 0;
 }

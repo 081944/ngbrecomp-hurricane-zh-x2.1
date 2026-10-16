@@ -926,8 +926,37 @@ static DWORD WINAPI mem_trace_thread(LPVOID arg)
 }
 #endif
 
+/* Portable mode (issue #4): a file named portable.txt beside the program -- beside the AppImage on
+ * Linux -- keeps everything in a "userdata" folder there instead of the user's profile: the installed
+ * game and the console's drive (about 11 GB), saves, settings, the shader cache and the log. Each
+ * location set explicitly (NGB_SAVE_DIR and the rest) still wins. */
+static void portable_init(void)
+{
+    char dir[4096], flag[4200], data[4200];
+    FILE *f;
+
+    if (!ngb_portable_base(dir, sizeof dir))
+        return;
+    snprintf(flag, sizeof flag, "%s/portable.txt", dir);
+    if (!(f = fopen(flag, "r")))
+        return;
+    fclose(f);
+    snprintf(data, sizeof data, "%s/userdata", dir);
+    ngb_mkdir(data);
+    setenv("NGB_PORTABLE", "1", 1);   /* the setup does not offer it again (src/install.c) */
+    if (!getenv("NGB_SAVE_DIR"))
+        setenv("NGB_SAVE_DIR", data, 1);
+    if (!getenv("NGB_CONFIG_DIR"))
+        setenv("NGB_CONFIG_DIR", data, 1);
+    if (!getenv("NV2A_SHADER_CACHE")) {
+        snprintf(flag, sizeof flag, "%s/shaders", data);
+        setenv("NV2A_SHADER_CACHE", flag, 1);
+    }
+}
+
 int main(int argc, char **argv)
 {
+    portable_init();   /* before anything picks a folder (the log's, first) */
 #if defined(_WIN32)
     /* Sleeps and waits to the millisecond, not the 15.6 ms default tick: the
      * virtual CPU's time slices, the kernel's timers and the frame pacing

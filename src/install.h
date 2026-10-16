@@ -31,6 +31,11 @@ void ngb_install_cancel(void);
 /* 0 when dir/default.xbe is the one this build was recompiled from. */
 int ngb_check_xbe(const char *dir);
 
+/* Portable mode (src/main.c): where the program is -- beside the AppImage on Linux -- and the file there
+ * that turns it on. 1 on success. */
+int ngb_portable_base(char *dir, size_t n);
+int ngb_portable_enable(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -37,6 +37,9 @@
 #endif
 
 #include "install.h"
+#include "port.h"
+
+static void restart_portable(const char *src);
 
 /* The retail USA default.xbe the code was recompiled from. */
 #define NGB_XBE_SIZE  4571136u
@@ -513,7 +516,7 @@ static void to_slashes(char *p)
 /* The first start: what the game needs, then the choice -- a disc image, a folder of
  * extracted files, or quitting (0 quit, 1 image, 2 folder). A task dialog (common
  * controls 6, packaging/windows/ngb.manifest); a message box where there is none. */
-static int win_welcome(const char *installed)
+static int win_welcome(const char *installed, int *portable)
 {
     typedef HRESULT(WINAPI * TaskDialogIndirectFn)(const TASKDIALOGCONFIG *, int *, int *, BOOL *);
     char path[1024], text[2048];
@@ -558,8 +561,13 @@ static int win_welcome(const char *installed)
         c.cButtons = 2;
         c.pButtons = buttons;
         c.nDefaultButton = 101;
-        if (SUCCEEDED(td(&c, &pressed, NULL, NULL)))
+        BOOL checked = FALSE;
+        if (!getenv("NGB_PORTABLE"))   /* not already portable (issue #4) */
+            c.pszVerificationText = L"Keep the game, saves and settings next to the program (portable)";
+        if (SUCCEEDED(td(&c, &pressed, NULL, &checked))) {
+            *portable = checked != FALSE;
             return pressed == 101 ? 1 : pressed == 102 ? 2 : 0;
+        }
     }
     strncat(text, "\n\nYes: choose a disc image.   No: choose a folder.", sizeof text - strlen(text) - 1);
     MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 2048);
@@ -761,8 +769,8 @@ static int run_setup(const char *exe_dir, const char *installed,
     if (access(cmd, X_OK) != 0)
         return -1;
     /* Its own Qt's plugins only (a bundled Qt), not the desktop's. */
-    snprintf(cmd, sizeof cmd, "env -u QT_PLUGIN_PATH '%sngb-setup' --install-to '%s'",
-             exe_dir, installed);
+    snprintf(cmd, sizeof cmd, "env -u QT_PLUGIN_PATH '%sngb-setup' --install-to '%s'%s",
+             exe_dir, installed, getenv("NGB_PORTABLE") ? "" : " --portable");
     if (strchr(exe_dir, '\'') || strchr(installed, '\''))
         return -1;
     p = popen(cmd, "r");
@@ -774,6 +782,11 @@ static int run_setup(const char *exe_dir, const char *installed,
     status = pclose(p);
     if (!WIFEXITED(status) || WEXITSTATUS(status) > 1)
         return -1;      /* no display, missing libraries: the fallbacks */
+    if (WEXITSTATUS(status) == 0 && !strncmp(out, "portable:", 9))
+    if (WEXITSTATUS(status) == 0 && !strncmp(out, "portable:", 9)) {
+        restart_portable(out + 9);   /* portable mode chosen (the setup made portable.txt) */
+        out[0] = 0;
+    }
     return WEXITSTATUS(status) == 0 && out[0] ? 1 : 0;
 }
 #endif
@@ -895,6 +908,73 @@ static void win_tell(const char *msg)
 }
 #endif
 
+int ngb_portable_base(char *dir, size_t n)
+{
+    const char *appimage = getenv("APPIMAGE");
+    char *slash;
+
+    if (appimage && *appimage)
+        snprintf(dir, n, "%s", appimage);
+    else if (ngb_exe_path(dir, n) <= 0)
+        return 0;
+    if (!(slash = strrchr(dir, '/')))
+        return 0;
+    *slash = 0;
+    return 1;
+}
+
+int ngb_portable_enable(void)
+{
+    char dir[4096], p[4200];
+    FILE *f;
+
+    if (!ngb_portable_base(dir, sizeof dir))
+        return 0;
+    snprintf(p, sizeof p, "%s/portable.txt", dir);
+    if (!(f = fopen(p, "w")))
+        return 0;   /* not writable there (Program Files, a read-only mount) */
+    fprintf(f, "This file makes Ninja Gaiden Black keep its game files, saves and settings in the "
+               "\"userdata\" folder here. Delete it to use your profile's folders again.\n");
+    fclose(f);
+    return 1;
+}
+
+/* Portable mode just chosen in the setup: the program starts again -- its folders are picked at the very
+ * start (src/main.c) -- with the disc image or folder chosen, so it is not asked for twice. */
+static void restart_portable(const char *src)
+{
+#if defined(_WIN32)
+    wchar_t self[MAX_PATH], wsrc[4096], cmd[8400];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    if (!GetModuleFileNameW(NULL, self, MAX_PATH) || !MultiByteToWideChar(CP_ACP, 0, src, -1, wsrc, 4096))
+        return;
+    _snwprintf(cmd, 8400, L"\"%ls\" \"%ls\"", self, wsrc);
+    if (CreateProcessW(self, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        TerminateProcess(GetCurrentProcess(), 0);
+    }
+#else
+    char self[4096];
+    const char *appimage = getenv("APPIMAGE");
+    char *argv[2];
+
+    if (appimage && *appimage)
+        snprintf(self, sizeof self, "%s", appimage);
+    else if (ngb_exe_path(self, sizeof self) <= 0)
+        return;
+    setenv("NGB_SETUP_AUTO", src, 1);   /* the setup window installs it straight away (src/setup) */
+    argv[0] = self;
+    argv[1] = NULL;
+    execv(self, argv);
+#endif
+    fprintf(stderr, "Could not start again for portable mode; carrying on as before.\n");
+}
+
 /* A folder of extracted files the player picked runs where it is -- and was asked for again at the
  * next start, since only the installed copy and a "game" folder beside the program were looked for
  * (issue #14). Its path is kept in the save folder, and found there first. */
@@ -958,6 +1038,7 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
 #if !defined(_WIN32)
         switch (run_setup(exe_dir, installed, out, n)) {
         case 1:
+            remember_game(save_dir, installed, out);   /* a folder picked: found there next time */
             return 0;   /* installed and checked there */
         case 0:
             return -1;  /* closed */
@@ -965,14 +1046,22 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
         if (pick_disc(picked, sizeof picked))
             src = picked;
 #else
+        int portable = 0;
         for (;;) {   /* the welcome again when a picker is closed */
-            int how = win_welcome(installed);
+            int how = win_welcome(installed, &portable);
             if (how == 0)
                 return -1;  /* quit */
             if (how == 1 ? pick_disc(picked, sizeof picked) : pick_folder(picked, sizeof picked))
                 break;
         }
         src = picked;
+        if (portable) {
+            if (ngb_portable_enable())
+                restart_portable(src);   /* does not come back when it works */
+            else
+                win_tell("Portable mode needs a folder the program can write to (not Program Files). "
+                         "The game is installed in your profile instead.");
+        }
 #endif
         if (!src) {
             fprintf(stderr,
