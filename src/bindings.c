@@ -242,7 +242,7 @@ void ngb_bind_load(void)
         if (line[0] == '#' || sscanf(line, " %63[^= ] = %399[^\r\n]", key, val) != 2)
             continue;
         if (!strcmp(key, "invert_camera_x") || !strcmp(key, "invert_camera_y")) {
-            s_invert[key[14] == 'y'] = atoi(val) != 0;
+            (void)val;   /* Hurricane: not read -- x2.1's own camera option instead (src/pause_tab.c) */
             continue;
         }
         for (int a = 0; a < A_COUNT; a++) {

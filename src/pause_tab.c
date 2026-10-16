@@ -127,10 +127,12 @@ static const signed char s_cat_rows[CATS][CAT_ROWS] = {
 };
 
 #include "bindings.h"
-#define CTL_INVX A_COUNT          /* the actions, then Invert Camera X and Y (#26), then Default Controls */
-#define CTL_INVY (A_COUNT + 1)
-#define CTL_DEF  (A_COUNT + 2)
-#define CTL_ROWS (A_COUNT + 3)
+/* Hurricane: no Invert Camera rows -- x2.1 has its own third-person camera option (控制器设置 > 视角设定,
+ * localization docs/18), which these would invert again (user 2026-10-17): the actions, then Default Controls */
+#define CTL_INVX (-2)
+#define CTL_INVY (-3)
+#define CTL_DEF  A_COUNT
+#define CTL_ROWS (A_COUNT + 1)
 
 static int cat_count(int c)
 {
