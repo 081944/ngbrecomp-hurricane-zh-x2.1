@@ -416,6 +416,26 @@ void ngb_restart_to_menu(void)
         execv(self, s_argv);
         fprintf(stderr, "[MENU] could not start again; exiting\n");
     }
+#else
+    /* No exec on Windows: a new process with this one's command line, then this one ends at once
+     * (as an exec would replace it). */
+    {
+        wchar_t self[MAX_PATH];
+        STARTUPINFOW si;
+        PROCESS_INFORMATION pi;
+        memset(&si, 0, sizeof si);
+        si.cb = sizeof si;
+        if (GetModuleFileNameW(NULL, self, MAX_PATH) && SetEnvironmentVariableA("NGB_TO_MAIN_MENU", "1")) {
+            fprintf(stderr, "[MENU] Return to Main Menu: starting the program again\n");
+            fflush(stderr);
+            if (CreateProcessW(self, GetCommandLineW(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+                TerminateProcess(GetCurrentProcess(), 0);
+            }
+            fprintf(stderr, "[MENU] could not start again (error %lu); exiting\n", GetLastError());
+        }
+    }
 #endif
     ngb_quit_to_desktop();
 }
