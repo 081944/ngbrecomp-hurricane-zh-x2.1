@@ -746,7 +746,9 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
         s += "    float4 md = " + src(0, "mat[0]") + ", ms = " + src(1, "mat[2]") + ", ma = " + src(2, "mat[1]") +
              ", me = " + src(3, "mat[3]") + ";\n";
         s += "    float3 la = 0, ld = 0, ls = 0;\n";
-        s += (f.light & 4) ? "    float3 eye = -normalize(vp);\n" : "    float3 eye = float3(0, 0, 1);\n";
+        // towards the viewer: the camera looks down +z here, so a viewer at infinity is at -z (with +z the
+        // highlights faced away from the camera and all but vanished, #22)
+        s += (f.light & 4) ? "    float3 eye = -normalize(vp);\n" : "    float3 eye = float3(0, 0, -1);\n";
         for (int n = 0; n < 8; n++) {
             uint32_t type = (f.types >> (n * 2)) & 3;  // D3DLIGHTTYPE: 1 point, 2 spot, 3 directional
             if (!type) continue;
