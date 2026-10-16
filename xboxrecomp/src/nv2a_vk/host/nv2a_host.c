@@ -873,3 +873,24 @@ void nv2a_vk_sample_threads(void)
         }
     }
 }
+
+/* Debugging (NGB_HANG_DUMP, src/main.c): the GPU's command queue and interrupts in one line --
+ * whether a stalled title waits on commands the GPU never saw, or on a GPU that stopped. Read
+ * without the locks: a snapshot, possibly torn. */
+void nv2a_debug_state(char *buf, int n)
+{
+    NV2AState *d = &s_nv2a;
+    PGRAPHState *pg = &d->pgraph;
+    snprintf(buf, (size_t)n,
+             "[NV2A] put %08X get %08X dma_push %08X dma_state %08X push0 %X pull0 %X halt %d kick %d"
+             " | waiting flip %d nop %d ctx %d surface %08X"
+             " | intr pending/enabled pmc %X/%X pfifo %X/%X pgraph %X/%X pcrtc %X/%X",
+             d->pfifo.regs[NV_PFIFO_CACHE1_DMA_PUT], d->pfifo.regs[NV_PFIFO_CACHE1_DMA_GET],
+             d->pfifo.regs[NV_PFIFO_CACHE1_DMA_PUSH], d->pfifo.regs[NV_PFIFO_CACHE1_DMA_STATE],
+             d->pfifo.regs[NV_PFIFO_CACHE1_PUSH0], d->pfifo.regs[NV_PFIFO_CACHE1_PULL0],
+             d->pfifo.halt, d->pfifo.fifo_kick, pg->waiting_for_flip, pg->waiting_for_nop,
+             pg->waiting_for_context_switch, pgraph_reg_r(pg, NV_PGRAPH_SURFACE),
+             d->pmc.pending_interrupts, d->pmc.enabled_interrupts, d->pfifo.pending_interrupts,
+             d->pfifo.enabled_interrupts, pg->pending_interrupts, pg->enabled_interrupts,
+             d->pcrtc.pending_interrupts, d->pcrtc.enabled_interrupts);
+}

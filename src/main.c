@@ -783,6 +783,149 @@ static void *guest_main(void *unused)
 
 /* ── Entry (host main thread: window and events) ───────────── */
 
+#if defined(_WIN32)
+#include <tlhelp32.h>
+#include <psapi.h>
+/* NGB_HANG_DUMP=<seconds> (debugging, Windows): after that long, each thread's call stack, as
+ * module+offset, into the log -- where a hang is, without a debugger. A thread is suspended only
+ * while its frames are read into a buffer: nothing that takes a lock (stdio, the loader) runs
+ * meanwhile, since the suspended thread may hold it. */
+static DWORD WINAPI hang_dump_thread(LPVOID arg)
+{
+    static HMODULE mods[256];
+    static char names[256][64];
+    static char out[1 << 16];
+    MODULEINFO mi[256];
+    DWORD need = 0, pid = GetCurrentProcessId(), me = GetCurrentThreadId();
+    int nmods, len = 0;
+    HANDLE snap;
+    THREADENTRY32 te;
+
+    Sleep((DWORD)(uintptr_t)arg * 1000);
+    for (int round = 0; round < 3; round++, Sleep(3000)) {
+    len = 0;
+    K32EnumProcessModules(GetCurrentProcess(), mods, sizeof mods, &need);
+    nmods = (int)(need / sizeof(HMODULE));
+    if (nmods > 256) nmods = 256;
+    for (int i = 0; i < nmods; i++) {
+        char path[MAX_PATH], *b;
+        K32GetModuleInformation(GetCurrentProcess(), mods[i], &mi[i], sizeof mi[i]);
+        K32GetModuleFileNameExA(GetCurrentProcess(), mods[i], path, sizeof path);
+        b = strrchr(path, '\\');
+        snprintf(names[i], sizeof names[i], "%s", b ? b + 1 : path);
+    }
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    te.dwSize = sizeof te;
+    for (BOOL ok = Thread32First(snap, &te); ok && len < (int)sizeof out - 4096; ok = Thread32Next(snap, &te)) {
+        HANDLE h;
+        CONTEXT c;
+        if (te.th32OwnerProcessID != pid || te.th32ThreadID == me)
+            continue;
+        h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE,
+                       te.th32ThreadID);
+        if (!h)
+            continue;
+        (SuspendThread)(h);
+        memset(&c, 0, sizeof c);
+        c.ContextFlags = CONTEXT_FULL;
+        if ((GetThreadContext)(h, &c)) {
+            len += snprintf(out + len, sizeof out - len, "[HANG] thread %lu:", te.th32ThreadID);
+            for (int f = 0; f < 20 && c.Rip; f++) {
+                DWORD64 base = 0;
+                PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(c.Rip, &base, NULL);
+                int m = -1;
+                for (int i = 0; i < nmods; i++)
+                    if (c.Rip >= (DWORD64)mi[i].lpBaseOfDll &&
+                        c.Rip < (DWORD64)mi[i].lpBaseOfDll + mi[i].SizeOfImage)
+                        m = i;
+                if (m >= 0)
+                    len += snprintf(out + len, sizeof out - len, " %s+%llx", names[m],
+                                    (unsigned long long)(c.Rip - (DWORD64)mi[m].lpBaseOfDll));
+                else
+                    len += snprintf(out + len, sizeof out - len, " %llx", (unsigned long long)c.Rip);
+                if (fn) {
+                    PVOID hd;
+                    DWORD64 ef;
+                    RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c.Rip, fn, &c, &hd, &ef, NULL);
+                } else {
+                    c.Rip = *(DWORD64 *)c.Rsp;
+                    c.Rsp += 8;
+                }
+            }
+            len += snprintf(out + len, sizeof out - len, "\n");
+        }
+        (ResumeThread)(h);
+        CloseHandle(h);
+    }
+    CloseHandle(snap);
+    {
+        extern void nv2a_debug_state(char *buf, int n);
+        extern void xbox_kernel_debug_counts(char *buf, int n, uint32_t watch_va);
+        char gpu[512];
+        nv2a_debug_state(gpu, sizeof gpu);
+        len += snprintf(out + len, sizeof out - len, "%s\n", gpu);
+        xbox_kernel_debug_counts(gpu, sizeof gpu, 0x3D83C8);   /* D3D's device pointer */
+        len += snprintf(out + len, sizeof out - len, "%s\n", gpu);
+        vcpu_debug_state(out + len, (int)sizeof out - len);   /* who holds the CPU, who waits */
+        len += (int)strlen(out + len);
+        /* NGB_HANG_MEM=va:bytes[,va:bytes...] (hex): guest memory, as words */
+        if (getenv("NGB_HANG_MEM")) {
+            char spec[512], *tok, *save = NULL;
+            snprintf(spec, sizeof spec, "%s", getenv("NGB_HANG_MEM"));
+            for (tok = strtok_r(spec, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+                uint32_t va = (uint32_t)strtoul(tok, NULL, 16), n = 64;
+                char *c = strchr(tok, ':');
+                if (c) n = (uint32_t)strtoul(c + 1, NULL, 16);
+                for (uint32_t i = 0; i < n && len < (int)sizeof out - 256; i += 32) {
+                    len += snprintf(out + len, sizeof out - len, "[MEM] %08X:", va + i);
+                    for (uint32_t j = i; j < i + 32 && j < n; j += 4)
+                        len += snprintf(out + len, sizeof out - len, " %08X",
+                                        *(uint32_t *)((uint8_t *)g_xbox_mem_offset + va + j));
+                    len += snprintf(out + len, sizeof out - len, "\n");
+                }
+            }
+        }
+    }
+    fprintf(stderr, "[HANG] sample %d\n", round + 1);
+    fputs(out, stderr);
+    fflush(stderr);
+    }
+    return 0;
+}
+
+/* NGB_MEM_TRACE=va:bytes[,...] (hex, debugging, Windows): those guest words every 50 ms for 20 s,
+ * logged when they change -- what a game's state machine went through, against another run. */
+static DWORD WINAPI mem_trace_thread(LPVOID arg)
+{
+    static uint32_t last[1024];
+    char spec[512], *tok, *save = NULL;
+    ULONGLONG t0 = GetTickCount64();
+    (void)arg;
+    while (GetTickCount64() - t0 < 20000) {
+        int k = 0;
+        Sleep(50);
+        if (!g_xbox_mem_offset)
+            continue;
+        snprintf(spec, sizeof spec, "%s", getenv("NGB_MEM_TRACE"));
+        for (tok = strtok_r(spec, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+            uint32_t va = (uint32_t)strtoul(tok, NULL, 16), n = 64;
+            char *c = strchr(tok, ':');
+            if (c) n = (uint32_t)strtoul(c + 1, NULL, 16);
+            for (uint32_t i = 0; i < n && k < 1024; i += 4, k++) {
+                uint32_t v = *(uint32_t *)((uint8_t *)g_xbox_mem_offset + va + i);
+                if (v != last[k]) {
+                    fprintf(stderr, "[MEMT] %llu %08X: %08X -> %08X\n",
+                            (unsigned long long)(GetTickCount64() - t0), va + i, last[k], v);
+                    last[k] = v;
+                }
+            }
+        }
+        fflush(stderr);
+    }
+    return 0;
+}
+#endif
+
 int main(int argc, char **argv)
 {
 #if defined(_WIN32)
@@ -807,6 +950,11 @@ int main(int argc, char **argv)
             freopen(log, "a", stderr);
         }
     }
+    if (getenv("NGB_MEM_TRACE"))
+        CloseHandle(CreateThread(NULL, 0, mem_trace_thread, NULL, 0, NULL));
+    if (getenv("NGB_HANG_DUMP"))
+        CloseHandle(CreateThread(NULL, 0, hang_dump_thread,
+                                 (LPVOID)(uintptr_t)atoi(getenv("NGB_HANG_DUMP")), 0, NULL));
 #else
     /* NGB_PTRACE_ANY=1: let any process of this user attach a debugger
      * (Yama's ptrace_scope 1 allows only ancestors), for stack dumps. */

@@ -2162,6 +2162,9 @@ static void bridge_KeRemoveQueueDpc(void)
  * interrupt returns FALSE, and that is worth seeing rather than assuming.
  */
 uint32_t xbox_GetConnectedInterrupt(uint32_t vector);   /* defined below */
+/* Debugging counts (xbox_kernel_debug_counts): interrupts raised, ISRs run and claimed, DPCs
+ * run, guest events set. */
+static volatile LONG g_dbg_irq_raised, g_dbg_isr_calls, g_dbg_isr_claimed, g_dbg_dpc_runs, g_dbg_event_sets;
 
 static int kernel_raise_interrupt(uint32_t vector)
 {
@@ -2184,6 +2187,9 @@ static int kernel_raise_interrupt(uint32_t vector)
     g_esp -= 4; BRIDGE_MEM32(g_esp) = kint;
     g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;
     { int _irql = xbox_IrqlEnterInterrupt(16); fn(); xbox_IrqlLeaveInterrupt(_irql); }
+    InterlockedIncrement(&g_dbg_isr_calls);
+    if (g_eax & 1u)
+        InterlockedIncrement(&g_dbg_isr_claimed);
     return (int)(g_eax & 1u);
 }
 
@@ -2264,8 +2270,10 @@ static void kernel_drain_dpcs(void)
         if (d.dpc)
             BRIDGE_MEM8(d.dpc + 2) = 0;
         LeaveCriticalSection(&g_dpc_lock);
-        if (d.dpc)
+        if (d.dpc) {
             kernel_run_dpc(d.dpc, d.arg1, d.arg2);
+            InterlockedIncrement(&g_dbg_dpc_runs);
+        }
     }
 }
 
@@ -2540,6 +2548,7 @@ void xbox_InterruptLine(uint32_t vector, int level)
     if (vector >= 32)
         return;
     if (level) {
+        InterlockedIncrement(&g_dbg_irq_raised);
         IRQ_LINES_OR(1u << vector);
         if (!g_timer_started)
             kernel_timer_start();
@@ -6427,7 +6436,20 @@ static LONG ke_guest_event_set(uint32_t va)
         __atomic_fetch_add(gen, 1, __ATOMIC_SEQ_CST);
     if (h)
         SetEvent(h);
+    InterlockedIncrement(&g_dbg_event_sets);
     return prev;
+}
+
+/* Debugging (NGB_HANG_DUMP): the counts above, the irq lines, and a guest word (the D3D device's
+ * vblank event state, device + 0x1DC0, for Ninja Gaiden Black). */
+void xbox_kernel_debug_counts(char *buf, int n, uint32_t watch_va)
+{
+    uint32_t dev = BRIDGE_MEM32(watch_va);
+    snprintf(buf, (size_t)n, "[KERNEL] irq raised %ld, lines %08lX, isr calls %ld claimed %ld, dpcs %ld, "
+             "event sets %ld | vblank event state %u",
+             (long)g_dbg_irq_raised, (unsigned long)g_irq_lines, (long)g_dbg_isr_calls,
+             (long)g_dbg_isr_claimed, (long)g_dbg_dpc_runs, (long)g_dbg_event_sets,
+             dev ? BRIDGE_MEM32(dev + 0x1DC0) : 0xFFFFFFFFu);
 }
 
 static LONG ke_guest_event_reset(uint32_t va)
@@ -9639,9 +9661,9 @@ static void kernel_thunk_dispatch_inner(void)
          * function is calling this" into "this call site is", which is the
          * difference between guessing and knowing when a title recurses. */
         fprintf(stderr,
-                "  [KERNEL] #%d: ordinal %u (slot %d) esp=0x%08X ret=0x%08X\n",
+                "  [KERNEL] #%d: ordinal %u (slot %d) esp=0x%08X ret=0x%08X tid %lu\n",
                 g_kernel_call_count, ordinal, slot, g_esp,
-                g_esp ? BRIDGE_MEM32(g_esp) : 0);
+                g_esp ? BRIDGE_MEM32(g_esp) : 0, (unsigned long)GetCurrentThreadId());
         fflush(stderr);
     }
 
