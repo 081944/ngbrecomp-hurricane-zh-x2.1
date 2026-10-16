@@ -435,7 +435,7 @@ _EFLAGS_PRESERVE = frozenset({
     "loop", "loope", "loopne",
     # pushfd READS the flags and leaves them alone, so it belongs here.
     # popfd does NOT -- see _FLAGS_UNDEFINED.
-    "pushfd", "pushal",
+    "pushfd", "pushal", "popal",   # popad restores registers only, never EFLAGS
     "sgdt", "ljmp", "sfence",
     # SSE scalar float
     "movss", "movsd",
@@ -1415,6 +1415,8 @@ class Lifter:
             return self._lift_push(insn, ops)
         if m == "pop":
             return self._lift_pop(insn, ops)
+        if m in ("pushal", "popal", "pushfd", "popfd"):
+            return self._lift_push_pop_all(m)
 
         # ── Arithmetic ──
         if m in ("add", "sub", "and", "or", "xor"):
@@ -1904,6 +1906,25 @@ class Lifter:
             return [f"POP32(esp, {r});"]
         else:
             return [f"{{ uint32_t _tmp; POP32(esp, _tmp); {_fmt_operand_write(ops[0], '_tmp')} }}"]
+
+    def _lift_push_pop_all(self, m):
+        """pushad / popad / pushfd / popfd. Compiled game code has none of them, but patched-in code does:
+        a hook that saves everything (pushfd; pushad ... popad; popfd; ret). Left to RECOMP_UNIMPL they were
+        skipped, so the [esp+n] accesses between them hit the caller's frame and popad restored nothing.
+        pushad: eax ecx edx ebx, esp as it was before the pushes, ebp esi edi; popad pops them back in reverse,
+        dropping the saved esp. pushfd / popfd keep the stack shape only: flags are each lifted function's own
+        locals, so a callee's popfd has nothing of the caller's to restore, and after popfd the flags are
+        unknown to the tracker (_FLAGS_UNDEFINED). The pushed word is 0x202 (IF and the always-set bit 1)."""
+        if m == "pushal":
+            return ["{ uint32_t _pa_sp = esp; PUSH32(esp, eax); PUSH32(esp, ecx); PUSH32(esp, edx); "
+                    "PUSH32(esp, ebx); PUSH32(esp, _pa_sp); PUSH32(esp, ebp); PUSH32(esp, esi); "
+                    "PUSH32(esp, edi); } /* pushad */"]
+        if m == "popal":
+            return ["POP32(esp, edi); POP32(esp, esi); POP32(esp, ebp); esp += 4; "
+                    "POP32(esp, ebx); POP32(esp, edx); POP32(esp, ecx); POP32(esp, eax); /* popad */"]
+        if m == "pushfd":
+            return ["PUSH32(esp, 0x202u); /* pushfd: flags are not materialised */"]
+        return ["esp += 4; /* popfd: flags unknown afterwards */"]
 
     # ── ALU binary operations ──
 
