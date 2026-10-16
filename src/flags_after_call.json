@@ -4,5 +4,8 @@
   "0x0020964E": "391d2cb78d00",
   "0x000330A3": "83ff05",
   "0x001E6D8E": "83fb03",
-  "0x001E86C9": "83fe03"
+  "0x001E86C9": "83fe03",
+  "0x0017F567": "80faff",
+  "0x0021F557": "85c0",
+  "#0x0021F557": "The hook ends `sub eax, 2; ret`, which cannot be redone in the caller (it writes eax). The caller reads only ZF after it (jne at 0x21F55C, x360_audit flag_walk), and `test eax, eax` on the result gives the same ZF."
 }

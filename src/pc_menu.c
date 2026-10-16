@@ -308,11 +308,9 @@ static void pc_menu_init(void)
     MEM32(0x436240 + 2 * 4) = tab;
     MEM16(0x43626C + 2 * 2) = (uint16_t)(count + add + extra);
 
-    /* Pages 4 (0x429D18) and 6 (0x429D48): last row, row table. */
-    MEM8(0x429D18 + 2) = N_WS - 1;
-    MEM32(0x429D18 + 0xC) = make_rows(s_rows_ws, N_WS);
-    MEM8(0x429D48 + 2) = N_STD - 1;
-    MEM32(0x429D48 + 0xC) = make_rows(s_rows_std, N_STD);
+    /* Pages 4 (0x429D18) and 6 (0x429D48) are left as the Hurricane x2.1 XBE has them (its crosshair row:
+     * 5 / 3 rows); rebuilt from s_rows_ws / s_rows_std they would be retail's. Those tables still name
+     * retail's rows for row_kind(), which the x2.1 hooks feed retail's row numbers. */
 
     /* RECOMP SETTINGS' page table: the game's (0x429CB8: pages 0-9 of 0x18
      * bytes, then 0xFF) with page 0's categories ours -- rows opening pages
@@ -837,9 +835,17 @@ loc_0017F54E: ;
     goto loc_0017F681;
 
 loc_0017F567: ;
-    SET_LO8(edx, MEM8(edi + 0xC));
+    if (is_ours(MEM8(edi))) {
+        SET_LO8(edx, MEM8(edi + 0xC));   /* Hurricane: PC pages, the original instruction */
+    } else {
+    PUSH32(esp, 0x0017F56Cu); RECOMP_ABI_CALL(0x00DC8A40u, sub_00DC8A40); /* call 0x00DC8A40 */
+    }
+    /* flags as 0x0017F567's callee left them: cmp dl, 0xff (and the original's own on PC pages) */
     _fa = (uint32_t)(LO8(edx)) & 0xFFu; _fb = (uint32_t)(0xFF) & 0xFFu;
     _fas = (int32_t)(int8_t)(_fa); _fbs = (int32_t)(int8_t)(_fb); /* cmp LO8(edx), 0xFF (8-bit) */
+
+loc_0017F56C: ;
+    /* nop */
     if (CMP_NE(_fa, _fb)) goto loc_0017F5F9; /* jne: not equal / not zero */
 
 loc_0017F573: ;
@@ -980,7 +986,10 @@ loc_0017F665: ;
     PUSH32(esp, 0x0017F66Eu); RECOMP_ABI_CALL(0x001E3400u, sub_001E3400); /* call 0x001E3400 */
 
 loc_0017F66E: ;
-    SET_LO8(edx, MEM8(0x42D3E1));
+    PUSH32(esp, 0x0017F673u); RECOMP_ABI_CALL(0x00DC8AA0u, sub_00DC8AA0); /* call 0x00DC8AA0 */
+
+loc_0017F673: ;
+    /* nop */
     _fb = (uint32_t)(8) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
     esp = esp + 8;
     _fa = (uint32_t)(esp) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* add result */
@@ -1057,7 +1066,6 @@ loc_0017F6EA: ;
     esp = esp + 0xC;
     _fa = (uint32_t)(esp) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* add result */
     esp += 4; return; /* ret */
-
 }
 
 /**
@@ -1275,24 +1283,24 @@ loc_0021F0E6: ;
     if (TEST_Z(_fa, _fb)) goto loc_0021F10D; /* je: equal / zero */
 
 loc_0021F0F8: ;
-    /* PC: the page's rows and their text. */
     pc_menu_init();
-    MEM32(esp + 0x1C) = N_WS;
-    MEM32(esp + 0x4C) = s_labels_ws;
-    goto loc_0021F11C;
+    ecx = esp + 0x80;
+    MEM32(esp + 0x1C) = 5;
+    MEM32(esp + 0x4C) = ecx;
+    goto loc_0021F11D;
 
 loc_0021F10D: ;
+    edx = esp + 0x70;
+    MEM32(esp + 0x1C) = 3;
+    MEM32(esp + 0x4C) = edx;
     pc_menu_init();
-    MEM32(esp + 0x1C) = N_STD;
-    MEM32(esp + 0x4C) = s_labels_std;
 
-loc_0021F11C: ;
+loc_0021F11D: ;
+    /* PC: the page's rows and their text (ngbrecomp's pages; 4 and 6 keep x2.1's 5 / 3 rows). */
     if (is_ours(page_now())) {
         MEM32(esp + 0x1C) = (uint32_t)s_ours[page_now() - PAGE_GFX].n;
         MEM32(esp + 0x4C) = s_labels_ours[page_now() - PAGE_GFX];
     }
-
-loc_0021F11D: ;
     ecx = ZX8(MEM8(0xDB9ADA));
     eax = MEM32(0xBCE018);
     edx = ((int32_t)eax < 0) ? 0xFFFFFFFF : 0; /* cdq */
@@ -1365,11 +1373,11 @@ loc_0021F1F5: ;
     /* nop */
 
 loc_0021F200: ;
+    if (is_ours(page_now())) {   /* Hurricane: PC pages, the retail hint flag */
     _fa = (uint32_t)(MEM8(0xD21748)) & 0xFFu; _fb = (uint32_t)(1) & 0xFFu;
     _fas = (int32_t)(int8_t)(_fa); _fbs = (int32_t)(int8_t)(_fb); /* test MEM8(0xD21748), 1 (8-bit) */
-    if (TEST_Z(_fa, _fb)) goto loc_0021F21E; /* je: equal / zero */
+    if (TEST_Z(_fa, _fb)) goto hz_hint_21E; /* je: equal / zero */
 
-loc_0021F209: ;
     ecx = MEM32(ebp + 8);
     esi = MEM32(ecx + 0x10);
     edx = 0; /* xor self */
@@ -1378,12 +1386,34 @@ loc_0021F209: ;
     _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp esi, eax (32-bit) */
     SET_LO8(edx, (CMP_NE(_fa, _fb)) ? 1 : 0); /* setne */
     MEM32(0x43B47C) = edx;
-    goto loc_0021F223;
+    goto hz_hint_223;
 
-loc_0021F21E: ;
+hz_hint_21E: ;
     MEM32(0x43B47C) = eax;
 
-loc_0021F223: ;
+hz_hint_223: ;
+    goto hz_hint_done;
+    }
+    ecx = MEM32(ebp + 8);
+    ecx = MEM32(ecx + 0x10);
+    ecx--;
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fb = (_fa == 0x7FFFFFFFu); /* dec result/SF/OF; CF unchanged */
+    edx = ZX8(MEM8(0xD21748));
+    edx = edx & 1;
+    _fa = (uint32_t)(edx) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* and result */
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu; _fb = (uint32_t)(edx) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp ecx, edx (32-bit) */
+    SET_LO8(edx, (CMP_A(_fa, _fb)) ? 1 : 0); /* seta */
+    MEM32(0x43B47C) = edx;
+    /* nop */
+    /* nop */
+    /* nop */
+    /* nop */
+    /* nop */
+    /* nop */
+    /* nop */
+hz_hint_done: ;
     edx = MEM32(esp + 0x10);
     edi = esp + 0x14;
     esi = esp + 0x18;
@@ -1535,8 +1565,18 @@ loc_0021F3A3: ;
     _fas = (int32_t)(int32_t)(_fa); _fb = (_fa == 0x80000000u); /* inc result/SF/OF; CF unchanged */
 
 loc_0021F3A9: ;
+    if (is_ours(page_now())) {   /* Hurricane: PC pages, the original instructions */
     edx = MEM32(esp + 0x4C);
     eax = SX16(LO16(ebx));
+    } else {
+    g_ebp = ebp; /* frame stays current across calls */
+    g_seh_ebp = ebp;
+    PUSH32(esp, 0x0021F3AEu); RECOMP_ABI_CALL(0x00DC8980u, sub_00DC8980); /* call 0x00DC8980 */
+    }
+
+loc_0021F3AE: ;
+    /* nop */
+    /* nop */
     esi = eax + 0x13;
     PUSH32(esp, 2);
     ecx = 0; /* xor self */
@@ -1554,7 +1594,7 @@ loc_0021F3A9: ;
     PUSH32(esp, ecx);
     g_ebp = ebp; /* frame stays current across calls */
     g_seh_ebp = ebp;
-    PUSH32(esp, 0x0021F3D7u); RECOMP_ABI_CALL(0x001E6AE0u, sub_001E6AE0); /* call 0x001E6AE0 */
+    PUSH32(esp, 0x0021F3D7u); RECOMP_ABI_CALL(0x00DC87F0u, sub_00DC87F0); /* call 0x00DC87F0 */
 
 loc_0021F3D7: ;
     ecx = eax;
@@ -1682,19 +1722,44 @@ loc_0021F51A: ;
     PUSH32(esp, 0x0021F542u); RECOMP_ABI_CALL(0x00221340u, sub_00221340); /* call 0x00221340 */
 
 loc_0021F542: ;
-    _fa = (uint32_t)(MEM8(0xD21748)) & 0xFFu; _fb = (uint32_t)(1) & 0xFFu;
-    _fas = (int32_t)(int8_t)(_fa); _fbs = (int32_t)(int8_t)(_fb); /* test MEM8(0xD21748), 1 (8-bit) */
-    /* PC: values on both pages, not only Movie Display Ratio's. */
+    if (is_ours(page_now())) {   /* PC pages: ngbrecomp's values (a text for each kind of row) */
+        eax = MEM32(0x43B474);
+        ecx = MEM32(esp + 0x18);
+        edi = eax + ecx;
+        eax = pc_value_id((int)MEM32(esp + 0x10),
+                          MEM32(esp + ZX8(MEM8(0xDA42EF)) * 4 + 0x78));
+        if (eax == 0) goto loc_0021F5BF;
+        goto hz_value_text;
+    }
+    g_ebp = ebp; /* frame stays current across calls */
+    g_seh_ebp = ebp;
+    PUSH32(esp, 0x0021F547u); RECOMP_ABI_CALL(0x00DC89A0u, sub_00DC89A0); /* call 0x00DC89A0 */
+
+loc_0021F547: ;
+    /* Hurricane: the hook's ZF, from its two returns -- row 1 (the crosshair it just drew): `cmp eax,eax`,
+     * ZF set; any other row: the replaced `test byte [0xD21748],1`, ZF when not widescreen. Its [esp+0x14]
+     * is this frame's [esp+0x10] (the call pushed the return address). */
+    if (MEM32(esp + 0x10) == 1 || !(MEM8(0xD21748) & 1)) goto loc_0021F5BF;
 
 loc_0021F54B: ;
     eax = MEM32(0x43B474);
     ecx = MEM32(esp + 0x18);
     edi = eax + ecx;
-    eax = pc_value_id((int)MEM32(esp + 0x10),
-                      MEM32(esp + ZX8(MEM8(0xDA42EF)) * 4 + 0x78));
-    if (eax == 0) goto loc_0021F5BF;
+    g_ebp = ebp; /* frame stays current across calls */
+    g_seh_ebp = ebp;
+    PUSH32(esp, 0x0021F55Cu); RECOMP_ABI_CALL(0x00DC8A30u, sub_00DC8A30); /* call 0x00DC8A30 */
+    /* flags as 0x0021F557's callee left them: test eax, eax */
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fb = (uint32_t)(0) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp eax, 0 (32-bit) */
+
+loc_0021F55C: ;
+    if (CMP_NE(_fa, _fb)) goto loc_0021F5BF; /* jne: not equal / not zero */
 
 loc_0021F55E: ;
+    eax = ZX8(MEM8(0xDA42EF));
+    eax = MEM32(esp + eax * 4 + 0x78);
+
+hz_value_text: ;
     edx = 0; /* xor self */
     _fa = (uint32_t)(edx) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* xor result */
     SET_LO8(edx, MEM8(0x8DE524));
@@ -1838,7 +1903,12 @@ void sub_00220870(void)
     } else if (level == 1) {
         if (tab == 0 && row < 7) id = general[row];
         else if (tab == 1 && row < 6) id = audio[row];
+        /* Hurricane x2.1 (its hook at 0x2209FA / 0x220A22, 0xDC8790): Controller Settings has 7 rows,
+         * Screen Settings 5 (widescreen) or 3, their descriptions in tables of the XBE's HANZI data. */
+        else if (tab == 2 && row < 7) id = MEM16(0xDC8DC8 + 2 * row);
         else if (tab == 2 && row < 6) id = control[row];
+        else if (tab == 3 && (MEM8(0xD21748) & 1) && row < 5) id = MEM16(0xDC8EE8 + 2 * row);
+        else if (tab == 3 && !(MEM8(0xD21748) & 1) && row < 3) id = MEM16(0xDC8EF4 + 2 * row);
         else if (tab == 3) {
             int kind = row_kind((int)row);
             if (kind >= 0)
