@@ -76,4 +76,5 @@ target_link_libraries(xbox_nv2a_vk PUBLIC
     xbox_kernel xbox_video platform
     PkgConfig::NV2A_GLIB SDL2::SDL2
     ${NV2A_GLSLANG}
-    $<IF:$<PLATFORM_ID:Windows>,winpthread,${CMAKE_DL_LIBS} m pthread>)   # libstdc++: the C++ link brings it (statically under -static-libstdc++)
+    $<IF:$<PLATFORM_ID:Windows>,winpthread,${CMAKE_DL_LIBS} m pthread>
+    $<$<PLATFORM_ID:Windows>:dxgi dxguid>)   # dxgi: the display's vertical blank (nv2a_host.c)   # libstdc++: the C++ link brings it (statically under -static-libstdc++)

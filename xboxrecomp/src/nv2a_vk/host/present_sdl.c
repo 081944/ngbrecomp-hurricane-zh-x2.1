@@ -406,6 +406,12 @@ void nv2a_present_set_aspect(double aspect)
     s_aspect = aspect > 0 ? aspect : 0;
 }
 
+/* For the vblank clock (nv2a_host.c): 0 off, 1 on, 2 adaptive. */
+int nv2a_present_vsync(void)
+{
+    return s_vsync;
+}
+
 void nv2a_present_set_vsync(int vsync)
 {
     if (vsync != s_vsync) {
