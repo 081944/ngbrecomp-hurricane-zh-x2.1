@@ -45,6 +45,11 @@ static void restart_portable(const char *src);
  * SHA-256 aa3c5bec...), patched from the retail USA one. */
 #define NGB_XBE_SIZE  4583424u
 #define NGB_XBE_FNV   0x0e05bb170e439927ull
+/* (UTF-8: win_tell shows it as such) */
+#define NGB_WRONG_DISC "这不是本程序所需的「忍者龙剑传 黑之章 飓风版[中英] vb-zh-x2.1」镜像" \
+    "（需要美版原版镜像打上哈雅布撒的 x2.1 补丁后得到的版本）。\n\n" \
+    "This is not NINJA GAIDEN BLACK [Hurricane] vb-zh-x2.1 (the retail USA disc with the x2.1 patch), " \
+    "which this build was made from."
 
 #define SECTOR 2048u
 static const char XDVDFS_MAGIC[20] = "MICROSOFT*XBOX*MEDIA";
@@ -536,8 +541,10 @@ static int win_welcome(const char *installed, int *portable)
         snprintf(path, sizeof path, "%%LOCALAPPDATA%%%s", rest);
     }
     snprintf(text, sizeof text,
-             "The game itself is not included. To play, choose your own copy of the "
-             "Xbox game (the retail USA release):\n\n"
+             "本程序不含游戏本体。请选择你自己的「忍者龙剑传 黑之章 飓风版[中英] vb-zh-x2.1」"
+             "镜像（美版原版镜像打上哈雅布撒的 x2.1 补丁后得到的 ISO），或其解压出的文件夹。\n\n"
+             "The game itself is not included. To play, choose your own copy of "
+             "NINJA GAIDEN BLACK [Hurricane] vb-zh-x2.1 (the retail USA disc with the x2.1 patch):\n\n"
              "\u2022  a disc image: .iso, including a full Redump dump, or the .7z / .zip it came in\n"
              "\u2022  or a folder of extracted files, with default.xbe\n\n"
              "A disc image is installed once (about 6 GB) into\n%s\n"
@@ -668,8 +675,7 @@ static int install_from(const char *src, const char *dest)
     s_cancel = 0;
     rc = install_image(src, part);
     if (rc == 0 && ngb_check_xbe(part) == 1 && !getenv("NGB_ANY_XBE")) {
-        fail("This is not the retail USA Ninja Gaiden Black (NTSC) this "
-             "build was made from.");
+        fail(NGB_WRONG_DISC);
         rc = -1;
     }
     if (rc == 0) {
@@ -748,8 +754,7 @@ int ngb_install(const char *src, const char *installed, char *out, size_t n)
     case 1:
         if (getenv("NGB_ANY_XBE"))
             return 0;
-        fail("%s/default.xbe is not the retail USA Ninja Gaiden Black (NTSC) "
-             "this build was made from.", out);
+        fail("%s/default.xbe:\n" NGB_WRONG_DISC, out);
         return -1;
     default:
         fail("There is no default.xbe in %s.", out);
@@ -907,7 +912,9 @@ static int win_install(const char *src, const char *installed, char *out, size_t
 
 static void win_tell(const char *msg)
 {
-    MessageBoxA(NULL, msg, "Ninja Gaiden Black", MB_OK | MB_ICONERROR);
+    wchar_t w[2048];   /* Hurricane: UTF-8, for the messages in Chinese */
+    MultiByteToWideChar(CP_UTF8, 0, msg, -1, w, 2048);
+    MessageBoxW(NULL, w, L"Ninja Gaiden Black", MB_OK | MB_ICONERROR);
 }
 #endif
 
@@ -1083,7 +1090,7 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
     }
     {
         char msg[1200];
-        snprintf(msg, sizeof msg, "The game could not be installed.\n\n%s", ngb_install_error());
+        snprintf(msg, sizeof msg, "游戏未能安装。The game could not be installed.\n\n%s", ngb_install_error());
         win_tell(msg);
     }
     return -1;
@@ -1105,8 +1112,7 @@ check:
         if (getenv("NGB_ANY_XBE"))
             return 0;
 #if defined(_WIN32)
-        win_tell("The installed game is not the retail USA Ninja Gaiden Black (NTSC) "
-                 "this build was made from.");
+        win_tell(NGB_WRONG_DISC);
 #endif
         return -1;
     default:
