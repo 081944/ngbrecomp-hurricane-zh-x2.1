@@ -11,6 +11,7 @@
  * NGB_VSYNC, NV2A_SCALE) still override them, for testing.
  */
 #include <SDL.h>
+#include "hurricane_version.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -433,7 +434,7 @@ int ngb_launcher_run(NgbSettings *s)
         fprintf(stderr, "settings screen: %s\n", SDL_GetError());
         return 1;                /* no screen: just start */
     }
-    win = SDL_CreateWindow("Ninja Gaiden Black", SDL_WINDOWPOS_CENTERED,
+    win = SDL_CreateWindow(NGB_WINDOW_TITLE, SDL_WINDOWPOS_CENTERED,
                            SDL_WINDOWPOS_CENTERED, LW, LH,
                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     r = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED |

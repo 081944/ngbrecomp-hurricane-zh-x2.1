@@ -18,6 +18,8 @@
  * executable, or wherever NGB_GAME_DIR (or the first argument) points.
  */
 
+#include "hurricane_version.h"
+
 #if defined(_WIN32)
 #include <windows.h>
 #include <dbghelp.h>
@@ -1155,7 +1157,7 @@ int main(int argc, char **argv)
 #endif
 #if defined(NGB_NV2A_VK)
     if (s_use_gpu && !s_headless &&
-        nv2a_window_create("Ninja Gaiden Black", cfg.width, cfg.height,
+        nv2a_window_create(NGB_WINDOW_TITLE, cfg.width, cfg.height,
                            cfg.fullscreen, ngb_settings_aspect_ratio(&cfg),
                            cfg.vsync) != 0) {
         fprintf(stderr, "Cannot open the game window.\n");
