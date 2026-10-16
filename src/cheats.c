@@ -237,8 +237,11 @@ static void pos_tick(void)
 
 void ngb_aspect_frame_end(void);   /* src/pc_menu.c */
 
+void ngb_zh_font_tick(void);   /* src/hurricane_zh.c */
+
 void ngb_frame_tick(void)
 {
+    ngb_zh_font_tick();
     pos_tick();
     ngb_aspect_frame_end();
     ngb_aspect_tick();

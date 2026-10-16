@@ -40,6 +40,7 @@
 #include <string.h>
 
 #include "xbox_memory_layout.h"   /* xbox_HeapAlloc, xbox_ContiguousAlloc */
+#include "hurricane_zh.h"          /* Hurricane x2.1: the text in Chinese */
 
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -111,6 +112,12 @@ static const char *const s_help[S_COUNT] = {
 #define CAT_ROWS 5
 #define CAT_CTL 4                 /* Controls: the bindings' list (src/bindings.c), not settings */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Cheats", "Controls" };
+/* Hurricane x2.1: the strip's word in Chinese when the game's text is */
+static const char *cat_name(int c)
+{
+    const char *z = ngb_zh_ctx("cat", s_cat_name[c]);
+    return z ? z : s_cat_name[c];
+}
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, -1 },
     { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS },
@@ -436,6 +443,11 @@ static float game_text(uint8_t *m, int w, int h, const char *s, float px, float 
 static float draw_text(uint8_t *m, int w, int h, const stbtt_fontinfo *f,
                        const char *s, float px, float sx, float x, float base)
 {
+    {   /* Hurricane x2.1: in Chinese while the game's text is */
+        const char *z = ngb_zh(s);
+        if (z || ngb_zh_is_wide(s))
+            return ngb_zh_text(m, w, h, z ? z : s, px, sx, x, base);
+    }
     if (s_game_font)
         return game_text(m, w, h, s, px, sx, x, base);
     float scale = stbtt_ScaleForPixelHeight(f, px), x0 = x;
@@ -466,6 +478,11 @@ static float draw_text(uint8_t *m, int w, int h, const stbtt_fontinfo *f,
 
 static float text_width(const stbtt_fontinfo *f, const char *s, float px, float sx)
 {
+    {
+        const char *z = ngb_zh(s);
+        if (z || ngb_zh_is_wide(s))
+            return ngb_zh_text(NULL, 0, 0, z ? z : s, px, sx, 0, 0);
+    }
     if (s_game_font)
         return game_text(NULL, 0, 0, s, px, sx, 0, 0);
     float scale = stbtt_ScaleForPixelHeight(f, px), x = 0;
@@ -479,12 +496,42 @@ static float text_width(const stbtt_fontinfo *f, const char *s, float px, float 
     return x;
 }
 
+/* Hurricane x2.1: a word drawn as a picture (src/hurricane_zh_data.c) into m (mw x mh, max) at (ox, oy), kx / ky
+ * texels of m a texel of it (each texel of m the mean of the picture's under it). Returns its width in m. */
+static float art_blit(uint8_t *m, int mw, int mh, const NgbZhArt *a, float ox, float oy, float kx, float ky)
+{
+    int X0 = (int)floorf(ox), Y0 = (int)floorf(oy), X1 = (int)ceilf(ox + a->w * kx), Y1 = (int)ceilf(oy + a->h * ky);
+    for (int Y = Y0; Y < Y1; Y++)
+        for (int X = X0; X < X1; X++) {
+            if (X < 0 || Y < 0 || X >= mw || Y >= mh)
+                continue;
+            float sum = 0;
+            for (int j = 0; j < 4; j++)
+                for (int i = 0; i < 4; i++) {
+                    int u = (int)floorf((X + (i + 0.5f) / 4 - ox) / kx), v = (int)floorf((Y + (j + 0.5f) / 4 - oy) / ky);
+                    if (u >= 0 && v >= 0 && u < a->w && v < a->h)
+                        sum += a->a[v * a->w + u];
+                }
+            uint8_t b = (uint8_t)lroundf(sum / 16);
+            if (b > m[Y * mw + X])
+                m[Y * mw + X] = b;
+        }
+    return a->w * kx;
+}
+
 /* The tab's word in the plates' style: a tall capital, the rest smaller, a
  * little condensed, fitted into box (w x h) centred on (cx, cy). */
 static void tab_word(uint8_t *m, int mw, int mh, float cx, float cy, float bw, float bh)
 {
     static uint8_t tmp[400 * 160];
     const float cap = 58, rest = 40, sx = 0.82f, base = 110;
+    {   /* Hurricane x2.1: 设置 as x2.1 draws its other tabs' words, on its 128 x 64 plate */
+        const NgbZhArt *a = ngb_zh_art("Settings");
+        if (a) {
+            art_blit(m, mw, mh, a, 0, 0, (float)mw / a->w, (float)mh / a->h);
+            return;
+        }
+    }
     memset(tmp, 0, sizeof tmp);
     {   /* always the typeface: it looks like the other plates' lettering */
         int game = s_game_font;
@@ -631,7 +678,8 @@ static void make_glow(uint32_t *px, int w, int h)
 
 static struct {
     int page, focused, row, vals[S_COUNT];   /* page: 0 Settings, 1 Exit */
-} s_drawn = { -1, -1, -1, { 0 } };
+    int zh;                                  /* Hurricane x2.1: drawn in Chinese */
+} s_drawn = { -1, -1, -1, { 0 }, 0 };
 
 static void page_fill(uint32_t *px, float x, float y, float w, float h,
                       uint32_t rgb, float a0, float a1)
@@ -790,11 +838,11 @@ static void draw_page(int focused, int cat, int row)
     page_fill(px, 4, STRIP_Y + STRIP_H - 1.5f, 442, 1.5f, 0xB4B9D2, 0.6f, 0.6f);
     float x = STRIP_X0;
     for (int c = 0; c < CATS; c++) {
-        float w = text_width(&s_font_body, s_cat_name[c], 17 * k, 1.0f) / k;
+        float w = text_width(&s_font_body, cat_name(c), 17 * k, 1.0f) / k;
         int on = c == cat, sel = focused && row < 0 && on;
         if (sel)
             page_fill(px, x - 6, STRIP_Y + 3, w + 12, STRIP_H - 6, 0x6E64DC, 0.75f, 0.75f);
-        page_text(px, m, s_cat_name[c], x, STRIP_Y + 19, 17,
+        page_text(px, m, cat_name(c), x, STRIP_Y + 19, 17,
                   sel ? 0xFFFFFF : on ? 0xC8C4FF : 0x8C8C96, 0);
         s_cat_x[c][0] = x - 6;
         s_cat_x[c][1] = x + w + 6;
@@ -903,12 +951,18 @@ static int styled_word(uint32_t *px, int w, int h, const stbtt_fontinfo *f, cons
                        float sx, int x, const Style *st, int shadow)
 {
     float cap = (float)(st->bot - st->top + 1), size = cap_px(f, cap);
-    int game = s_game_font;
-    s_game_font = 0;
-    int ww = (int)ceilf(text_width(f, word, size, sx)) + 2;
     uint8_t *m = calloc((size_t)w * h, 1);
-    draw_text(m, w, h, f, word, size, sx, (float)x, (float)st->bot + 1);
-    s_game_font = game;
+    int ww;
+    const NgbZhArt *art = ngb_zh_art(word);
+    if (art) {   /* Hurricane x2.1: as x2.1's Options words, rows 0-19 of the picture's 32 its letters */
+        ww = (int)ceilf(art_blit(m, w, h, art, (float)x, (float)st->top, cap / 20, cap / 20)) + 2;
+    } else {
+        int game = s_game_font;
+        s_game_font = 0;
+        ww = (int)ceilf(text_width(f, word, size, sx)) + 2;
+        draw_text(m, w, h, f, word, size, sx, (float)x, (float)st->bot + 1);
+        s_game_font = game;
+    }
     float *sh = malloc(sizeof *sh * w * h);
     for (int y = 0; y < h; y++)
         for (int X = 0; X < w; X++) {
@@ -998,7 +1052,7 @@ static int rp_make_words(uint32_t hdr, uint32_t pal)
         s_rp_uv[i][0] = (float)(w - 6) / w;
         s_rp_uv[i][1] = (float)(w - 2) / w;
     }
-    int ok = x < w - 8 && make_texture(&s_rp[1].t, w, h, MEM32(hdr + 0xC) & 0xFF);
+    int ok = x < w - 8 && (s_rp[1].t.hdr || make_texture(&s_rp[1].t, w, h, MEM32(hdr + 0xC) & 0xFF));
     if (ok)
         upload(&s_rp[1].t, px);
     free(px);
@@ -1025,6 +1079,8 @@ static int rp_skip(uint32_t id)
     return 1;
 }
 
+void ngb_recomp_pictures_off(void);
+
 /* Each sprite the game queues while RECOMP SETTINGS is open: ours in place. */
 static void rp_check(uint32_t id)
 {
@@ -1042,9 +1098,17 @@ static void rp_check(uint32_t id)
     uint32_t entry = 0x8DBB28 + MEM32(def + 0x10) * 8;
     if (s_rp[k].made < 0)
         return;                                        /* could not: the game's */
+    static int rp_zh;                                  /* Hurricane x2.1: the words' language */
+    if (k == 1 && s_rp[1].made > 0 && rp_zh != ngb_zh_on()) {
+        ngb_recomp_pictures_off();                     /* the game's back, then ours again */
+        s_rp[1].made = 0;
+    }
     if (!s_rp[k].made) {
-        int ok = k == 0 ? rp_make_header(MEM32(entry), MEM32(entry + 4))
-                        : rp_make_words(MEM32(entry), MEM32(entry + 4));
+        uint32_t src = s_rp[k].t.hdr && MEM32(entry) == s_rp[k].t.hdr ? s_rp[k].orig : MEM32(entry);
+        if (k == 1)
+            rp_zh = ngb_zh_on();
+        int ok = k == 0 ? rp_make_header(src, MEM32(entry + 4))
+                        : rp_make_words(src, MEM32(entry + 4));
         s_rp[k].made = ok ? 1 : -1;
         if (!ok) {
             fprintf(stderr, "[RECOMP] the Options %s picture is not one read here: the game's\n",
@@ -1427,9 +1491,39 @@ uint32_t ngb_sprite_def(uint32_t id)
     return sprite_def(id);
 }
 
+/* Hurricane x2.1: the plate and glow again when the game's text language changes (Settings / 设置). */
+static int s_plate_zh;
+
+static void plates_refresh(void)
+{
+    int zh = ngb_zh_on();
+    if (zh == s_plate_zh)
+        return;
+    uint32_t def = sprite_def(EXIT_PLATE);
+    uint32_t idx = def ? MEM32(def + 0x10) : PT_TEX;
+    if (idx >= PT_TEX)
+        return;
+    uint32_t hdr = MEM32(0x8DBB28 + idx * 8), pal = MEM32(0x8DBB2C + idx * 8);
+    int w, h;
+    uint32_t *plate = hdr ? read_texture(hdr, pal, &w, &h) : NULL;
+    if (!plate || w != s_tex[0].w || h != s_tex[0].h) {
+        free(plate);
+        return;
+    }
+    s_plate_zh = zh;
+    make_plate(plate, w, h);
+    upload(&s_tex[0], plate);
+    memset(plate, 0, sizeof *plate * w * h);
+    make_glow(plate, w, h);
+    upload(&s_tex[1], plate);
+    free(plate);
+}
+
 /* Once the pause menu's sprites are loaded: our plate, glow and page. */
 static int pt_ready(void)
 {
+    if (s_ready > 0)
+        plates_refresh();
     if (s_ready >= 0 || !s_enabled)
         return s_ready > 0;
     uint32_t def = sprite_def(EXIT_PLATE);
@@ -1461,6 +1555,7 @@ static int pt_ready(void)
         free(plate);
         return 0;
     }
+    s_plate_zh = ngb_zh_on();
     make_plate(plate, w, h);
     upload(&s_tex[0], plate);
     memset(plate, 0, sizeof *plate * w * h);
@@ -1749,7 +1844,8 @@ static void pt_draw(void)
     if (s_cat == CAT_CTL)                             /* and the bindings, and waiting for one */
         shown ^= (int)(ngb_bind_generation() << 20) ^ ngb_bind_capturing() << 30;
     if (s_drawn.page != 0 || s_focus != s_drawn.focused || shown != s_drawn.row ||
-        memcmp(vals, s_drawn.vals, sizeof vals)) {
+        memcmp(vals, s_drawn.vals, sizeof vals) || s_drawn.zh != ngb_zh_on()) {
+        s_drawn.zh = ngb_zh_on();
         draw_page(s_focus, s_cat, s_row);
         s_drawn.page = 0;
         s_drawn.focused = s_focus;
@@ -2322,7 +2418,8 @@ static void pt_exit_draw(void)
     if (s_focus != was && !(key == K_OK && s_exit_row == 0))
         play_sound(s_focus ? 6 : 3);
     int shown = s_exit_row * 4 + s_exit_armed + 1;
-    if (s_drawn.page != 1 || s_focus != s_drawn.focused || shown != s_drawn.row) {
+    if (s_drawn.page != 1 || s_focus != s_drawn.focused || shown != s_drawn.row || s_drawn.zh != ngb_zh_on()) {
+        s_drawn.zh = ngb_zh_on();
         draw_exit_page(s_focus, s_exit_row, s_exit_armed);
         s_drawn.page = 1;
         s_drawn.focused = s_focus;

@@ -1,0 +1,178 @@
+ctx	en	zh	use
+# The recomp's own text in Chinese, shown when the game's text language is the Japanese column (Hurricane x2.1: Chinese).
+# ctx: "" = everywhere; "cat" = the pause page's category strip. use: E = also the game's text table (src/pc_menu.c,
+# src/main_menu.c: encoded with x2.1's charmap, every character must be in it), P = our own drawing only (embedded font).
+# Terms follow the x2.1 glossary (精魂, 忍法, 黄金圣甲虫, 服装, 风驱, 强攻击, 防御, 飞行道具, 业力, 开/关, 是/否).
+# --- main menu (src/main_menu.c)
+	RECOMP SETTINGS	PC版设置	E
+	EXIT TO DESKTOP	退出到桌面	E
+# --- RECOMP SETTINGS and Screen Settings pages, the game's own menu (src/pc_menu.c)
+	PC Settings	PC版设置	E
+	Render Resolution	渲染分辨率	E
+	Anisotropic Filtering	纹理过滤	E
+	Anti-Aliasing (MSAA)	抗锯齿	E
+	Smooths the edges of the 3D; 2x to 8x samples a pixel.	多重采样抗锯齿（MSAA），平滑3D画面边缘	E
+	Off	关	E
+	On	开	P
+	Shadow Resolution	阴影分辨率	E
+	Display	显示模式	E
+	V-Sync	垂直同步	E
+	Show FPS	显示帧率	E
+	Native (1x)	原生（1倍）	E
+	Smooth	平滑	E
+	Original	原版	E
+	Fullscreen	全屏	E
+	Windowed	窗口	E
+	Adaptive	自适应	E
+	Borderless	无边框	E
+	Aspect Ratio	画面比例	E
+	The shape of the picture and the window sizes offered.	画面比例，以及可选的窗口大小	E
+	Window Size	窗口大小	E
+	The size of the window when not full screen.	非全屏时的窗口大小	E
+	Graphics and display settings of the PC version.	PC版的图形与显示设置	E
+	Sets the resolution the game is drawn at.	设置游戏画面的渲染分辨率	E
+	Keeps textures sharp at an angle; Off is the console's filtering.	各向异性过滤：远处与侧面的纹理更清晰，关为原版	E
+	Sets the resolution of the character shadows.	设置角色阴影的分辨率	E
+	A window, the whole screen, or a window without a frame.	窗口、全屏或无边框窗口	E
+	Syncs frames to the refresh; Adaptive lets a late one through.	画面与刷新同步，自适应时迟到的帧立即显示	E
+	Shows the frame rate in a corner of the screen.	在画面一角显示帧率	E
+	Skip Intros	跳过片头	E
+	Settings at Startup	启动时设置	E
+	Yes	是	E
+	No	否	E
+	Starts at the title screen, from the next start.	下次启动起直接进入标题画面	E
+	Shows the settings screen before the game, from the next start.	下次启动起，在游戏前显示设置画面	E
+	Render resolution, texture filtering and shadow detail.	渲染分辨率、纹理过滤与阴影精度	E
+	Aspect ratio, window size, display mode, V-Sync and the FPS counter.	画面比例、窗口大小、显示模式、垂直同步与帧率	E
+	What the game shows when it starts, and the difficulties New Game offers.	启动时的画面，以及新游戏可选的难度	E
+	Returns to the Recomp Settings screen.	返回PC版设置画面	E
+	Infinite Health	无限体力	E
+	Infinite Ninpo	无限忍法	E
+	Infinite Essence	无限精魂	E
+	Ryu's health stays full. For this session only.	龙的体力始终全满。仅本次有效	E
+	Ninpo is always ready. For this session only.	忍法随时可用。仅本次有效	E
+	As much essence as can be held. For this session only.	精魂保持在持有上限。仅本次有效	E
+	Help for a hard spot: health, ninpo and essence. Not saved.	难关助力：体力、忍法与精魂。不会保存	E
+	All Difficulties	全部难度	E
+	Every difficulty at New Game, Ninja Dog to Master Ninja.	新游戏可选全部难度，从忍犬到超忍	E
+	Golden Scarabs	黄金圣甲虫	E
+	All 50 Golden Scarabs: Muramasa gives every reward. For this session only.	全部50只圣甲虫，可领村正全部宝物。仅本次有效	E
+	All Costumes	全部服装	E
+	Every costume at the Costume Selection, and three it never offers.	服装选择提供全部服装，另加三套隐藏服装	E
+	Extra Costume	隐藏服装	E
+	Costumes in the game's files it never offers. From the next area.	游戏文件中未开放的服装。从下一区域起生效	E
+	Game's Choice	游戏默认	E
+	Extra 1	隐藏1	E
+	Extra 2	隐藏2	E
+	Extra 3	隐藏3	E
+	The keys, mouse buttons and controller buttons used in play.	游戏中使用的各种操作按键	E
+# --- the pause menu's Settings tab (src/pause_tab.c)
+cat	Graphics	图形	P
+cat	Display	显示	P
+cat	Startup	启动	P
+cat	Cheats	作弊	P
+cat	Controls	按键	P
+	FPS Counter	帧率显示	P
+	Draws the game at a multiple of the console's resolution.	以主机分辨率的整数倍渲染游戏画面	P
+	Keeps textures sharp at an angle. Off: the console's filtering.	各向异性过滤：远处与侧面的纹理更清晰。关：主机原版	P
+	The detail of the characters' shadows; 1x is the console's.	角色阴影的精度，1x 为主机原版	P
+	Waits for the refresh: no tearing. Adaptive: a late frame goes at once.	等待屏幕刷新，画面不撕裂。自适应：迟到的帧立即显示	P
+	Frames per second, in the corner of the screen.	在画面一角显示每秒帧数	P
+	Starts at the title screen. From the next start.	直接从标题画面开始。下次启动起生效	P
+	The settings screen before the game. From the next start.	在游戏前显示设置画面。下次启动起生效	P
+	Smooths the edges of the 3D: 2x to 8x samples a pixel.	多重采样抗锯齿（MSAA），平滑3D画面边缘	P
+	All 50: Muramasa gives every reward. For this session only.	全部50只：可领村正全部宝物。仅本次有效	P
+	Costumes in the game it never offers. From the next area.	游戏中未开放的服装。从下一区域起生效	P
+	1x (console)	1x（主机）	P
+	Keyboard / Mouse	键盘 / 鼠标	P
+	Controller	控制器	P
+	Default Controls	恢复默认按键	P
+	Press a button	请按按键	P
+	Press a key	请按按键	P
+	R Stick	右摇杆	P
+	L Stick	左摇杆	P
+	Press the controller's button (wait to cancel).	请按下控制器按键（稍等即取消）	P
+	Press a key or mouse button (Esc cancels).	请按下键盘或鼠标按键（Esc 取消）	P
+	Every action as it was.	所有操作恢复为默认按键	P
+	A: change   X / Delete: clear   (play only; the menus keep theirs)	A：更改　X / Delete：清除（仅限游戏操作，菜单按键不变）	P
+	Controls	按键设置	P
+	EXTRA 1	隐藏 1	P
+	EXTRA 2	隐藏 2	P
+	EXTRA 3	隐藏 3	P
+	EXTRA 4	隐藏 4	P
+	EXTRA 5	隐藏 5	P
+	EXTRA 6	隐藏 6	P
+	EXTRA 7	隐藏 7	P
+	EXTRA 8	隐藏 8	P
+	EXTRA 9	隐藏 9	P
+	Exit to Desktop?	要退出到桌面吗？	P
+	Return to the Main Menu?	要返回主菜单吗？	P
+	Return to Game	返回游戏	P
+	Return to Main Menu	返回主菜单	P
+	Exit to Desktop	退出到桌面	P
+	Closes this menu.	关闭此菜单	P
+	Back to the main menu. Unsaved progress is lost.	返回主菜单。未保存的进度将会丢失	P
+	Closes the game. Unsaved progress is lost.	关闭游戏。未保存的进度将会丢失	P
+# --- the controls (src/bindings.c): actions, their help, the mouse buttons
+	Attack	攻击	P
+	Special Attack	强攻击	P
+	Jump	跳跃	P
+	Projectile Weapon	飞行道具	P
+	Ninpo	忍法	P
+	Wind Run	风驱	P
+	Guard	防御	P
+	Center Camera	镜头移至后方	P
+	Display Map	地图显示	P
+	Karma Window On/Off	业力显示	P
+	Pause	暂停	P
+	Back	BACK键	P
+	First-Person View	第一人称视角	P
+	Right Stick Button	按下右摇杆	P
+	Move Forward	向前移动	P
+	Move Back	向后移动	P
+	Move Left	向左移动	P
+	Move Right	向右移动	P
+	Camera Up	镜头向上	P
+	Camera Down	镜头向下	P
+	Camera Left	镜头向左	P
+	Camera Right	镜头向右	P
+	D-Pad Up	十字键上	P
+	D-Pad Down	十字键下	P
+	D-Pad Left	十字键左	P
+	D-Pad Right	十字键右	P
+	A quick strike.	快速的攻击	P
+	A strong strike.	强力的攻击	P
+	Jump; at a wall, run along it.	跳跃；靠近墙壁时可沿墙奔跑	P
+	Throws the projectile weapon.	投掷飞行道具	P
+	Casts the ninpo (Special Attack and Projectile together).	施展忍法（强攻击与飞行道具同按）	P
+	Runs at the nearest enemy (Attack and Jump together).	冲向最近的敌人（攻击与跳跃同按）	P
+	Blocks; with a direction, rolls.	防御；加方向则翻滚	P
+	Turns the camera behind Ryu.	将镜头转到龙的身后	P
+	Shows the map.	显示地图	P
+	Shows or hides the karma window.	显示或隐藏业力窗口	P
+	The pause menu.	打开暂停菜单	P
+	The controller's Back button.	控制器的BACK键	P
+	Looks through Ryu's eyes (the left stick's button).	以龙的视角观看（按下左摇杆）	P
+	The right stick's button.	按下右摇杆	P
+	Moves Ryu (the left stick).	移动龙（左摇杆）	P
+	Turns the camera (the right stick; the mouse too).	转动镜头（右摇杆，鼠标亦可）	P
+	The controller's directional pad.	控制器的十字键	P
+	Mouse Left	鼠标左键	P
+	Mouse Middle	鼠标中键	P
+	Mouse Right	鼠标右键	P
+	Mouse 4	鼠标侧键4	P
+	Mouse 5	鼠标侧键5	P
+# --- the settings over the game, F1 (src/ingame_menu.c; its rows' names from src/launcher.c)
+	Options	选项	P
+	Resume	继续游戏	P
+	Press again to quit	再按一次退出	P
+	Quit game	退出游戏	P
+	Aspect ratio	画面比例	P
+	Window size	窗口大小	P
+	Render resolution	渲染分辨率	P
+	Anisotropic filtering	纹理过滤	P
+	Anti-aliasing (MSAA)	抗锯齿	P
+	Shadow resolution	阴影分辨率	P
+	Skip intros and warnings	跳过片头与警告	P
+	Up/Down or mouse: choose    Left/Right or click: change    A / Enter: select    B / Esc / F1: resume	上/下或鼠标：选择　　左/右或点击：更改　　A / Enter：确定　　B / Esc / F1：继续游戏	P
+	Changes apply when you resume. Skip intros and the startup screen take effect next start.	继续游戏时应用更改。跳过片头与启动画面在下次启动时生效。	P

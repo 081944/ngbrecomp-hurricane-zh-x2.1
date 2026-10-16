@@ -28,6 +28,7 @@
 #include "input/xinput_xbox.h"
 #include "usb/usb_gamepad.h"
 #include "apu/apu.h"
+#include "hurricane_zh.h"   /* Hurricane x2.1: the text in Chinese */
 
 enum { KEY_UP = 1, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_OK, KEY_BACK, KEY_CLEAR };
 
@@ -1310,8 +1311,15 @@ static void fill(float x, float y, float w, float h, uint32_t rgb, int a)
             blend(&s_px[(size_t)yy * s_w + xx], rgb, a);
 }
 
+/* Hurricane x2.1: Chinese in the embedded font, its ideographs a little taller than the capitals here */
+#define ZH_PX 0.87f
+#define ZH_BASE 0.78f
+
 static float text_width(const char *t, float size)
 {
+    const char *z = ngb_zh(t);
+    if (z)
+        return ngb_zh_text(NULL, 0, 0, z, size * ZH_PX, 1.0f, 0, 0);
     float w = 0;
     for (; *t; t++) {
         int c = (unsigned char)*t;
@@ -1330,6 +1338,25 @@ static void text(const char *t, float x, float y, float size, uint32_t rgb,
     if (align == 2) x -= text_width(t, size);
     float scale = size * s_k / LAUNCHER_FONT_H_PX;   /* window px per glyph px */
     float px0 = s_ox + x * s_k, py0 = s_oy + y * s_k;
+    const char *z = ngb_zh(t);
+    if (z) {
+        float P = size * ZH_PX * s_k;
+        int mw = (int)ceilf(ngb_zh_text(NULL, 0, 0, z, P, 1.0f, 0, 0)) + 4, mh = (int)ceilf(size * s_k * 1.3f) + 4;
+        uint8_t *m = calloc((size_t)mw * mh, 1);
+        if (!m)
+            return;
+        float fx = px0 - floorf(px0), fy = py0 - floorf(py0);
+        ngb_zh_text(m, mw, mh, z, P, 1.0f, fx, fy + size * s_k * ZH_BASE);
+        int X0 = (int)floorf(px0), Y0 = (int)floorf(py0);
+        for (int yy = 0; yy < mh; yy++)
+            for (int xx = 0; xx < mw; xx++) {
+                int X = X0 + xx, Y = Y0 + yy;
+                if (m[yy * mw + xx] && X >= 0 && Y >= 0 && X < s_w && Y < s_h)
+                    blend(&s_px[(size_t)Y * s_w + X], rgb, m[yy * mw + xx] * alpha / 255);
+            }
+        free(m);
+        return;
+    }
     for (; *t; t++) {
         int c = (unsigned char)*t;
         if (c < 32 || c > 126) c = '?';

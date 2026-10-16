@@ -55,7 +55,8 @@ endif()
 set(NGB_FONTS
     "EBGaramond-ExtraBoldItalic.ttf\;ngb_font_tab"
     "LiberationSerif-Regular.ttf\;ngb_font_body"
-    "LiberationSerif-Bold.ttf\;ngb_font_label")
+    "LiberationSerif-Bold.ttf\;ngb_font_label"
+    "NGBHanzi-Bold.ttf\;ngb_font_cjk")    # Hurricane x2.1: Source Han Sans CN Bold, cut (tools/hurricane/make_zh.py)
 set(NGB_FONT_SOURCES)
 foreach(entry ${NGB_FONTS})
     list(GET entry 0 file)
@@ -110,6 +111,8 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     # The Hurricane x2.1 build: hand-written for its patched-in code.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hurricane_hint.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hurricane_flags.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hurricane_zh.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hurricane_zh_data.c
     # The Direct3D hooks (docs/renderer.md, tools/take_d3d.py).
     ${CMAKE_CURRENT_SOURCE_DIR}/src/d3d/d3d.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cheats.c

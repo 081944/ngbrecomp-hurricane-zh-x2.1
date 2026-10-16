@@ -37,6 +37,7 @@
 
 #include "xbox_memory_layout.h"   /* xbox_HeapAlloc: guest memory */
 #include "port.h"
+#include "hurricane_zh.h"
 
 /* Settings, from src/ingame_menu.c: 0 render scale (1-8), 1 smooth
  * texture filtering, 2 shadow map scale (1, 2, 4, 8), 3 fullscreen,
@@ -304,6 +305,8 @@ static void pc_menu_init(void)
         MEM32(e) = id;
         MEM32(e + 4) = str;           /* English */
         MEM32(e + 8) = str;           /* and in the Japanese text too */
+        if (i < add)                  /* Hurricane x2.1: there its Chinese (src/hurricane_zh.c) */
+            ngb_zh_engine_text(e + 4, e + 8, text);
     }
     MEM32(0x436240 + 2 * 4) = tab;
     MEM16(0x43626C + 2 * 2) = (uint16_t)(count + add + extra);
