@@ -461,6 +461,8 @@ private:
     VkPipelineCache pcache_ = VK_NULL_HANDLE;
     uint32_t pcache_saved_ = 0;
     std::atomic<uint32_t> pipes_since_save_{0};
+    std::thread saver_;                      // the periodic save of pcache_, off the frame (CacheSavePipelinesSoon)
+    std::atomic<bool> saving_{false};
     // shaders and pipelines a draw needs and nothing has made yet: made on a thread of their own while the
     // draw is left out (a frame or two), instead of the frame waiting for them (a hitch). NGB_D3D_SYNC_COMPILE=1
     // makes them at once instead.
@@ -481,6 +483,8 @@ private:
     void CacheOpen();
     void CacheRecord(char kind, uint64_t key, const void* data, size_t n, FILE* only = nullptr);
     void CacheSavePipelines();
+    void CacheSavePipelinesSoon();
+    void CacheWritePipelines();
     void Prewarm();
     void WarmSamples(uint32_t samples);
     uint32_t warmed_samples_ = 0;
@@ -753,6 +757,7 @@ VulkanBackend::~VulkanBackend() {
         job_cv_.notify_all();
     }
     if (compiler_.joinable()) compiler_.join();
+    if (saver_.joinable()) saver_.join();
     CacheSavePipelines();
     if (shared_) {
         nv2a_vk_set_draws_off(false);
@@ -2875,7 +2880,7 @@ void VulkanBackend::Present(const Surface& front) {
                      compiles_, pipes_made_);
     compile_us_ = 0;
     compiles_ = pipes_made_ = 0;
-    if (pipes_since_save_ && presents_ - pcache_saved_ > 600) CacheSavePipelines();
+    if (pipes_since_save_ && presents_ - pcache_saved_ > 600) CacheSavePipelinesSoon();
     ReadQuality();
     if (!dump_dir_.empty()) {
         std::string trig = dump_dir_ + "/step.now";
@@ -3142,9 +3147,28 @@ std::string VulkanBackend::CurrentVertexProgramRecipe(const std::vector<uint32_t
     return {};
 }
 
+// The periodic save, on a thread of its own. Made on the frame it stalled that frame: the driver's
+// cache data is tens of MB on Nvidia (a few hundred KB on RADV), copied out and written while the game
+// waited -- a hitch every 10-20 s in play, with the frame counter still saying 60 and the audio
+// crackling (issue #17). A Vulkan pipeline cache may be read while pipelines are made with it.
+void VulkanBackend::CacheSavePipelinesSoon() {
+    if (saving_.exchange(true)) return;   // the last one still writing: next frame, then
+    if (saver_.joinable()) saver_.join();
+    pcache_saved_ = presents_;
+    pipes_since_save_ = 0;
+    saver_ = std::thread([this] {
+        CacheWritePipelines();
+        saving_ = false;
+    });
+}
+
 void VulkanBackend::CacheSavePipelines() {
     pcache_saved_ = presents_;
     pipes_since_save_ = 0;
+    CacheWritePipelines();
+}
+
+void VulkanBackend::CacheWritePipelines() {
     if (cache_dir_.empty() || !pcache_) return;
     size_t n = 0;
     if (d_.vkGetPipelineCacheData(dev_, pcache_, &n, nullptr) != VK_SUCCESS || !n) return;
