@@ -70,10 +70,10 @@ def _parse_force_returns(items):
     return out
 
 
-def _load_flags_after_call(path):
+def _load_flags_after_call(path, option="--flags-after-call"):
     """--flags-after-call JSON {"0x<call VA>": "<hex bytes>"} -> {call VA: Instruction}. Each value is one
     cmp or test (they write only the flags, so lifting them again in the caller changes nothing else),
-    decoded at the call's return address."""
+    decoded at the call's return address. --flags-out uses the same shape with function addresses."""
     from capstone import Cs, CS_ARCH_X86, CS_MODE_32
     from .disasm import Disassembler
     with open(path, "r", encoding="utf-8") as fh:
@@ -89,7 +89,7 @@ def _load_flags_after_call(path):
         raw = bytes.fromhex(hexbytes)
         decoded = list(cs.disasm(raw, va + 5))
         if len(decoded) != 1 or decoded[0].size != len(raw) or decoded[0].mnemonic not in ("cmp", "test"):
-            raise SystemExit(f"--flags-after-call {site}: {hexbytes} is not exactly one cmp/test")
+            raise SystemExit(f"{option} {site}: {hexbytes} is not exactly one cmp/test")
         out[va] = d._decode_instruction(decoded[0])
     return out
 
@@ -280,6 +280,13 @@ def main():
                              "callee's last cmp/test>\"}. After each such call the "
                              "compare is lifted again in the caller (lifted "
                              "functions keep flags to themselves)")
+    parser.add_argument("--flags-out", metavar="JSON",
+                        help="Functions that return their flags: {\"0x<function "
+                             "VA>\": \"<hex bytes of its last cmp/test>\"}. Each "
+                             "stores that compare's snapshot before every ret "
+                             "(g_flags_out_*) and every direct call to it loads it "
+                             "back, for when redoing the compare in the caller "
+                             "would read restored registers (test ecx,ecx; popad; ret)")
     parser.add_argument("--coalesce-functions", metavar="JSON", action="append",
                         help="Explicit owner bounds and false interior starts "
                              "to merge before translation; repeatable")
@@ -357,6 +364,8 @@ def main():
     )
     if args.flags_after_call:
         translator.translator.lifter.flags_after_call = _load_flags_after_call(args.flags_after_call)
+    if args.flags_out:
+        translator.translator.lifter.flags_out = _load_flags_after_call(args.flags_out, "--flags-out")
 
     t_load = time.time() - t0
     print(f"Loaded {len(translator.func_db)} functions, "

@@ -4066,7 +4066,22 @@ def lift_basic_block(lifter, bb, flag_state=None):
                 if zf:
                     stmts.append(f"_flags = ({zf[0]}) ? 1 : 0;"
                                  " /* ZF in: a zero count keeps it */")
+        # A function that returns its flags (--flags-out: its last compare is the answer, e.g.
+        # `test ecx, ecx; popad; ret`, where redoing the compare in the caller would test the restored
+        # register): publish the compare's snapshot before each ret, for the caller to take back.
+        flags_out = getattr(lifter, "flags_out", {})
+        if curr.is_ret and lifter.func_start in flags_out:
+            stmts.append("g_flags_out_fa = _fa; g_flags_out_fb = _fb; g_flags_out_fas = _fas; "
+                         "g_flags_out_fbs = _fbs; /* flags out (--flags-out) */")
         stmts.extend(results)
+        if curr.is_call and curr.call_target in flags_out:
+            out_insn = flags_out[curr.call_target]
+            stmts.append(f"_fa = g_flags_out_fa; _fb = g_flags_out_fb; _fas = g_flags_out_fas; "
+                         f"_fbs = g_flags_out_fbs; /* flags as 0x{curr.call_target:08X} returned them: "
+                         f"{out_insn.mnemonic} {out_insn.op_str} */")
+            last_flag_setter, last_flag_ops = normalise_zero_test(out_insn.mnemonic, list(out_insn.operands))
+            i += 1
+            continue
 
         # A call whose callee hands its flags back (patched-in code that ends `cmp ...; ret` for the
         # caller's jcc): flags are each lifted function's own, so redo the callee's last compare here,
