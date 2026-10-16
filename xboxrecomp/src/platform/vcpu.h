@@ -87,8 +87,11 @@ vcpu_thread *vcpu_win_find(unsigned long tid);
 /* An exception handler's first step (its EXCEPTION_POINTERS): a thread suspended while Windows was
  * delivering it an exception may have been sent through the preemption trampoline, so the context
  * the handler sees is the trampoline's, not the faulting instruction's. Undone here (the preemption
- * is tried again later); 1 when it was. */
+ * is tried again later); 1 when it was. Until the exception is done the thread is not preempted
+ * (a handler may hold a lock). */
 int vcpu_win_unredirect(void *exception_pointers);
+/* Debugging: the CPU's holder and the threads waiting for it, as text into buf. */
+void vcpu_debug_state(char *buf, int n);
 #endif
 
 #ifdef __cplusplus

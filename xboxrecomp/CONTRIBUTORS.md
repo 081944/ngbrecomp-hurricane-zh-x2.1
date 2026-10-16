@@ -779,6 +779,16 @@ the first title taken through the pipeline to a native, playable Linux and Windo
   requirement and never mentioned either. Now carries a platform matrix that
   says what genuinely differs rather than implying one OS.
 
+### Manuel Flores — [@ManemanFTW](https://github.com/ManemanFTW)
+- **Tracked down the lost preemption redirect on Windows** (ngbrecomp PR #9) — a
+  `SetThreadContext` into the preemption trampoline that Windows drops, leaving
+  `redirected` set so the thread can never be preempted again; behind Ninja Gaiden
+  Black's "problem with the disc" screen. Found independently with a debugger and
+  refusal logging, and his check that a pending redirect must still be inside the
+  trampoline (`vcpu_win_trampoline_end`) is the one `redirect()` uses.
+- **Reported that a fresh clone did not link** — two functions listed in
+  `manual_functions.json` that nothing defined by hand.
+
 ---
 
 ## A note on AI-assisted contributions
