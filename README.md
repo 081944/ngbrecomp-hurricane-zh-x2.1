@@ -37,12 +37,12 @@ not recompiled, so their main-menu entries are hidden.
 ## Getting started (Windows)
 
 1. Download the zip from [Releases](../../releases) and extract it anywhere.
-2. Run `ngb-hurricane-zh-x2.1.exe` (in the v0.9.9 release: `NinjaGaidenBlack.exe`) and choose your vb-zh-x2.1 disc image (`.iso`) or a folder with its
-   extracted files. A disc image is installed once (about 6 GB) into `%LOCALAPPDATA%\NinjaGaidenBlack`,
+2. Run `ngb-hurricane-zh-x2.1.exe` and choose your vb-zh-x2.1 disc image (`.iso`) or a folder with its
+   extracted files. A disc image is installed once (about 6 GB) into `%LOCALAPPDATA%\ngb-hurricane-zh-x2.1`,
    or next to the program in portable mode (tick the box, or put a `portable.txt` beside the exe).
 
 Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers. Keys: F1 settings over the game,
-F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbox / xemu saves.
+F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbox / xemu saves. Its folders (`ngb-hurricane-zh-x2.1` under `%LOCALAPPDATA%` and `%APPDATA%`) are its own, so it can sit beside ngbrecomp's retail install.
 
 ## Versions
 

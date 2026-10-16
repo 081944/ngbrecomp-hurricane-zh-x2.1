@@ -32,12 +32,12 @@
 ## 使用方法（Windows）
 
 1. 从 [Releases](../../releases) 下载 zip，解压到任意位置。
-2. 运行 `ngb-hurricane-zh-x2.1.exe`（v0.9.9 发布包里叫 `NinjaGaidenBlack.exe`），选择 vb-zh-x2.1 镜像（`.iso`）或其解压出的文件夹。
-   镜像只需安装一次（约 6 GB），默认装到 `%LOCALAPPDATA%\NinjaGaidenBlack`；
+2. 运行 `ngb-hurricane-zh-x2.1.exe`，选择 vb-zh-x2.1 镜像（`.iso`）或其解压出的文件夹。
+   镜像只需安装一次（约 6 GB），默认装到 `%LOCALAPPDATA%\ngb-hurricane-zh-x2.1`；
    便携模式（勾选对话框里的选项，或在 exe 旁放一个 `portable.txt`）则全部放在程序旁边。
 
 需要 Windows 10 / 11（64 位）和支持 Vulkan 1.3 的显卡。按键：F1 游戏中的设置，F10 帧率显示，F11 或 Alt+Enter 全屏。
-存档与 Xbox / xemu 的存档分开。
+存档与 Xbox / xemu 的存档分开。数据文件夹（`%LOCALAPPDATA%`、`%APPDATA%` 下的 `ngb-hurricane-zh-x2.1`）独立，可与 ngbrecomp 原版共存。
 
 ## 版本号
 
