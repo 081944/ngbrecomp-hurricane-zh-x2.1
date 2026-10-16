@@ -148,7 +148,7 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Invert Camera Y", "镜头上下反转", NULL, 0 },
     { "", "Turns the camera the other way left and right (play only).", "镜头左右转动方向相反（仅限游戏操作）", NULL, 0 },
     { "", "Turns the camera the other way up and down (play only).", "镜头上下转动方向相反（仅限游戏操作）", NULL, 0 },
-    { "", "First-person look too: the game's Options > 1st Person Camera Control turns it back.", "第一人称视角也会反转：可在 选项 > 控制器设置 > 视角设定 中调回", NULL, 0 },
+    { "", "First-person look too: the game's Options > 1st Person Camera Control turns it back.", "第一人称视角也会一起反转（本版的视角设定只调第三人称）", NULL, 0 },
     { "", "Press a button", "请按按键", NULL, 0 },
     { "", "Press a key", "请按按键", NULL, 0 },
     { "", "R Stick", "右摇杆", NULL, 0 },
