@@ -844,6 +844,36 @@ static NTSTATUS errno_to_status(int e)
     }
 }
 
+/* The host path of an Xbox path, which may be relative to ObjectAttributes->RootDirectory.
+ *
+ * The save-game API opens names relative to the title's save folder ("797DEF90B5C9\SaveMeta.xbx"
+ * under a handle to UDATA\5443000d): that is how XCreateSaveGame finds the folder of a save that
+ * already exists. Translated on their own those names matched nothing, so saving over a slot made
+ * a new folder beside the old one, and the slot showed the old save again after a restart. The
+ * Windows side has done this since XDeleteSaveGame needed it (translate_obj_path). */
+static BOOL posix_obj_path(PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, char* host_path, size_t n)
+{
+    const char* xbox_path = get_xbox_path(ObjectAttributes);
+    if (!xbox_path)
+        return FALSE;
+    if (ObjectAttributes->RootDirectory && xbox_path[0] != '\\' &&
+        !(xbox_path[0] && xbox_path[1] == ':')) {
+        const char* root = w32_handle_path(ObjectAttributes->RootDirectory);
+        size_t len;
+        if (!root)
+            return FALSE;
+        len = strlen(root);
+        if (snprintf(host_path, n, "%s%s%s", root, len && root[len - 1] == '/' ? "" : "/",
+                     xbox_path) >= (int)n)
+            return FALSE;
+        for (char* c = host_path + len; *c; c++)
+            if (*c == '\\')
+                *c = '/';
+        return TRUE;
+    }
+    return xbox_translate_path(xbox_path, host_path, n);
+}
+
 NTSTATUS __stdcall xbox_NtCreateFile(
     PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
     PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, PXBOX_IO_STATUS_BLOCK IoStatusBlock,
@@ -856,8 +886,7 @@ NTSTATUS __stdcall xbox_NtCreateFile(
     if (!FileHandle || !ObjectAttributes)
         return STATUS_INVALID_PARAMETER;
 
-    const char* xbox_path = get_xbox_path(ObjectAttributes);
-    if (!xbox_path || !xbox_translate_path(xbox_path, host_path, MAX_PATH)) {
+    if (!posix_obj_path(ObjectAttributes, host_path, MAX_PATH)) {
         xbox_log(XBOX_LOG_ERROR, XBOX_LOG_FILE, "NtCreateFile: path translation failed");
         return STATUS_OBJECT_PATH_NOT_FOUND;
     }
@@ -979,8 +1008,7 @@ NTSTATUS __stdcall xbox_NtClose(HANDLE Handle)
 NTSTATUS __stdcall xbox_NtDeleteFile(PXBOX_OBJECT_ATTRIBUTES ObjectAttributes)
 {
     char host_path[MAX_PATH];
-    const char* xbox_path = get_xbox_path(ObjectAttributes);
-    if (!xbox_path || !xbox_translate_path(xbox_path, host_path, MAX_PATH))
+    if (!posix_obj_path(ObjectAttributes, host_path, MAX_PATH))
         return STATUS_OBJECT_PATH_NOT_FOUND;
     XBOX_TRACE(XBOX_LOG_FILE, "NtDeleteFile: %s", host_path);
     if (unlink(host_path) == 0) return STATUS_SUCCESS;
@@ -1091,7 +1119,10 @@ NTSTATUS __stdcall xbox_NtSetInformationFile(
              * matches NT "delete on close" semantics exactly. */
             if (info->DeleteFile) {
                 const char* p = w32_handle_path(FileHandle);
-                if (p) unlink(p);
+                /* A directory too (XDeleteSaveGame removes the save's folder this way, once
+                 * it is empty); unlink refuses those. */
+                if (p && unlink(p) != 0 && (errno == EISDIR || errno == EPERM))
+                    rmdir(p);
             }
             IoStatusBlock->Status = STATUS_SUCCESS;
             return STATUS_SUCCESS;
@@ -1194,8 +1225,7 @@ NTSTATUS __stdcall xbox_NtQueryFullAttributesFile(
 
     if (!FileInformation)
         return STATUS_INVALID_PARAMETER;
-    const char* xbox_path = get_xbox_path(ObjectAttributes);
-    if (!xbox_path || !xbox_translate_path(xbox_path, host_path, MAX_PATH))
+    if (!posix_obj_path(ObjectAttributes, host_path, MAX_PATH))
         return STATUS_OBJECT_PATH_NOT_FOUND;
     if (stat(host_path, &st) != 0)
         return STATUS_OBJECT_NAME_NOT_FOUND;
