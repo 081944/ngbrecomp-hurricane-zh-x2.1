@@ -473,6 +473,7 @@ private:
     std::deque<Job> jobs_;
     std::unordered_map<uint64_t, bool> pending_mods_;
     std::unordered_map<PipeKey, bool, PipeHash> pending_pipes_;
+    std::unordered_map<PipeKey, bool, PipeHash> known_pipes_;   // the seed's and earlier sessions' (cache_mu_)
     bool async_ = true;      // the setting
     bool async_now_ = false; // for the draw being made (the backend's own passes make theirs at once)
     void Compiler();
@@ -490,6 +491,7 @@ private:
     uint32_t warmed_samples_ = 0;
     std::atomic<uint32_t> warm_want_{0};   // the sample count being warmed: another stops the one under way
     bool Compile(const std::string& hlsl, bool vertex, std::vector<uint32_t>& spirv);
+    bool SpirvKnown(const std::string& hlsl, bool vertex);
     VkShaderModule MakeModule(const std::vector<uint32_t>& spirv);
     VkPipeline MakePipeline(const PipeKey& k, VkShaderModule vs, VkShaderModule ps);
     std::string CurrentVertexProgramRecipe(const std::vector<uint32_t>& prog, uint16_t regs, uint64_t decode,
@@ -1488,7 +1490,14 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
         vci.format = VK_FORMAT_R8G8B8A8_SNORM;
         vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, d.levels, 0, 1};
-        if (d_.vkCreateImageView(dev_, &vci, nullptr, &tx.snorm) != VK_SUCCESS) tx.snorm = VK_NULL_HANDLE;
+        VkResult vr = d_.vkCreateImageView(dev_, &vci, nullptr, &tx.snorm);
+        if (vr != VK_SUCCESS) {   // said out loud: its bump maps are then read unsigned (water banding, #16)
+            tx.snorm = VK_NULL_HANDLE;
+            static int n;
+            if (n++ < 4)
+                std::fprintf(stderr, "[D3D] no signed view for a %ux%u bump map (format %X): VkResult %d\n",
+                             d.width, d.height, d.format, int(vr));
+        }
     }
     tx.sig = sig;
     tx.used = frame_;
@@ -1551,6 +1560,12 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         info.flags |= kTexSigned;
         return tx.snorm;
     }
+    if (bump_src) {   // debugging #16: a bump map read unsigned, converted after filtering (banding)
+        static int n;
+        if (n++ < 4)
+            std::fprintf(stderr, "[D3D] bump map %08X (format %X %ux%u) read unsigned: no signed view\n", d.data,
+                         d.format, d.width, d.height);
+    }
     return tx.img.view;
 }
 
@@ -1611,18 +1626,25 @@ VkShaderModule VulkanBackend::Module(uint64_t key, const std::function<std::stri
         auto it = modules_.find(key);
         if (it != modules_.end()) return it->second;
     }
-    if (async_now_) {
+    std::string hlsl = src();
+    // Left to the compiler thread only when it is new: a module whose SPIR-V an earlier session kept is
+    // made at once (no glslang, just vkCreateShaderModule). Deferred, the draw was left out until the
+    // prewarm thread got to it -- walls and effects flickering for a while after every launch (#21).
+    if (async_now_ && !SpirvKnown(hlsl, vertex)) {
         std::lock_guard<std::mutex> g(job_mu_);
+        if (!pending_mods_.count(key) && std::getenv("NGB_D3D_HITCHLOG")) {   // NGB_D3D_HITCHLOG: what is left to the compiler thread
+            static int n;
+            if (n++ < 40) std::fprintf(stderr, "[DEFER] module %016llX %s (%zu chars)\n", (unsigned long long)key, vertex ? "vs" : "ps", hlsl.size());
+        }
         if (!pending_mods_.count(key)) {
             pending_mods_[key] = true;
-            jobs_.push_back({false, key, src(), vertex, PipeKey{}});
+            jobs_.push_back({false, key, std::move(hlsl), vertex, PipeKey{}});
             job_cv_.notify_one();
         }
         return VK_NULL_HANDLE;
     }
     auto t0 = std::chrono::steady_clock::now();
     std::vector<uint32_t> spirv;
-    std::string hlsl = src();
     VkShaderModule m = Compile(hlsl, vertex, spirv) ? MakeModule(spirv) : VK_NULL_HANDLE;
     {
         std::lock_guard<std::recursive_mutex> g(cache_mu_);
@@ -1639,6 +1661,12 @@ VkShaderModule VulkanBackend::Module(uint64_t key, const std::function<std::stri
 }
 
 // HLSL to SPIR-V, from the cache (by the hash of the HLSL) when it has it
+bool VulkanBackend::SpirvKnown(const std::string& hlsl, bool vertex) {
+    uint64_t h = Hash(hlsl.data(), hlsl.size(), vertex ? 0x5653ull : 0x5053ull);
+    std::lock_guard<std::recursive_mutex> g(cache_mu_);
+    return spirv_by_src_.count(h) != 0;
+}
+
 bool VulkanBackend::Compile(const std::string& hlsl, bool vertex, std::vector<uint32_t>& spirv) {
     uint64_t h = Hash(hlsl.data(), hlsl.size(), vertex ? 0x5653ull : 0x5053ull);
     {
@@ -1692,8 +1720,19 @@ VkPipeline VulkanBackend::Pipeline(const PipeKey& k) {
         ps = b != modules_.end() ? b->second : VK_NULL_HANDLE;
     }
     if (!vs || !ps) return VK_NULL_HANDLE;
-    if (async_now_) {
+    bool known;
+    {
+        std::lock_guard<std::recursive_mutex> g(cache_mu_);
+        known = known_pipes_.count(k) != 0;
+    }
+    // The same for a pipeline: one the seed or an earlier session made is made at once (the driver's
+    // cache has it); only a new one waits for the compiler thread, its draw left out meanwhile.
+    if (async_now_ && !known) {
         std::lock_guard<std::mutex> g(job_mu_);
+        if (!pending_pipes_.count(k) && std::getenv("NGB_D3D_HITCHLOG")) {   // NGB_D3D_HITCHLOG: what is left to the compiler thread
+            static int n;
+            if (n++ < 40) std::fprintf(stderr, "[DEFER] pipeline vs %016llX ps %016llX\n", (unsigned long long)k.vs, (unsigned long long)k.ps);
+        }
         if (!pending_pipes_.count(k)) {
             pending_pipes_[k] = true;
             jobs_.push_back({true, 0, {}, false, k});
@@ -2421,7 +2460,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         bool h0 = s.textures[0] && Describe(s.textures[0], t0d), h1 = s.textures[1] && Describe(s.textures[1], t1d);
         std::fprintf(trace_, "%u %u prim %u n %u pre %d prog %d ps %08X blend %u %X %X %X wm %X z %u%u%X st %u "
                      "rt %08X %ux%u tex0 %08X @%08X %X %ux%u%s tex1 %08X %X tss0 %u %u %u %u|%u %u %u tss1 %u %u %u|%u "
-                     "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X uv %s\n",
+                     "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X signed %u%u%u%u uv %s\n",
                      presents_, st_.drawn, prim, count, a.pretransformed, prog, s.ps ? s.ps->handle : 0, k.blend, k.src,
                      k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten, s.rt.data, rt ? rt->gw : 0, rt ? rt->gh : 0,
                      s.textures[0], h0 ? t0d.data : 0, h0 ? t0d.format : 0, h0 ? t0d.width : 0, h0 ? t0d.height : 0,
@@ -2437,7 +2476,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                          if (e.buffer < a.buffer_count && a.buffers[e.buffer].src)
                              std::memcpy(&v, a.buffers[e.buffer].src + e.offset, 4);
                          return v;
-                     }(), [&]() -> std::string {   // each vertex: x y (u v)
+                     }(), (info[0].flags & kTexSigned) != 0, (info[1].flags & kTexSigned) != 0,
+                     (info[2].flags & kTexSigned) != 0, (info[3].flags & kTexSigned) != 0,
+                     [&]() -> std::string {   // each vertex: x y (u v)
                          std::string o;
                          const VertexElement& pe = a.elements[0];
                          const VertexElement& te = a.elements[9];
@@ -2880,7 +2921,9 @@ void VulkanBackend::Present(const Surface& front) {
                      compiles_, pipes_made_);
     compile_us_ = 0;
     compiles_ = pipes_made_ = 0;
-    if (pipes_since_save_ && presents_ - pcache_saved_ > 600) CacheSavePipelinesSoon();
+    // Every five minutes at most (and at exit): even off the frame, copying out a driver cache of tens of
+    // MB (Nvidia) every ten seconds left a second of doubled frames each time (#17).
+    if (pipes_since_save_ && presents_ - pcache_saved_ > 5 * 60 * 60) CacheSavePipelinesSoon();
     ReadQuality();
     if (!dump_dir_.empty()) {
         std::string trig = dump_dir_ + "/step.now";
@@ -3270,6 +3313,15 @@ void VulkanBackend::Prewarm() {
     if (!seed.empty()) parse(ReadFile(seed));
     size_t from_seed = recs.size();
     if (!cache_dir_.empty()) parse(ReadFile(cache_dir_ + "/recipes.bin"));
+    {   // what is known, before any of it is made: a draw needing one makes it at once (Pipeline)
+        std::lock_guard<std::recursive_mutex> g(cache_mu_);
+        for (const Rec& r : recs)
+            if (r.kind == 'K' && r.data.size() == sizeof(PipeKey)) {
+                PipeKey k;
+                std::memcpy(&k, r.data.data(), sizeof(k));
+                known_pipes_[k] = true;
+            }
+    }
     std::vector<uint8_t> xbe;
     auto t0 = std::chrono::steady_clock::now();
     uint32_t made = 0, pipes = 0;
