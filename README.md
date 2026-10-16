@@ -56,6 +56,10 @@ Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
 | Shader cache | `~/.cache/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack\shaders` |
 | Log | the terminal | `log.txt` beside the saves (or the console it was started from) |
 
+**Portable mode:** with a file named `portable.txt` next to `NinjaGaidenBlack.exe` (or the AppImage),
+all of these go into a `userdata` folder next to it instead. The first-run setup offers this as a
+checkbox. The folder must be writable, so not inside Program Files. Delete `portable.txt` to go back.
+
 ## Settings
 
 Everything is in the game's own menus: **RECOMP SETTINGS** on the main menu, and the **Settings** tab
@@ -86,6 +90,11 @@ whichever was touched last, and its button prompts change to match.
 | Guard / roll | Shift | | Center camera | Q, middle mouse |
 | Map | Tab | | Karma window | R |
 | Pause | Esc, Enter | | First-person view | Z |
+
+After loading, the right stick (or the mouse) looks around in first person, as on the Xbox; click the
+right stick (V) to turn the third-person camera instead. **Invert Camera X / Y** (RECOMP SETTINGS →
+Controls) flips the stick and mouse for both; the game's own Options → Controller Settings → 1st Person
+Camera Control can flip first-person look back.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
 Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
