@@ -663,7 +663,11 @@ static void bringup_defaults(void)
         set_default("RECOMP_VBLANK", "1");
     set_default("RECOMP_AC97_READY", "1");
     set_default("RECOMP_USB", "1");
-    set_default("RECOMP_DSP_ACK", "0x86BF8810");   /* contiguous memory starts at 64 MB */
+    /* contiguous memory starts at 64 MB. Hurricane x2.1: the game's heap (its first contiguous
+     * allocation) is 0x70000 bytes bigger than retail's (0x24E2000), so every block after it -- the
+     * mailbox's (DirectSound, 49152 bytes) too -- sits 0x70000 higher: measured with
+     * RECOMP_CONTIG_LOG, 0x86BF8000 in retail, 0x86C68000 here. */
+    set_default("RECOMP_DSP_ACK", "0x86C68810");
 }
 
 #if defined(RECOMP_ICALL_FEEDBACK)

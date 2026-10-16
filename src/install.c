@@ -38,9 +38,10 @@
 
 #include "install.h"
 
-/* The retail USA default.xbe the code was recompiled from. */
-#define NGB_XBE_SIZE  4571136u
-#define NGB_XBE_FNV   0x3602ba6a6079c8cdull
+/* The default.xbe the code was recompiled from: the Hurricane x2.1 Chinese build (vb-zh-x2.1,
+ * SHA-256 aa3c5bec...), patched from the retail USA one. */
+#define NGB_XBE_SIZE  4583424u
+#define NGB_XBE_FNV   0x0e05bb170e439927ull
 
 #define SECTOR 2048u
 static const char XDVDFS_MAGIC[20] = "MICROSOFT*XBOX*MEDIA";
@@ -130,18 +131,20 @@ static int mkdirs(const char *path)
 }
 
 /* 0 when dir's default.xbe is the one this build was made from. */
-/* The retail XBE's sections, in order: their sizes and FNV-1a hashes. A disc image made with a
+/* That XBE's sections, in order: their sizes and FNV-1a hashes. A disc image made with a
  * "media patch" (so a modded console runs it from a burned DVD) has a changed header and
- * certificate, but the game itself -- these sections -- is the same, and so is this build. */
+ * certificate, but the game itself -- these sections -- is the same, and so is this build.
+ * x2.1 changes .text, .rdata and .data and adds HANZI (the others are the retail ones). */
 static const struct { const char *name; uint32_t size; uint64_t fnv; } s_xbe_sections[] = {
-    { ".text",     3576960, 0x4f583bc03974eb5dull }, { "D3DX",          552, 0x802e93d06050ddc2ull },
+    { ".text",     3576960, 0x976e2ac24503f4c5ull }, { "D3DX",          552, 0x802e93d06050ddc2ull },
     { "DSOUND",     116108, 0x1c717f4fb13d38d9ull }, { "XONLINE",    100604, 0xf7f32cba9715d707ull },
     { "XNET",        73112, 0x5dd132e95dd1b4ecull }, { "PSFD00",      11192, 0xd033e2d3a400c0d7ull },
     { "XGRPH",        4388, 0xdb9d2b60f04aec39ull }, { "D3D",         68272, 0x54c712be5b41551bull },
-    { "XPP",         32308, 0x10b3b979adbff38eull }, { ".rdata",     216700, 0x722ca73485b1ee65ull },
-    { ".data",      283752, 0x2990cb7806d3c3d8ull }, { "DOLBY",       29036, 0x08826a2af878f54full },
+    { "XPP",         32308, 0x10b3b979adbff38eull }, { ".rdata",     216700, 0xd494896249e5fa4full },
+    { ".data",      283752, 0x7a3cb054100098f6ull }, { "DOLBY",       29036, 0x08826a2af878f54full },
     { "XON_RD",       5388, 0xa7c8c48ee45f6184ull }, { "$$XTIMAGE",   10240, 0xe4449f60879ad7d0ull },
     { "$$XSIMAGE",    4096, 0x0eb831e2c2d793a4ull }, { ".XTLID",       1808, 0x04d0097419f217b7ull },
+    { "HANZI",       12288, 0x9d0573f341b1d7cbull },
 };
 
 static uint64_t fnv1a(const unsigned char *p, size_t n, uint64_t h)

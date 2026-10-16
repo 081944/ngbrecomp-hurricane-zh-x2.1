@@ -107,6 +107,8 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/fps_text.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/playtime.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main_menu.c
+    # The Hurricane x2.1 build (docs of the port, phase 4).
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hurricane_hint.c
     # The Direct3D hooks (docs/renderer.md, tools/take_d3d.py).
     ${CMAKE_CURRENT_SOURCE_DIR}/src/d3d/d3d.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cheats.c
