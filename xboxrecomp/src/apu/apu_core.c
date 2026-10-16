@@ -723,7 +723,14 @@ static void *mcpx_apu_frame_thread(void *arg)
          * Sleep(0) on Windows, which returns at once unless an equal-priority
          * thread is ready, so 200 of them gave up after microseconds -- most
          * traps outlasted that and played silence all through the fights.
-         * The longest trap seen lasts about 1.3 ms. */
+         * The longest trap seen lasts about 1.3 ms.
+         *
+         * Paced first: throttle() lets go of the lock while it waits, so a trap
+         * the title began in that wait reached the check below unseen and
+         * still played a silent 32-sample slice (#32, found by HammerD72).
+         * The software mixer and test tone are delivered every frame either
+         * way; the VP/DSP pipeline (se_frame) only runs when registers allow. */
+        throttle(d);
         int64_t trap_deadline_us = 0;
         while (!d->pause_requested && !qatomic_read(&d->exiting)) {
             uint32_t fe = qatomic_read(&d->regs[NV_PAPU_FECTL]);
@@ -752,11 +759,6 @@ static void *mcpx_apu_frame_thread(void *arg)
 #endif
             qemu_mutex_lock(&d->lock);
         }
-
-        /* Always run the audio output loop — the software mixer and test tone
-         * need continuous frame delivery regardless of APU register state.
-         * The VP/DSP pipeline (se_frame) only runs when registers allow it. */
-        throttle(d);
 
         /* The doorbell ack stands in for the GP DSP, which on hardware runs
          * whatever the front end is doing. Tying it to se_frame stopped it
