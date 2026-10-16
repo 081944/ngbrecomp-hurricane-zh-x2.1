@@ -178,6 +178,10 @@ add_executable(${PROJECT_NAME}
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
+if(WIN32)   # the resource script includes these: rebuilt when they change, not only ngb.rc
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.manifest;${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.ico")
+endif()
 if(NGB_NV2A_VK)
     target_link_libraries(${PROJECT_NAME} PRIVATE xbox_nv2a_vk)
     target_compile_definitions(${PROJECT_NAME} PRIVATE NGB_NV2A_VK)
