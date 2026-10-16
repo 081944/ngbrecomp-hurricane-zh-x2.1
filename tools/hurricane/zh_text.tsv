@@ -87,6 +87,11 @@ cat	Controls	按键	P
 	Keyboard / Mouse	键盘 / 鼠标	P
 	Controller	控制器	P
 	Default Controls	恢复默认按键	P
+	Invert Camera X	镜头左右反转	P
+	Invert Camera Y	镜头上下反转	P
+	Turns the camera the other way left and right (play only).	镜头左右转动方向相反（仅限游戏操作）	P
+	Turns the camera the other way up and down (play only).	镜头上下转动方向相反（仅限游戏操作）	P
+	First-person look too: the game's Options > 1st Person Camera Control turns it back.	第一人称视角也会反转：可在 选项 > 控制器设置 > 视角设定 中调回	P
 	Press a button	请按按键	P
 	Press a key	请按按键	P
 	R Stick	右摇杆	P

@@ -107,7 +107,13 @@ static inline int ngb_mem_read(const void *addr, void *dst, size_t len)
  * NinjaGaidenBlack. */
 static inline void ngb_config_dir(char *out, size_t n, int make)
 {
-    const char *xdg = getenv("XDG_CONFIG_HOME");
+    const char *xdg = getenv("XDG_CONFIG_HOME"), *own = getenv("NGB_CONFIG_DIR");
+    if (own && *own) {   /* the folder itself (portable mode, src/main.c) */
+        snprintf(out, n, "%s", own);
+        if (make)
+            ngb_mkdir(out);
+        return;
+    }
 #ifdef _WIN32
     const char *appdata = getenv("APPDATA");
     if ((!xdg || !*xdg) && appdata && *appdata) {

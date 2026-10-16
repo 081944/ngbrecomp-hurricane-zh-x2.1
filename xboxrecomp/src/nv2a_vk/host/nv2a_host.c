@@ -573,6 +573,94 @@ static void sleep_until(const struct timespec *t)
 #endif
 }
 
+#ifdef _WIN32
+#define COBJMACROS
+#include <dxgi.h>
+/* The display's own vertical blank as the game's frame clock: V-Sync on and a screen at about 60 Hz.
+ * On a fixed 60.0 Hz timer the game drifted against the monitor's refresh -- a "60 Hz" screen runs at
+ * 59.95, or 60.0003 -- and whenever the two came round to the same moment, frames came out doubled and
+ * dropped for a while, the frame counter still saying 60: smooth for minutes, then stuttering (issue
+ * #17). Any other refresh (120, 144 Hz; anything outside 59-61 Hz) or V-Sync off keeps the timer. NGB_VBLANK_TIMER=1 forces it. */
+extern int nv2a_present_vsync(void);
+
+static IDXGIOutput *display_output(void)
+{
+    static int tried;
+    static IDXGIOutput *found;
+    IDXGIFactory1 *f;
+    POINT origin = { 0, 0 };
+    HMONITOR primary = MonitorFromPoint(origin, MONITOR_DEFAULTTOPRIMARY);
+
+    if (tried)
+        return found;
+    tried = 1;
+    if (FAILED(CreateDXGIFactory1(&IID_IDXGIFactory1, (void **)&f)))
+        return NULL;
+    for (UINT a = 0; !found; a++) {
+        IDXGIAdapter1 *ad;
+        if (IDXGIFactory1_EnumAdapters1(f, a, &ad) == DXGI_ERROR_NOT_FOUND)
+            break;
+        for (UINT o = 0; !found; o++) {
+            IDXGIOutput *out;
+            DXGI_OUTPUT_DESC desc;
+            if (IDXGIAdapter1_EnumOutputs(ad, o, &out) == DXGI_ERROR_NOT_FOUND)
+                break;
+            if (SUCCEEDED(IDXGIOutput_GetDesc(out, &desc)) && desc.Monitor == primary)
+                found = out;
+            else
+                IDXGIOutput_Release(out);
+        }
+        IDXGIAdapter1_Release(ad);
+    }
+    IDXGIFactory1_Release(f);
+    return found;
+}
+
+/* Waits for the display's next vertical blank and returns 1, or returns 0 at once when the timer is to
+ * pace the frames instead. */
+static int display_vblank(void)
+{
+    static int state = -1;   /* -1 not measured, 0 the timer, 1 the display */
+    static int last_vsync = -1;
+    IDXGIOutput *out;
+    int vsync = nv2a_present_vsync();
+
+    if (getenv("NGB_VBLANK_TIMER") || vsync == 0) {
+        last_vsync = vsync;
+        return 0;
+    }
+    if (vsync != last_vsync) {   /* switched on: measured (again) */
+        last_vsync = vsync;
+        state = -1;
+    }
+    if (state == 0 || !(out = display_output()))
+        return 0;
+    if (state < 0) {   /* the refresh, over a few blanks: about 60 Hz, or the timer */
+        LARGE_INTEGER fq, t0, t1;
+        double ms;
+        QueryPerformanceFrequency(&fq);
+        if (FAILED(IDXGIOutput_WaitForVBlank(out))) {
+            state = 0;
+            return 0;
+        }
+        QueryPerformanceCounter(&t0);
+        for (int i = 0; i < 6; i++)
+            IDXGIOutput_WaitForVBlank(out);
+        QueryPerformanceCounter(&t1);
+        ms = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)fq.QuadPart / 6.0;
+        state = ms > 16.39 && ms < 16.95;   /* 59-61 Hz: the game's speed follows these ticks */
+        fprintf(stderr, "[NV2A] display refresh %.3f Hz: the game's frames %s\n", 1000.0 / ms,
+                state ? "follow the display's vertical blank" : "keep the 60 Hz timer");
+        return state;   /* (just waited for one) */
+    }
+    if (FAILED(IDXGIOutput_WaitForVBlank(out))) {
+        state = 0;
+        return 0;
+    }
+    return 1;
+}
+#endif
+
 static void *vblank_thread(void *unused)
 {
     NV2AState *d = &s_nv2a;
@@ -583,12 +671,19 @@ static void *vblank_thread(void *unused)
     (void)unused;
     clock_gettime(CLOCK_MONOTONIC, &next);
     for (;;) {
-        next.tv_nsec += period_ns;
-        while (next.tv_nsec >= 1000000000L) {
-            next.tv_nsec -= 1000000000L;
-            next.tv_sec++;
+#ifdef _WIN32
+        if (display_vblank()) {
+            clock_gettime(CLOCK_MONOTONIC, &next);   /* the timer resumes from here if it takes over */
+        } else
+#endif
+        {
+            next.tv_nsec += period_ns;
+            while (next.tv_nsec >= 1000000000L) {
+                next.tv_nsec -= 1000000000L;
+                next.tv_sec++;
+            }
+            sleep_until(&next);
         }
-        sleep_until(&next);
         if (nv2a_vblank_hold) {
             clock_gettime(CLOCK_MONOTONIC, &next);   /* resume from now */
             continue;

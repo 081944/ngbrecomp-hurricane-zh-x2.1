@@ -144,6 +144,11 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Keyboard / Mouse", "键盘 / 鼠标", NULL, 0 },
     { "", "Controller", "控制器", NULL, 0 },
     { "", "Default Controls", "恢复默认按键", NULL, 0 },
+    { "", "Invert Camera X", "镜头左右反转", NULL, 0 },
+    { "", "Invert Camera Y", "镜头上下反转", NULL, 0 },
+    { "", "Turns the camera the other way left and right (play only).", "镜头左右转动方向相反（仅限游戏操作）", NULL, 0 },
+    { "", "Turns the camera the other way up and down (play only).", "镜头上下转动方向相反（仅限游戏操作）", NULL, 0 },
+    { "", "First-person look too: the game's Options > 1st Person Camera Control turns it back.", "第一人称视角也会反转：可在 选项 > 控制器设置 > 视角设定 中调回", NULL, 0 },
     { "", "Press a button", "请按按键", NULL, 0 },
     { "", "Press a key", "请按按键", NULL, 0 },
     { "", "R Stick", "右摇杆", NULL, 0 },
@@ -232,7 +237,7 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Up/Down or mouse: choose    Left/Right or click: change    A / Enter: select    B / Esc / F1: resume", "上/下或鼠标：选择　　左/右或点击：更改　　A / Enter：确定　　B / Esc / F1：继续游戏", NULL, 0 },
     { "", "Changes apply when you resume. Skip intros and the startup screen take effect next start.", "继续游戏时应用更改。跳过片头与启动画面在下次启动时生效。", NULL, 0 },
 };
-const int ngb_zh_text_count = 168;
+const int ngb_zh_text_count = 173;
 
 /* The glyph page B1 (texture 0xBC) as x2.1 has it, and what is added to it. */
 const int ngb_zh_b1_count = 2039;
