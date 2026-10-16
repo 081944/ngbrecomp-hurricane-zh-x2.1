@@ -2923,7 +2923,9 @@ void VulkanBackend::Present(const Surface& front) {
     compiles_ = pipes_made_ = 0;
     // Every five minutes at most (and at exit): even off the frame, copying out a driver cache of tens of
     // MB (Nvidia) every ten seconds left a second of doubled frames each time (#17).
-    if (pipes_since_save_ && presents_ - pcache_saved_ > 5 * 60 * 60) CacheSavePipelinesSoon();
+    // (The first after a minute: the save at exit does not run when the process ends without taking the
+    // renderer down, and a session shorter than five minutes would never keep its pipelines.)
+    if (pipes_since_save_ && presents_ - pcache_saved_ > (pcache_saved_ ? 5 * 60 * 60 : 60 * 60)) CacheSavePipelinesSoon();
     ReadQuality();
     if (!dump_dir_.empty()) {
         std::string trig = dump_dir_ + "/step.now";
@@ -3086,6 +3088,10 @@ static std::vector<uint8_t> ReadFile(const std::string& path) {
 
 static FILE* OpenAppend(const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "ab");
+    // At the end first: Windows' ftell says 0 for a file just opened to append, and the header went in
+    // again at every start -- the readers stopped at it, so nothing past the first session was ever
+    // used again (shaders made anew at each launch, draws left out meanwhile: #21).
+    if (f) std::fseek(f, 0, SEEK_END);
     if (f && std::ftell(f) == 0) std::fwrite(kCacheMagic, 1, 8, f);
     return f;
 }
@@ -3104,6 +3110,10 @@ void VulkanBackend::CacheOpen() {
         if (sp.size() >= 8 && !std::memcmp(sp.data(), kCacheMagic, 8)) {
             size_t o = 8;
             while (o + 12 <= sp.size()) {
+                if (!std::memcmp(&sp[o], kCacheMagic, 8)) {   // a header again (written by older Windows builds)
+                    o += 8;
+                    continue;
+                }
                 uint64_t h;
                 uint32_t n;
                 std::memcpy(&h, &sp[o], 8);
@@ -3221,7 +3231,13 @@ void VulkanBackend::CacheWritePipelines() {
     if (FILE* f = std::fopen(tmp.c_str(), "wb")) {
         bool ok = std::fwrite(v.data(), 1, n, f) == n;
         ok = std::fclose(f) == 0 && ok;
-        if (ok) std::rename(tmp.c_str(), (cache_dir_ + "/pipelines.bin").c_str());
+        if (ok) {
+            std::string dst = cache_dir_ + "/pipelines.bin";
+#if defined(_WIN32)
+            std::remove(dst.c_str());   // Windows' rename does not replace: the cache was never updated there
+#endif
+            std::rename(tmp.c_str(), dst.c_str());
+        }
     }
 }
 
@@ -3286,6 +3302,10 @@ void VulkanBackend::Prewarm() {
         if (b.size() < 8 || std::memcmp(b.data(), kCacheMagic, 8)) return;
         size_t o = 8;
         while (o + 13 <= b.size()) {
+            if (!std::memcmp(&b[o], kCacheMagic, 8)) {   // a header again (written by older Windows builds)
+                o += 8;
+                continue;
+            }
             Rec r;
             r.kind = char(b[o]);
             std::memcpy(&r.key, &b[o + 1], 8);
@@ -3313,6 +3333,15 @@ void VulkanBackend::Prewarm() {
     if (!seed.empty()) parse(ReadFile(seed));
     size_t from_seed = recs.size();
     if (!cache_dir_.empty()) parse(ReadFile(cache_dir_ + "/recipes.bin"));
+    // the seed's pipelines already in recipes.bin: not copied there again (it grew by the whole seed at
+    // every launch)
+    std::unordered_map<PipeKey, bool, PipeHash> recorded;
+    for (size_t i = from_seed; i < recs.size(); i++)
+        if (recs[i].kind == 'K' && recs[i].data.size() == sizeof(PipeKey)) {
+            PipeKey k;
+            std::memcpy(&k, recs[i].data.data(), sizeof(k));
+            recorded[k] = true;
+        }
     {   // what is known, before any of it is made: a draw needing one makes it at once (Pipeline)
         std::lock_guard<std::recursive_mutex> g(cache_mu_);
         for (const Rec& r : recs)
@@ -3349,7 +3378,8 @@ void VulkanBackend::Prewarm() {
                 } else {
                     pipelines_[k] = p;
                     pipes++;
-                    if (&r - recs.data() < long(from_seed)) CacheRecord('K', 0, r.data.data(), r.data.size(), recipes_);
+                    if (&r - recs.data() < long(from_seed) && !recorded.count(k))
+                        CacheRecord('K', 0, r.data.data(), r.data.size(), recipes_);
                 }
                 continue;
             }
