@@ -895,6 +895,46 @@ static void win_tell(const char *msg)
 }
 #endif
 
+/* A folder of extracted files the player picked runs where it is -- and was asked for again at the
+ * next start, since only the installed copy and a "game" folder beside the program were looked for
+ * (issue #14). Its path is kept in the save folder, and found there first. */
+static void location_file(const char *save_dir, char *p, size_t n)
+{
+    snprintf(p, n, "%s/game-location.txt", save_dir);
+}
+
+static int remembered_game(const char *save_dir, char *out, size_t n)
+{
+    char p[4200], line[4096];
+    FILE *f;
+
+    location_file(save_dir, p, sizeof p);
+    if (!(f = fopen(p, "r")))
+        return 0;
+    if (!fgets(line, sizeof line, f))
+        line[0] = 0;
+    fclose(f);
+    line[strcspn(line, "\r\n")] = 0;
+    if (!line[0] || !has_xbe(line))
+        return 0;   /* moved or deleted: asked for again */
+    snprintf(out, n, "%s", line);
+    return 1;
+}
+
+static void remember_game(const char *save_dir, const char *installed, const char *dir)
+{
+    char p[4200];
+    FILE *f;
+
+    if (!strcmp(dir, installed))
+        return;   /* installed: found there anyway */
+    location_file(save_dir, p, sizeof p);
+    if ((f = fopen(p, "w"))) {
+        fprintf(f, "%s\n", dir);
+        fclose(f);
+    }
+}
+
 int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
                   char *out, size_t n)
 {
@@ -905,11 +945,16 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
     snprintf(installed, sizeof installed, "%s/game", save_dir);
     snprintf(beside, sizeof beside, "%sgame", exe_dir);
 
-    if (!src && env && *env)
+    int from_env = 0;
+
+    if (!src && env && *env) {
         src = env;
+        from_env = 1;
+    }
     if (!src) {
         if (has_xbe(installed)) { snprintf(out, n, "%s", installed); goto check; }
         if (has_xbe(beside))    { snprintf(out, n, "%s", beside);    goto check; }
+        if (remembered_game(save_dir, out, n)) goto check;
 #if !defined(_WIN32)
         switch (run_setup(exe_dir, installed, out, n)) {
         case 1:
@@ -939,8 +984,11 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
         }
     }
 #if defined(_WIN32)
-    if (win_install(src, installed, out, n) == 0)
+    if (win_install(src, installed, out, n) == 0) {
+        if (!from_env)
+            remember_game(save_dir, installed, out);
         return 0;
+    }
     {
         char msg[1200];
         snprintf(msg, sizeof msg, "The game could not be installed.\n\n%s", ngb_install_error());
@@ -948,7 +996,11 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
     }
     return -1;
 #else
-    return ngb_install(src, installed, out, n);
+    if (ngb_install(src, installed, out, n) != 0)
+        return -1;
+    if (!from_env)
+        remember_game(save_dir, installed, out);
+    return 0;
 #endif
 
 check:
