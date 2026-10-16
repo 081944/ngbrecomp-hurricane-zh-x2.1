@@ -9,8 +9,9 @@
  * change: while a movie the player chose to skip is playing, "playing"
  * reads as "ended".
  *
- * Skipped with Skip Intros: the New Game prologue (ninja_gaiden.sfd) and the
- * boot movie (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd). Which movie is playing
+ * Skipped with Skip Intros: the boot movie (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd).
+ * Not the New Game prologue (ninja_gaiden.sfd): it is the story's start, and
+ * Start, A or B ends it like any movie (#28). Which movie is playing
  * comes from the movie file the title last read (ngb_movie_read, from the
  * kernel's read hook): it opens every movie at boot to probe them, so the
  * last one opened says nothing.
@@ -43,8 +44,7 @@ void ngb_movie_read(const char *host_path)
     base++;
     s_released = 0;
     s_skip_current = ngb_skip_intro &&
-        (!strcasecmp(base, "ninja_gaiden.sfd") || !strcasecmp(base, "2_VI_WIDE_B.sfd") ||
-         !strcasecmp(base, "4_VI_STD_B.sfd"));
+        (!strcasecmp(base, "2_VI_WIDE_B.sfd") || !strcasecmp(base, "4_VI_STD_B.sfd"));
 }
 
 static int ngb_movie_skip_now(void)

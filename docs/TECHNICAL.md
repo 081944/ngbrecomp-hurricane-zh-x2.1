@@ -76,8 +76,8 @@ or 8x: the display-sized targets drawn multisampled and resolved as each pass en
 new renderer only), shadow resolution (Ryu's shadow map at 2x, 4x, 8x or 10x the original
 128x128, for smooth instead of blocky edges), V-Sync (Off, On, or Adaptive: synced, but a
 late frame is shown at once instead of waiting a refresh -- Vulkan's FIFO relaxed), an FPS
-counter, and skipping the intros (the boot movie and the New Game
-prologue, which the game itself will not let you skip; story movies are untouched; from the
+counter, and skipping the intros (the boot movie, which the game itself will not let you skip;
+the New Game prologue and the story movies play, and Start, A or B ends any of them; from the
 next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
 `--settings` shows the old settings screen before the game.
 
@@ -138,10 +138,9 @@ the middle, as a menu: what is inside the panel's box goes with it, the HUD arou
 (Earlier versions kept the game in its 4:3 mode in play and narrowed its HUD to its 4:3 shape,
 switching modes for the menus; the screens it could not tell apart in time -- item pickups, chapter
 clears, leaving the save menu -- came out half one way and half the other. `NGB_HUD_FIXED=1` brings
-that back, for comparison.) Movies follow the game's own Movie Display Ratio (Options, Video
-Settings): 16:9 drawn across the screen, 4:3 in its 4:3 mode, the 4:3 picture in the middle. The game
-keeps that setting where it cannot be read outside its page, so a copy is kept in settings.ini
-(`movie_ratio`), following each change made there. The mouse is mapped to the menus the same way.
+that back, for comparison.) Movies play in the widescreen mode too, where the game follows its own Movie Display
+Ratio (Options, Video Settings): 16:9 across the screen, or 4:3 with bars at the sides. (Switching to
+its 4:3 mode for a 4:3 movie narrowed it twice, #28.) The mouse is mapped to the menus the same way.
 `NGB_HUD_RATIO_LOG=1` logs the 2D draws not drawn texel for pixel; `NGB_MODE_LOG=1` the mode each
 frame.
 Aspect ratio also offers 21:9 (64:27;

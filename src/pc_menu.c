@@ -515,21 +515,6 @@ static int s_recomp;
 
 void ngb_aspect_tick(void)
 {
-    /* The game's Movie Display Ratio (0xDA42EF: 1 16:9, 0 4:3) while its page (4, the widescreen Video
-     * Settings) is open -- the game keeps its own copy where we cannot read it outside the page: ours
-     * follows each change made there (to Default Settings' too), for the movies */
-    {
-        static int seen = -1;
-        int on = !s_recomp && page_now() == 4 && ngb_menu_up(), v = MEM8(0xDA42EF);
-        if (!on)
-            seen = -1;
-        else if (seen < 0)
-            seen = v;                                  /* as the page opened: not a change */
-        else if (v != seen) {
-            seen = v;
-            ngb_pc_set_setting(17, v == 0);
-        }
-    }
     if (getenv("NGB_ASPECT_LOG")) {
         static unsigned n;
         if (n++ % 20000 == 0)
@@ -539,18 +524,17 @@ void ngb_aspect_tick(void)
     if (s_aspect_a > 0 && patch_constant(s_aspect_a))
         s_aspect_a = 0;
     if (s_flags_wide >= 0) {
-        /* a movie in the game's widescreen mode, drawn wide -- but with its Movie Display Ratio 4:3 (kept
-         * in our settings, ngb_pc_setting(17)) in its 4:3 mode, the 4:3 picture in the middle */
+        /* a movie in the game's widescreen mode: it follows its own Movie Display Ratio there, 16:9
+         * across the screen or 4:3 with bars at the sides (its 4:3 mode as well narrowed that to 9/16, #28) */
         int movie = s_movie_ms && now_ms() - s_movie_ms < 200;
         /* On a wide screen the game's widescreen mode throughout -- its own 16:9 look, every screen as it
-         * draws it (src/d3d/vk/backend.cpp stretches its 2D, no wider than 16:9) -- but a movie with its
-         * Movie Display Ratio 4:3. NGB_HUD_FIXED=1: the earlier way, play in the 4:3 mode with the HUD
+         * draws it (src/d3d/vk/backend.cpp stretches its 2D, no wider than 16:9). NGB_HUD_FIXED=1: the earlier way, play in the 4:3 mode with the HUD
          * drawn in its own shape and the 16:9 mode for the menus it can tell. */
         static int hud_fixed = -1;
         if (hud_fixed < 0)
             hud_fixed = getenv("NGB_HUD_FIXED") != NULL;
         int two_d = hud_fixed ? !menus_43() && (s_menu_now || s_menu_last || s_screen_2d) : !menus_43();
-        int want = s_flags_wide || (s_screen_wide && (s_boot || (movie ? !ngb_pc_setting(17) : two_d)));
+        int want = s_flags_wide || (s_screen_wide && (s_boot || movie || two_d));
         if ((MEM32(0x9776A8) >> 4 & 1) != (uint32_t)want || (MEM32(0xD21748) & 1) != (uint32_t)want)
         {
             set_flags(want);   /* the game sets them again from its video settings */
