@@ -94,9 +94,23 @@ Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 
 ## Known issues
 
-- At 21:9, objects at the far left and right of the screen can appear a moment late (the game
+- **Water** in some places (the pond in Chapter 2, for example) can look banded instead of clear, so
+  far reported on Nvidia cards on Windows (#16).
+- **Controller vibration on Windows** may only start working after switching Vibration off and on
+  again in the game's Options (#15).
+- **Installing directly from an ISO** fails on some Windows PCs (#6, #14). Until that is fixed:
+  extract the ISO to a folder named `game` next to `NinjaGaidenBlack.exe`, and it is found
+  automatically.
+- **A folder of extracted files** you pick is not remembered yet, so it is asked for again at every
+  start. A folder named `game` next to the program avoids that (#14).
+- **Steam Deck:** do the first start (installing the game) in Desktop Mode. In Game Mode the window
+  to choose your disc image cannot open, and the game closes (#11).
+- The **Ninja Gaiden arcade cabinet** in Han's bar has been reported to crash on 0.9.5 (#18); 0.9.6
+  may fix it.
+- At **21:9**, objects at the far left and right of the screen can appear a moment late (the game
   decides what to draw for a narrower view).
-- The Windows build has been tested under Proton; reports from real Windows machines are welcome.
+- The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
+  real Windows PCs are especially welcome.
 
 When reporting a graphics glitch, pressing **F7** while it is on screen records the next few seconds of
 drawing to `~/ngb-trace-<n>` on Linux, or `C:\Users\<you>\ngb-trace-<n>` on Windows — attach that
