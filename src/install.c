@@ -50,6 +50,9 @@ static void restart_portable(const char *src);
     "（需要美版原版镜像打上哈雅布撒的 x2.1 补丁后得到的版本）。\n\n" \
     "This is not NINJA GAIDEN BLACK [Hurricane] vb-zh-x2.1 (the retail USA disc with the x2.1 patch), " \
     "which this build was made from."
+/* At the end of the setup and of every error box (user 2026-10-17) */
+#define NGB_CONTACT "有任何使用问题请联系 QQ：2682557218　bilibili：哈雅布撒\n" \
+    "Any problem? QQ 2682557218, bilibili 哈雅布撒"
 
 #define SECTOR 2048u
 static const char XDVDFS_MAGIC[20] = "MICROSOFT*XBOX*MEDIA";
@@ -548,7 +551,7 @@ static int win_welcome(const char *installed, int *portable)
              "\u2022  a disc image: .iso, including a full Redump dump, or the .7z / .zip it came in\n"
              "\u2022  or a folder of extracted files, with default.xbe\n\n"
              "A disc image is installed once (about 6 GB) into\n%s\n"
-             "and the game starts from there from then on.", path);
+             "and the game starts from there from then on.\n\n" NGB_CONTACT, path);
     MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 2048);
 
     HMODULE cc = LoadLibraryA("comctl32.dll");
@@ -912,8 +915,10 @@ static int win_install(const char *src, const char *installed, char *out, size_t
 
 static void win_tell(const char *msg)
 {
-    wchar_t w[2048];   /* Hurricane: UTF-8, for the messages in Chinese */
-    MultiByteToWideChar(CP_UTF8, 0, msg, -1, w, 2048);
+    wchar_t w[2048];   /* Hurricane: UTF-8, for the messages in Chinese; whom to ask after it */
+    char all[3072];
+    snprintf(all, sizeof all, "%s\n\n%s", msg, NGB_CONTACT);
+    MultiByteToWideChar(CP_UTF8, 0, all, -1, w, 2048);
     MessageBoxW(NULL, w, L"Ninja Gaiden Black", MB_OK | MB_ICONERROR);
 }
 #endif
