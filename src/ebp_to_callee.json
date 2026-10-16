@@ -1,0 +1,6 @@
+{
+  "#": "Call sites in the vb-zh-x2.1 XBE whose callee, patched-in HANZI code, reads the caller's ebp, a plain register in these FPO callers (not their frame). Value: the callee. 0x2026A8 -> 0xDC8380: game over, state 2 (the continue prompt) or 3 written through [ebp+0xE] / [ebp+8] (localization tools/ngplus_patch.py gameover_cave; caller sets ebp to the menu state). 0x17E23D -> 0xDC84A0 (caller sub_0017DFA0: mov ebp,0x5891D0; the cave reads [ebp], [ebp+3]). 0x17EF0B -> 0xDC8720 (caller sub_0017EE90: mov ebp,[edi+0x2C]; the cave reads [ebp+0x10] after pushad).",
+  "0x002026A8": "0x00DC8380",
+  "0x0017E23D": "0x00DC84A0",
+  "0x0017EF0B": "0x00DC8720"
+}

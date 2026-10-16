@@ -94,6 +94,14 @@ def _load_flags_after_call(path, option="--flags-after-call"):
     return out
 
 
+def _load_ebp_to_callee(path):
+    """--ebp-to-callee JSON {"0x<call VA>": "0x<callee VA>"} -> {call VA: callee VA}; the lifter checks each
+    call site's target against its callee."""
+    with open(path, "r", encoding="utf-8") as fh:
+        entries = json.load(fh)
+    return {int(site, 16): int(callee, 16) for site, callee in entries.items() if not site.startswith("#")}
+
+
 def _load_addrs(path):
     """Load a JSON address list (or {addr: name} map) as a set of ints."""
     if not path:
@@ -287,6 +295,12 @@ def main():
                              "(g_flags_out_*) and every direct call to it loads it "
                              "back, for when redoing the compare in the caller "
                              "would read restored registers (test ecx,ecx; popad; ret)")
+    parser.add_argument("--ebp-to-callee", metavar="JSON",
+                        help="Call sites whose callee reads the caller's ebp: "
+                             "{\"0x<call VA>\": \"0x<callee VA>\"}. Around each such "
+                             "call the caller's ebp is the callee's (g_ebp, g_seh_ebp), "
+                             "put back after; for a caller whose ebp is not its frame "
+                             "(patched-in code reading [ebp+n] of an FPO caller)")
     parser.add_argument("--coalesce-functions", metavar="JSON", action="append",
                         help="Explicit owner bounds and false interior starts "
                              "to merge before translation; repeatable")
@@ -366,6 +380,8 @@ def main():
         translator.translator.lifter.flags_after_call = _load_flags_after_call(args.flags_after_call)
     if args.flags_out:
         translator.translator.lifter.flags_out = _load_flags_after_call(args.flags_out, "--flags-out")
+    if args.ebp_to_callee:
+        translator.translator.lifter.ebp_to_callee = _load_ebp_to_callee(args.ebp_to_callee)
 
     t_load = time.time() - t0
     print(f"Loaded {len(translator.func_db)} functions, "

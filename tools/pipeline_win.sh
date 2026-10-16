@@ -31,6 +31,7 @@ echo "== recomp"
     --manual-functions "$here/src/manual_functions.json" \
     --flags-after-call "$here/src/flags_after_call.json" \
     --flags-out "$here/src/flags_out.json" \
+    --ebp-to-callee "$here/src/ebp_to_callee.json" \
     --gen-dir "$here/src/recomp/gen" > "$here/recomp_log.txt" 2>&1 \
     || { tail -20 "$here/recomp_log.txt"; exit 1; }
 tail -3 "$here/recomp_log.txt"

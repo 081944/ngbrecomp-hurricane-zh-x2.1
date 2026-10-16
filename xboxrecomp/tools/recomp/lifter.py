@@ -4073,7 +4073,20 @@ def lift_basic_block(lifter, bb, flag_state=None):
         if curr.is_ret and lifter.func_start in flags_out:
             stmts.append("g_flags_out_fa = _fa; g_flags_out_fb = _fb; g_flags_out_fas = _fas; "
                          "g_flags_out_fbs = _fbs; /* flags out (--flags-out) */")
-        stmts.extend(results)
+        # A call whose callee reads the caller's ebp (--ebp-to-callee: patched-in code reading [ebp+n] of an
+        # FPO caller, whose ebp is a plain register here, not the frame the callee inherits through
+        # g_ebp / g_seh_ebp): the caller's ebp is the callee's for the call, the inherited ones put back after.
+        ebp_callee = getattr(lifter, "ebp_to_callee", {}).get(curr.address) if curr.is_call else None
+        if ebp_callee is not None:
+            if curr.call_target != ebp_callee:
+                raise SystemExit(f"--ebp-to-callee 0x{curr.address:08X}: calls "
+                                 f"0x{(curr.call_target or 0):08X}, not 0x{ebp_callee:08X}")
+            stmts.append("{ uint32_t _ebp_in = g_ebp, _seh_in = g_seh_ebp; g_ebp = g_seh_ebp = ebp; "
+                         "/* the caller's ebp for the callee (--ebp-to-callee) */")
+            stmts.extend(results)
+            stmts.append("g_ebp = _ebp_in; g_seh_ebp = _seh_in; }")
+        else:
+            stmts.extend(results)
         if curr.is_call and curr.call_target in flags_out:
             out_insn = flags_out[curr.call_target]
             stmts.append(f"_fa = g_flags_out_fa; _fb = g_flags_out_fb; _fas = g_flags_out_fas; "
