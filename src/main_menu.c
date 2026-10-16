@@ -125,6 +125,8 @@ void sub_0017A010(void)
     if (n == 8 && s_back_to >= 0 && MEM32(ebx + 0x54) == 7 && !ENV_ONCE("NGB_KEEP_RANKING")) {
         MEM32(ebx + 0x50) = (uint32_t)s_back_to;    /* where the highlight is drawn */
         MEM32(ebx + 0x54) = (uint32_t)s_back_to;
+        if (MEM32(esp + 4) == 7)                    /* this frame's too: its caller passed the cursor */
+            MEM32(esp + 4) = (uint32_t)s_back_to;
         s_back_to = -1;
     }
     if (n == 8 && ENV_ONCE("NGB_MENU_FORCE"))            /* a test: all unlocked */
@@ -1359,7 +1361,14 @@ void sub_0017B010(void)
         esp += 4;   /* ret */
         return;
     }
+    /* The bar slides from the chosen id (+0x90) while the choice flashes, and the Options menu's id, 7,
+     * is EXIT TO DESKTOP's row now: once the game has read it, the row chosen again, or the highlight
+     * flashed on EXIT TO DESKTOP (issue #27, found by akirahayabusa). Only this function reads +0x90. */
+    int moved = esi == 0xC075C0 && MEM32(esi + 0x90) == OPTIONS_ID && MEM32(esi + 0x94) != OPTIONS_ID &&
+                s_back_to >= 0;
     main_menu_select();
+    if (moved && MEM32(0xC07650) == OPTIONS_ID)
+        MEM32(0xC07650) = (uint32_t)s_back_to;
 }
 
 /**
