@@ -1,6 +1,8 @@
 {
-  "#": "Calls into patched-in code (vb-zh-x2.1 HANZI) whose callee ends `cmp/test ...; ret` and whose caller branches on those flags. Value: the callee's last compare (bytes). Checked against the callee listings; only sites whose function is generated (the rest are in hand-written functions).",
+  "#": "Calls into patched-in code (vb-zh-x2.1 HANZI) whose callee ends `cmp/test ...; ret` (one ret) and whose caller branches on those flags. Value: the callee's last compare (bytes, read from the XBE and checked against the hook). Used by the pipeline (generated functions) and by tools/hurricane/lift_funcs.sh (functions merged into hand-written files).",
   "0x0017EF0B": "3cff",
   "0x0020964E": "391d2cb78d00",
-  "0x000330A3": "83ff05"
+  "0x000330A3": "83ff05",
+  "0x001E6D8E": "83fb03",
+  "0x001E86C9": "83fe03"
 }

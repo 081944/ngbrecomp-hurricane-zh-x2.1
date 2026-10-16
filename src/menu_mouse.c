@@ -582,9 +582,13 @@ loc_001E86AA: ;
     if (CMP_EQ(_fa, _fb)) goto loc_001E86D1; /* je: equal / zero */
 
 loc_001E86C9: ;
-    esi = MEM32(eax + 0x38);
+    PUSH32(esp, 0x001E86CEu); RECOMP_ABI_CALL(0x00DC7AC0u, sub_00DC7AC0); /* call 0x00DC7AC0 */
+    /* flags as 0x001E86C9's callee left them: cmp esi, 3 */
     _fa = (uint32_t)(esi) & 0xFFFFFFFFu; _fb = (uint32_t)(3) & 0xFFFFFFFFu;
     _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp esi, 3 (32-bit) */
+
+loc_001E86CE: ;
+    /* nop */
     if (CMP_L(_fas, _fbs)) goto loc_001E86EA; /* jl: less (signed <) */
 
 loc_001E86D1: ;
@@ -1398,10 +1402,16 @@ loc_001E6D40: ;
     if (CMP_EQ(_fa, _fb)) goto loc_001E7503; /* je: equal / zero */
 
 loc_001E6D8E: ;
-    ebx = MEM32(esi + 0x38);
+    g_ebp = ebp; /* frame stays current across calls */
+    g_seh_ebp = ebp;
+    PUSH32(esp, 0x001E6D93u); RECOMP_ABI_CALL(0x00DC7AA0u, sub_00DC7AA0); /* call 0x00DC7AA0 */
+    /* flags as 0x001E6D8E's callee left them: cmp ebx, 3 */
     _fa = (uint32_t)(ebx) & 0xFFFFFFFFu; _fb = (uint32_t)(3) & 0xFFFFFFFFu;
     _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp ebx, 3 (32-bit) */
     _cf = (int)(_fa < _fb);
+
+loc_001E6D93: ;
+    /* nop */
     if (CMP_GE(_fas, _fbs)) goto loc_001E7503; /* jge: greater or equal (signed >=) */
 
 loc_001E6D9A: ;
@@ -1527,9 +1537,10 @@ loc_001E6ED0: ;
     _cf = 0; /* logical op clears CF */
     edi = edi | eax;
     _fa = (uint32_t)(edi) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* or result */
-    _fa = (uint32_t)(MEM32(esi + 0x38)) & 0xFFFFFFFFu; _fb = (uint32_t)(1) & 0xFFFFFFFFu;
-    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp MEM32(esi + 0x38), 1 (32-bit) */
+    _fa = (uint32_t)(ebx) & 0xFFFFFFFFu; _fb = (uint32_t)(1) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp ebx, 1 (32-bit) */
     _cf = (int)(_fa < _fb);
+    /* nop */
     MEM32(esp + 0x68) = edi;
     MEM32(esi + 0x28) = 0;
     if (CMP_NE(_fa, _fb)) goto loc_001E6F77; /* jne: not equal / not zero */

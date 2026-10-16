@@ -1,0 +1,4 @@
+{
+  "#": "Functions of the vb-zh-x2.1 HANZI code that answer in their flags (their callers branch on them after the call) and whose last compare cannot be redone in the caller (popad restores its operands). Value: that compare's bytes, read from the XBE. 0xDC7A30: the menu font's 'string has Chinese?' (test ecx,ecx; popad; ret), called from 0xDC7AA9 and 0xDC7AC9.",
+  "0x00DC7A30": "85c9"
+}

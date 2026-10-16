@@ -30,6 +30,7 @@ echo "== recomp"
     --exclude-manual "$here/src/recomp_manual.c" \
     --manual-functions "$here/src/manual_functions.json" \
     --flags-after-call "$here/src/flags_after_call.json" \
+    --flags-out "$here/src/flags_out.json" \
     --gen-dir "$here/src/recomp/gen" > "$here/recomp_log.txt" 2>&1 \
     || { tail -20 "$here/recomp_log.txt"; exit 1; }
 tail -3 "$here/recomp_log.txt"
