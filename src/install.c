@@ -247,6 +247,7 @@ static int copy_out(Image *im, uint32_t sector, uint32_t size, const char *dest)
     }
     if (fseeko(im->f, (off_t)(im->base + (uint64_t)sector * SECTOR), SEEK_SET) != 0) {
         fclose(out);
+        fail("Cannot read the disc image at sector %u (for %s): %s", sector, dest, strerror(errno));
         return -1;
     }
     while (left) {
@@ -274,7 +275,11 @@ static int copy_out(Image *im, uint32_t sector, uint32_t size, const char *dest)
     if (im->files % 25 == 0)
         fprintf(stderr, "  %llu files, %llu MB\n", (unsigned long long)im->files,
                 (unsigned long long)(im->bytes >> 20));
-    return fclose(out) == 0 ? 0 : -1;
+    if (fclose(out) != 0) {
+        fail("Cannot write %s: %s", dest, strerror(errno));
+        return -1;
+    }
+    return 0;
 }
 
 /* Every entry of a directory. Entries form a binary tree, but they also lie
@@ -290,6 +295,8 @@ static int extract_dir(Image *im, uint32_t sector, uint32_t size, const char *de
     data = malloc(size);
     if (!data || read_at(im, sector, data, size) != 0) {
         free(data);
+        fail("Cannot read the disc image's folder list at sector %u (%u bytes, for %s): "
+             "the image may be cut short or damaged.", sector, size, dest);
         return -1;
     }
     for (uint32_t base = 0; base < size && rc == 0; base += SECTOR) {
@@ -307,13 +314,18 @@ static int extract_dir(Image *im, uint32_t sector, uint32_t size, const char *de
             memcpy(name, e + 0x0E, nlen);
             name[nlen] = 0;
             if (strpbrk(name, "/\\:") || !strcmp(name, ".") || !strcmp(name, "..")) {
+                fail("The disc image has an unexpected file name in %s: \"%s\"", dest, name);
                 rc = -1;
                 break;
             }
             snprintf(path, sizeof path, "%s/%s", dest, name);
             if (attr & 0x10) {
-                rc = im->count_only || mkdirs(path) == 0
-                     ? extract_dir(im, sec, sz, path) : -1;
+                if (!im->count_only && mkdirs(path) != 0) {
+                    fail("Cannot create the folder %s: %s", path, strerror(errno));
+                    rc = -1;
+                } else {
+                    rc = extract_dir(im, sec, sz, path);
+                }
             } else if (im->count_only) {
                 im->total += sz;
             } else {
