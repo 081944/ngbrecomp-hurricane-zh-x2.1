@@ -474,7 +474,9 @@ void ngb_aspect_frame_end(void)
  * as it is, stretched. */
 int ngb_2d_stretched(void)
 {
-    return s_screen_wide && (MEM32(0xD21748) & 1) != 0;
+    /* The renderer asks from its first present, which can come before the guest's memory is mapped:
+     * the flag read at 0 + 0xD21748 crashed a slow first start (Windows, just after a reboot). */
+    return s_screen_wide && g_xbox_mem_offset && (MEM32(0xD21748) & 1) != 0;
 }
 
 /* For the renderer: a 2D screen (a menu, the title, a chapter card) on a wide screen, in whichever mode. */
