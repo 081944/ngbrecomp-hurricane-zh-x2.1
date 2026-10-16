@@ -118,6 +118,12 @@ void sub_0017A010(void)
     }
     /* The main menu's list (NEW GAME, LOAD GAME, MISSIONS, RANKING, ...,
      * OPTIONS: eight): Ranking not shown. */
+    if (n == 8 && ENV_ONCE("NGB_MENU_LOG") && ENV_ONCE("NGB_MENU_LOG")[0] == '2') {   /* every frame */
+        static unsigned f;
+        fprintf(stderr, "[MAINMENU] f%u ebx %08X hl %u cur %u %08X %08X %08X %08X back %d\n", f++, ebx,
+                MEM32(ebx + 0x50), MEM32(ebx + 0x54), MEM32(ebx + 0x58), MEM32(ebx + 0x5C), MEM32(ebx + 0x60),
+                MEM32(ebx + 0x64), s_back_to);
+    }
     if (n == 8 && ENV_ONCE("NGB_MENU_LOG")) {             /* the cursor (menu + 0x94), as it moves */
         static uint32_t last = ~0u;
         if (MEM32(ebx + 0x54) != last)
@@ -160,6 +166,17 @@ void sub_0017A010(void)
         MEM16(0x45A9BA + 2 * 5) = 38;
         items_draw();
         MEM16(0x45A9BA + 2 * 5) = was;
+        return;
+    }
+    /* Hurricane: the entry chosen flashes (sub_0017A010 draws the highlight on row +0x50, which is the menu
+     * object's chosen id, +0x90) -- for RECOMP SETTINGS and the moved-up OPTIONS that id is OPTIONS' (7, set
+     * by sub_0017B010 below), the last row, now EXIT TO DESKTOP: drawn on the row chosen; the id kept for
+     * the game. */
+    if (n == 8 && s_back_to >= 0 && MEM32(ebx + 0x50) == 7 && MEM32(ebx + 0x54) == (uint32_t)s_back_to &&
+        !ENV_ONCE("NGB_KEEP_RANKING")) {
+        MEM32(ebx + 0x50) = (uint32_t)s_back_to;
+        items_draw();
+        MEM32(ebx + 0x50) = 7;
         return;
     }
     items_draw();
