@@ -104,8 +104,11 @@ static void identity_check(void)
             s_pad_identity = 0;
 }
 
+static int s_invert[2];   /* the right stick's X and Y, inverted in play (controls.ini) */
+
 void ngb_bind_defaults(void)
 {
+    s_invert[0] = s_invert[1] = 0;
     for (int a = 0; a < A_COUNT; a++) {
         s_bind[a][0] = s_act[a].key0;
         s_bind[a][1] = s_act[a].key1;
@@ -221,6 +224,7 @@ static void save(void)
             snprintf(p, sizeof p, "-");
         fprintf(f, "%s = %s, %s, %s\n", s_act[a].ini, k0, k1, p);
     }
+    fprintf(f, "invert_camera_x = %d\ninvert_camera_y = %d\n", s_invert[0], s_invert[1]);
     fclose(f);
 }
 
@@ -237,6 +241,10 @@ void ngb_bind_load(void)
         char key[64], val[400];
         if (line[0] == '#' || sscanf(line, " %63[^= ] = %399[^\r\n]", key, val) != 2)
             continue;
+        if (!strcmp(key, "invert_camera_x") || !strcmp(key, "invert_camera_y")) {
+            s_invert[key[14] == 'y'] = atoi(val) != 0;
+            continue;
+        }
         for (int a = 0; a < A_COUNT; a++) {
             if (strcmp(key, s_act[a].ini))
                 continue;
@@ -348,6 +356,31 @@ static SHORT clamp_axis(int v)
     return (SHORT)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
 }
 
+int ngb_bind_invert(int axis)
+{
+    ensure();
+    return axis >= 0 && axis < 2 && s_invert[axis];
+}
+
+void ngb_bind_set_invert(int axis, int on)
+{
+    ensure();
+    if (axis < 0 || axis > 1)
+        return;
+    s_invert[axis] = on != 0;
+    s_gen++;
+    save();
+}
+
+/* The right stick as the player wants the camera turned (in play only). */
+static void apply_invert(XBOX_INPUT_STATE *st)
+{
+    if (s_invert[0])
+        st->Gamepad.sThumbRX = clamp_axis(-(int)st->Gamepad.sThumbRX);
+    if (s_invert[1])
+        st->Gamepad.sThumbRY = clamp_axis(-(int)st->Gamepad.sThumbRY);
+}
+
 /* The keyboard and mouse in play (src/keyboard.c): the pad as their bindings press it. */
 void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y)
 {
@@ -362,6 +395,7 @@ void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int
     st->Gamepad.sThumbLY = clamp_axis(axes[1]);
     st->Gamepad.sThumbRX = clamp_axis(axes[2]);
     st->Gamepad.sThumbRY = clamp_axis(axes[3]);
+    apply_invert(st);
 }
 
 /* A controller's state, each input 0-255 (P_*). */
@@ -386,7 +420,10 @@ static void pad_inputs(const XBOX_INPUT_STATE *st, int v[P_COUNT])
 void xbox_pad_remap(XBOX_INPUT_STATE *st)
 {
     ensure();
-    if (s_pad_identity || ngb_menu_up() || getenv("NGB_NO_PAD_REMAP"))
+    if (ngb_menu_up())
+        return;
+    apply_invert(st);
+    if (s_pad_identity || getenv("NGB_NO_PAD_REMAP"))
         return;
     int v[P_COUNT], axes[4] = { 0 };
     pad_inputs(st, v);

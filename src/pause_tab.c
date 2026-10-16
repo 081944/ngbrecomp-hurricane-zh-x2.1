@@ -120,7 +120,10 @@ static const signed char s_cat_rows[CATS][CAT_ROWS] = {
 };
 
 #include "bindings.h"
-#define CTL_ROWS (A_COUNT + 1)    /* the actions, then Default Controls */
+#define CTL_INVX A_COUNT          /* the actions, then Invert Camera X and Y (#26), then Default Controls */
+#define CTL_INVY (A_COUNT + 1)
+#define CTL_DEF  (A_COUNT + 2)
+#define CTL_ROWS (A_COUNT + 3)
 
 static int cat_count(int c)
 {
@@ -736,7 +739,16 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         float y = CTL_Y0 + i * ROW_H;
         if (sel)
             page_fill(px, 0, y + 2, 10, ROW_H - 4, 0xE6E4FF, 0.95f, 0.85f);
-        if (r == A_COUNT) {                            /* Default Controls */
+        if (r == CTL_INVX || r == CTL_INVY) {          /* Invert Camera X / Y: On or Off */
+            if (sel)
+                page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
+            page_text(px, m, r == CTL_INVX ? "Invert Camera X" : "Invert Camera Y", CTL_NAME_X + 6, y + 19, 18,
+                      sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0);
+            page_text(px, m, ngb_bind_invert(r - CTL_INVX) ? "On" : "Off", s_ctl_cx[1], y + 18, 15,
+                      sel ? 0xFFFFFF : 0xC8C8D0, 1);
+            continue;
+        }
+        if (r == CTL_DEF) {                            /* Default Controls */
             if (sel)
                 page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
             page_text(px, m, "Default Controls", CTL_NAME_X + 6, y + 19, 19,
@@ -768,13 +780,20 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
     const char *help = NULL;
     if (focused && row >= 0 && capturing)
         help = s_ctl_col == 2 ? "Press the controller's button (wait to cancel)." : "Press a key or mouse button (Esc cancels).";
-    else if (focused && row == A_COUNT)
+    else if (focused && row == CTL_DEF)
         help = "Every action as it was.";
+    else if (focused && (row == CTL_INVX || row == CTL_INVY))
+        help = row == CTL_INVX ? "Turns the camera the other way left and right (play only)."
+                               : "Turns the camera the other way up and down (play only).";
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : "A: change   X / Delete: clear   (play only; the menus keep theirs)";
+    int two = focused && !capturing && (row == CTL_INVX || row == CTL_INVY);   /* the stick itself is flipped */
     if (focused && help)
-        page_text_fit(px, m, help, 445, CTL_Y0 + CTL_SHOWN * ROW_H + 16, 14, 0xFFFFFF, 2, 440);
+        page_text_fit(px, m, help, 445, CTL_Y0 + CTL_SHOWN * ROW_H + (two ? 12 : 16), two ? 13 : 14, 0xFFFFFF, 2, 440);
+    if (two)
+        page_text_fit(px, m, "First-person look too: the game's Options > 1st Person Camera Control turns it back.",
+                      445, CTL_Y0 + CTL_SHOWN * ROW_H + 26, 12, 0xC8C8D0, 2, 440);
 }
 
 static void draw_page(int focused, int cat, int row)
@@ -1596,8 +1615,8 @@ static int ctl_hit(float x, float y)
     int r = s_ctl_top + (int)((y - CTL_Y0) / ROW_H), c = 3;
     if (r >= CTL_ROWS)
         return -1;
-    if (r == A_COUNT)
-        c = 0;                                        /* Default Controls: anywhere on it */
+    if (r >= A_COUNT)
+        c = 0;                                        /* Invert Camera, Default Controls: anywhere on it */
     for (int i = 0; i < 3 && r < A_COUNT; i++)
         if (fabsf(x - s_ctl_cx[i]) <= s_ctl_w[i] / 2)
             c = i;
@@ -1651,7 +1670,10 @@ static int ctl_keys(int key, int *row, int strip)
         break;
     }
     case K_OK:
-        if (*row == A_COUNT) {
+        if (*row == CTL_INVX || *row == CTL_INVY) {
+            ngb_bind_set_invert(*row - CTL_INVX, !ngb_bind_invert(*row - CTL_INVX));
+            play_sound(6);
+        } else if (*row == CTL_DEF) {
             ngb_bind_defaults();
             ngb_bind_set(0, 0, ngb_bind_get(0, 0));   /* saved */
             play_sound(6);

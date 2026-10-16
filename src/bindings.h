@@ -37,6 +37,10 @@ int ngb_bind_pad_fixed(int action);           /* the sticks: not the controller'
  * taken from another action swaps with it. Saved at once. */
 void ngb_bind_set(int action, int slot, int input);
 void ngb_bind_defaults(void);
+/* The camera's direction in play (the right stick, and the mouse and keys for it): 0 X, 1 Y. The game
+ * turns its third-person camera inverted on both axes and has no option for it (issue #26). */
+int ngb_bind_invert(int axis);
+void ngb_bind_set_invert(int axis, int on);
 void ngb_bind_load(void);
 /* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a
  * short one for a keycap (1-3 characters; "" for a mouse button). */
