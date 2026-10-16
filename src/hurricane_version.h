@@ -3,3 +3,6 @@
 #pragma once
 #define NGB_HURRICANE_VERSION "0.9.9"
 #define NGB_WINDOW_TITLE "Ninja Gaiden Black[Hurricane]v" NGB_HURRICANE_VERSION
+/* The folders of the installed game, saves, settings and shader cache (%LOCALAPPDATA%, %APPDATA%, XDG): its own,
+ * so ngbrecomp's retail install beside it is never taken for this one (user 2026-10-17). */
+#define NGB_DATA_NAME "ngb-hurricane-zh-x2.1"

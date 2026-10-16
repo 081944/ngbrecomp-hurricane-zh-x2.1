@@ -19,6 +19,7 @@
  * (the file is removed after).
  */
 #define RECOMP_GENERATED_CODE
+#include "hurricane_version.h"   /* NGB_DATA_NAME */
 #include "recomp_funcs.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -203,7 +204,7 @@ static void pos_tick(void)
         char path[1024];
         const char *dir = getenv("NGB_SAVE_DIR"), *home = getenv("HOME");
         if (dir) snprintf(path, sizeof path, "%s/ngb_positions.txt", dir);
-        else snprintf(path, sizeof path, "%s/.local/share/NinjaGaidenBlack/ngb_positions.txt", home ? home : ".");
+        else snprintf(path, sizeof path, "%s/.local/share/" NGB_DATA_NAME "/ngb_positions.txt", home ? home : ".");
         FILE *f = fopen(path, "a");
         if (f) {
             fprintf(f, "%.3f %.3f %.3f\n", MEMF(0x4B5710), MEMF(0x4B5714), MEMF(0x4B5718));

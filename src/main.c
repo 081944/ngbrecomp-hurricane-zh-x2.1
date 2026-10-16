@@ -571,14 +571,14 @@ static void save_dir_path(char *out, size_t n)
 #if defined(_WIN32)
     const char *base = getenv("LOCALAPPDATA");
     if (env && *env) { snprintf(out, n, "%s", env); return; }
-    snprintf(out, n, "%s/NinjaGaidenBlack", base && *base ? base : ".");
+    snprintf(out, n, "%s/" NGB_DATA_NAME, base && *base ? base : ".");
 #else
     const char *xdg = getenv("XDG_DATA_HOME"), *home = getenv("HOME");
     if (env && *env) { snprintf(out, n, "%s", env); return; }
     if (xdg && *xdg)
-        snprintf(out, n, "%s/NinjaGaidenBlack", xdg);
+        snprintf(out, n, "%s/" NGB_DATA_NAME, xdg);
     else
-        snprintf(out, n, "%s/.local/share/NinjaGaidenBlack", home && *home ? home : ".");
+        snprintf(out, n, "%s/.local/share/" NGB_DATA_NAME, home && *home ? home : ".");
 #endif
 }
 
@@ -1097,9 +1097,9 @@ int main(int argc, char **argv)
                 xdg = getenv("LOCALAPPDATA");
 #endif
             if (xdg && *xdg)
-                snprintf(dir, sizeof dir, "%s/NinjaGaidenBlack/shaders", xdg);
+                snprintf(dir, sizeof dir, "%s/" NGB_DATA_NAME "/shaders", xdg);
             else if (home && *home)
-                snprintf(dir, sizeof dir, "%s/.cache/NinjaGaidenBlack/shaders", home);
+                snprintf(dir, sizeof dir, "%s/.cache/" NGB_DATA_NAME "/shaders", home);
             else
                 dir[0] = 0;
             if (dir[0])
