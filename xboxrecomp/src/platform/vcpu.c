@@ -66,7 +66,7 @@ struct vcpu_thread {
     int suspended;          /* SuspendThread count: no CPU for it meanwhile */
     int stolen;             /* lost the CPU suspended: get it back before guest code */
     volatile int redirected;   /* on its way through vcpu_win_trampoline */
-    volatile int in_exception; /* in a runtime exception handler (vcpu_win_unredirect) */
+    volatile int64_t in_exception; /* when it entered a runtime exception handler (vcpu_win_unredirect), or 0 */
     int self_susp;          /* suspended by itself: its count, waited out on self_cv */
     int resume_early;       /* resumed while running: its next self-suspension returns at once */
     pthread_cond_t self_cv;
@@ -594,7 +594,7 @@ void vcpu_debug_state(char *buf, int n)
     len = snprintf(buf, (size_t)n, "[VCPU] holder tid %lu prio %d for %lld ms, preempt %d "
                    "redirected %d in_exception %d depth %d\n", h ? h->tid : 0,
                    h ? h->priority : 0, h ? (long long)(now_ms() - s_holder_since_ms) : 0,
-                   h ? h->preempt : 0, h ? h->redirected : 0, h ? h->in_exception : 0,
+                   h ? h->preempt : 0, h ? h->redirected : 0, h ? h->in_exception != 0 : 0,
                    h && h->depth ? *h->depth : 0);
     for (int i = 0; i < VCPU_MAX_THREADS && len > 0 && len < n; i++)
         if (s_threads[i] && s_threads[i]->ready)
@@ -612,7 +612,11 @@ static int redirect(vcpu_thread *t)
     CONTEXT c;
     MEMORY_BASIC_INFORMATION mbi;
 
-    if (t->in_vcpu || t->in_exception || *t->depth != 0)
+    /* In a handler: not while it may hold a lock -- for a few milliseconds at most. Wine does not run
+     * the vectored continue handler that clears the mark, which left it set after the first exception
+     * and the thread never preempted again: under Proton the game hung loading again ("There's a
+     * problem with the disc", as in v0.9.4-0.9.7). Handlers finish in microseconds. */
+    if (t->in_vcpu || (t->in_exception && now_ms() - t->in_exception < 50) || *t->depth != 0)
         return 0;
     memset(&c, 0, sizeof c);
     c.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
@@ -662,7 +666,7 @@ int vcpu_win_unredirect(void *exception_pointers)
      * thread to want it spinning, and the game waiting on its disc read forever. On POSIX the
      * handlers run in signal handlers, where the preemption signal waits. */
     if (t_self)
-        t_self->in_exception = 1;
+        t_self->in_exception = now_ms() | 1;
     if (c->Rip != (DWORD64)vcpu_win_trampoline) {
         /* A redirect still pending, but not in the context this exception resumes: Windows
          * dropped it. The thread was suspended after the kernel had captured the fault's
