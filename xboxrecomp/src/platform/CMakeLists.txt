@@ -29,7 +29,7 @@ if(WIN32 AND XBOXRECOMP_WIN_VCPU)
     target_include_directories(platform PUBLIC ${XBOXRECOMP_SRC_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(platform PUBLIC XBOX_WIN_VCPU)
     set_source_files_properties(vcpu.c win32_host.c PROPERTIES COMPILE_DEFINITIONS XBOX_VCPU_WRAP_IMPL)
-    target_compile_options(platform PUBLIC "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/win32_vcpu.h")
+    target_compile_options(platform PUBLIC "SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/win32_vcpu.h\"")   # quoted: the path may have spaces
     find_package(Threads REQUIRED)
     target_link_libraries(platform PUBLIC Threads::Threads)
 elseif(WIN32)
