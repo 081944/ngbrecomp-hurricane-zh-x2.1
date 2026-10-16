@@ -32,7 +32,7 @@
 ## 使用方法（Windows）
 
 1. 从 [Releases](../../releases) 下载 zip，解压到任意位置。
-2. 运行 `NinjaGaidenBlack.exe`，选择 vb-zh-x2.1 镜像（`.iso`）或其解压出的文件夹。
+2. 运行 `ngb-hurricane-zh-x2.1.exe`（v0.9.9 发布包里叫 `NinjaGaidenBlack.exe`），选择 vb-zh-x2.1 镜像（`.iso`）或其解压出的文件夹。
    镜像只需安装一次（约 6 GB），默认装到 `%LOCALAPPDATA%\NinjaGaidenBlack`；
    便携模式（勾选对话框里的选项，或在 exe 旁放一个 `portable.txt`）则全部放在程序旁边。
 

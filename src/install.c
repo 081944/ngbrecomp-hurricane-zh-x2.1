@@ -1076,7 +1076,7 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
         if (!src) {
             fprintf(stderr,
                 "No game files found. Run it once with your disc image:\n"
-                "  NinjaGaidenBlack /path/to/disc.iso   (or the .7z, or a folder "
+                "  ngb-hurricane-zh-x2.1 /path/to/disc.iso   (or the .7z, or a folder "
                 "of extracted files)\n"
                 "It is installed into %s and found there from then on.\n", installed);
             return -1;

@@ -37,7 +37,7 @@ not recompiled, so their main-menu entries are hidden.
 ## Getting started (Windows)
 
 1. Download the zip from [Releases](../../releases) and extract it anywhere.
-2. Run `NinjaGaidenBlack.exe` and choose your vb-zh-x2.1 disc image (`.iso`) or a folder with its
+2. Run `ngb-hurricane-zh-x2.1.exe` (in the v0.9.9 release: `NinjaGaidenBlack.exe`) and choose your vb-zh-x2.1 disc image (`.iso`) or a folder with its
    extracted files. A disc image is installed once (about 6 GB) into `%LOCALAPPDATA%\NinjaGaidenBlack`,
    or next to the program in portable mode (tick the box, or put a `portable.txt` beside the exe).
 

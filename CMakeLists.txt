@@ -195,9 +195,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${XBOXRECOMP_DIR}/src
 )
 
+# Hurricane: the program's name says which disc it is for (user 2026-10-17)
+set(NGB_EXE_NAME ngb-hurricane-zh-x2.1)
 if(WIN32)
     # A GUI program (no console window); main() attaches to a parent console.
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME NinjaGaidenBlack
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${NGB_EXE_NAME}
                           WIN32_EXECUTABLE TRUE)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         winmm dbghelp comdlg32 comctl32 shell32 ole32)
@@ -205,7 +207,7 @@ if(WIN32)
         target_link_options(${PROJECT_NAME} PRIVATE /LARGEADDRESSAWARE)
     endif()
 else()
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME NinjaGaidenBlack)
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${NGB_EXE_NAME})
     # -rdynamic: the crash handler names the faulting sub_XXXXXXXX via dladdr.
     target_link_options(${PROJECT_NAME} PRIVATE -rdynamic)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} m)
