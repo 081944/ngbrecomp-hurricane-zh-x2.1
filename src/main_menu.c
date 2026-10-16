@@ -120,9 +120,10 @@ void sub_0017A010(void)
      * OPTIONS: eight): Ranking not shown. */
     if (n == 8 && ENV_ONCE("NGB_MENU_LOG") && ENV_ONCE("NGB_MENU_LOG")[0] == '2') {   /* every frame */
         static unsigned f;
-        fprintf(stderr, "[MAINMENU] f%u ebx %08X hl %u cur %u %08X %08X %08X %08X back %d\n", f++, ebx,
-                MEM32(ebx + 0x50), MEM32(ebx + 0x54), MEM32(ebx + 0x58), MEM32(ebx + 0x5C), MEM32(ebx + 0x60),
-                MEM32(ebx + 0x64), s_back_to);
+        fprintf(stderr, "[MAINMENU] f%u ebx %08X hl %u cur %u %08X %08X %08X %08X back %d chosen %u%u%u%u%u%u%u%u\n",
+                f++, ebx, MEM32(ebx + 0x50), MEM32(ebx + 0x54), MEM32(ebx + 0x58), MEM32(ebx + 0x5C),
+                MEM32(ebx + 0x60), MEM32(ebx + 0x64), s_back_to, MEM8(list + 6), MEM8(list + 14), MEM8(list + 22),
+                MEM8(list + 30), MEM8(list + 38), MEM8(list + 46), MEM8(list + 54), MEM8(list + 62));
     }
     if (n == 8 && ENV_ONCE("NGB_MENU_LOG")) {             /* the cursor (menu + 0x94), as it moves */
         static uint32_t last = ~0u;
@@ -134,6 +135,10 @@ void sub_0017A010(void)
     if (n == 8 && s_back_to >= 0 && MEM32(ebx + 0x54) == 7 && !ENV_ONCE("NGB_KEEP_RANKING")) {
         MEM32(ebx + 0x50) = (uint32_t)s_back_to;    /* where the highlight is drawn */
         MEM32(ebx + 0x54) = (uint32_t)s_back_to;
+        /* Hurricane: and this frame's -- the caller (sub_0017AE80) passed the cursor, 7, before this ran: the
+         * highlight on EXIT TO DESKTOP for a frame at the end of the chosen entry's flash */
+        if (MEM32(esp + 4) == 7)
+            MEM32(esp + 4) = (uint32_t)s_back_to;
         s_back_to = -1;
     }
     if (n == 8 && ENV_ONCE("NGB_MENU_FORCE"))            /* a test: all unlocked */
@@ -166,17 +171,6 @@ void sub_0017A010(void)
         MEM16(0x45A9BA + 2 * 5) = 38;
         items_draw();
         MEM16(0x45A9BA + 2 * 5) = was;
-        return;
-    }
-    /* Hurricane: the entry chosen flashes (sub_0017A010 draws the highlight on row +0x50, which is the menu
-     * object's chosen id, +0x90) -- for RECOMP SETTINGS and the moved-up OPTIONS that id is OPTIONS' (7, set
-     * by sub_0017B010 below), the last row, now EXIT TO DESKTOP: drawn on the row chosen; the id kept for
-     * the game. */
-    if (n == 8 && s_back_to >= 0 && MEM32(ebx + 0x50) == 7 && MEM32(ebx + 0x54) == (uint32_t)s_back_to &&
-        !ENV_ONCE("NGB_KEEP_RANKING")) {
-        MEM32(ebx + 0x50) = (uint32_t)s_back_to;
-        items_draw();
-        MEM32(ebx + 0x50) = 7;
         return;
     }
     items_draw();
@@ -1379,7 +1373,14 @@ void sub_0017B010(void)
         esp += 4;   /* ret */
         return;
     }
+    int moved = esi == 0xC075C0 && MEM32(esi + 0x90) == OPTIONS_ID && MEM32(esi + 0x94) != OPTIONS_ID &&
+                s_back_to >= 0;
     main_menu_select();
+    /* Hurricane: the chosen id has done its work (read once, above, for the menu to open); the highlight bar
+     * (sub_0017A620) slides from the row of +0x90 to the cursor's while the choice flashes -- from OPTIONS'
+     * old row, now EXIT TO DESKTOP's: from the row chosen instead */
+    if (moved && MEM32(0xC07650) == OPTIONS_ID)
+        MEM32(0xC07650) = (uint32_t)s_back_to;
 }
 
 /**
