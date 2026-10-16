@@ -7,6 +7,15 @@ A Windows PC port of **NINJA GAIDEN BLACK [Hurricane] vb-zh-x2.1** — the Chine
 The game's code, with every change of the x2.1 patch in it, is statically recompiled from the patched
 `default.xbe` into a native program: not an emulator.
 
+## Screenshots
+
+![Title screen](docs/images/zh-title.jpg)
+
+| | |
+|---|---|
+| ![Main menu](docs/images/zh-menu.jpg) | ![PC settings](docs/images/zh-settings.jpg) |
+| ![Load game](docs/images/zh-load.jpg) | ![In game](docs/images/zh-gameplay.jpg) |
+
 ## Which disc
 
 **Only `vb-zh-x2.1` is supported**: the retail USA disc (NTSC-U, title ID `5443000D`) with the

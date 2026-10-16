@@ -6,6 +6,15 @@
 基于 gamboozino 的 [ngbrecomp](https://github.com/gamboozino/ngbrecomp)。
 游戏代码（含 x2.1 补丁的全部改动）从打过补丁的 `default.xbe` 静态重编译成原生程序，不是模拟器。
 
+## 截图
+
+![标题画面](docs/images/zh-title.jpg)
+
+| | |
+|---|---|
+| ![主菜单](docs/images/zh-menu.jpg) | ![PC版设置](docs/images/zh-settings.jpg) |
+| ![读档](docs/images/zh-load.jpg) | ![游戏中](docs/images/zh-gameplay.jpg) |
+
 ## 支持哪个镜像
 
 **目前只支持 `vb-zh-x2.1`**：美版原版镜像（NTSC-U，游戏 ID `5443000D`）打上 vb-zh-x2.1 补丁后的版本。
