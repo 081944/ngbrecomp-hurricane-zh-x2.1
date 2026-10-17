@@ -37,6 +37,7 @@
 
 #include "xbox_memory_layout.h"   /* xbox_HeapAlloc: guest memory */
 #include "port.h"
+#include "launcher.h"                 /* ngb_vsync_name, ngb_vsync_step */
 
 /* Settings, from src/ingame_menu.c: 0 render scale (1-8), 1 smooth
  * texture filtering, 2 shadow map scale (1, 2, 4, 8), 3 fullscreen,
@@ -113,6 +114,8 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_VSYNC    0x20125
 #define D_FPS      0x20126
 #define T_ADAPTIVE 0x20127
+#define T_MAILBOX  0x20128
+#define T_FIFO     0x20129
 #define T_BORDERLESS 0x2012C
 #define T_ASPECT   0x2012D
 #define D_ASPECT   0x2012E
@@ -169,6 +172,8 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_FULL,    "Fullscreen" },
     { T_WINDOW,  "Windowed" },
     { T_ADAPTIVE, "Adaptive" },
+    { T_MAILBOX, "Mailbox" },
+    { T_FIFO,    "FIFO" },
     { T_BORDERLESS, "Borderless" },
     { T_ASPECT,  "Aspect Ratio" },
     { D_ASPECT,  "The shape of the picture and the window sizes offered." },
@@ -180,7 +185,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_TEXTURE, "Keeps textures sharp at an angle; Off is the console's filtering." },
     { D_SHADOW,  "Sets the resolution of the character shadows." },
     { D_DISPLAY, "A window, the whole screen, or a window without a frame." },
-    { D_VSYNC,   "Syncs frames to the refresh; Adaptive lets a late one through." },
+    { D_VSYNC,   "No tearing. Mailbox: least delay. FIFO: steadiest. Adaptive: a late frame goes at once." },
     { D_FPS,     "Shows the frame rate in a corner of the screen." },
     { T_SKIP,    "Skip Intros" },
     { T_LAUNCHER, "Settings at Startup" },
@@ -245,7 +250,7 @@ static uint32_t make_rows(const uint8_t *kinds, int n)
         case ROW_TEXTURE: src = 0x429984; max = 4; break;
         case ROW_MSAA:    src = 0x429984; max = 3; break;
         case ROW_SHADOW:  src = 0x429984; max = 4; break;
-        case ROW_VSYNC:   src = 0x429984; max = 2; break;
+        case ROW_VSYNC:   src = 0x429984; max = 3; break;
         case ROW_WINDOW:  src = 0x429984; max = 6; break;
         case ROW_ASPECT:  src = 0x429984; max = 3; break;
         case ROW_EXTRACOST: src = 0x429984; max = 3; break;
@@ -648,7 +653,10 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
         return v >= 10 ? T_SHADOW10 : T_SHADOW0 + (v >= 8 ? 3 : v >= 4 ? 2 : v >= 2 ? 1 : 0);
     }
     case ROW_DISPLAY: return ngb_pc_setting(3) == 2 ? T_BORDERLESS : ngb_pc_setting(3) ? T_FULL : T_WINDOW;
-    case ROW_VSYNC:   return ngb_pc_setting(4) == 2 ? T_ADAPTIVE : ngb_pc_setting(4) ? T_ON : T_OFF;
+    case ROW_VSYNC: {
+        int v = ngb_pc_setting(4);
+        return v == 1 ? T_MAILBOX : v == 2 ? T_ADAPTIVE : v == 3 ? T_FIFO : T_OFF;
+    }
     case ROW_FPS:     return ngb_pc_setting(5) ? T_ON : T_OFF;
     case ROW_WINDOW:  return T_WSIZE0 + (uint32_t)ngb_pc_setting(6);
     case ROW_ASPECT:  return T_ASPECT0 + (uint32_t)ngb_pc_setting(7);
@@ -702,7 +710,7 @@ static int pc_value_change(int row, int delta)
         break;
     }
     case ROW_DISPLAY: ngb_pc_set_setting(3, (ngb_pc_setting(3) + (step > 0 ? 1 : 2)) % 3); break;
-    case ROW_VSYNC:   ngb_pc_set_setting(4, (ngb_pc_setting(4) + (step > 0 ? 1 : 2)) % 3); break;
+    case ROW_VSYNC:   ngb_pc_set_setting(4, ngb_vsync_step(ngb_pc_setting(4), step)); break;
     case ROW_FPS:     ngb_pc_set_setting(5, !ngb_pc_setting(5)); break;
     case ROW_SKIP:    ngb_pc_set_setting(8, !ngb_pc_setting(8)); break;
     case ROW_LAUNCHER: ngb_pc_set_setting(9, !ngb_pc_setting(9)); break;

@@ -139,7 +139,7 @@ void ngb_settings_load(NgbSettings *s)
             int v = atoi(val);
             s->scale = v < 1 ? 1 : v > 10 ? 10 : v;
         } else if (!strcmp(key, "vsync")) {
-            s->vsync = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
+            s->vsync = atoi(val) < 0 ? 0 : atoi(val) > 3 ? 3 : atoi(val);
         } else if (!strcmp(key, "shadow_resolution")) {
             int v = atoi(val);
             s->shadow_scale = v >= 10 ? 10 : v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
@@ -215,6 +215,20 @@ double ngb_settings_aspect_ratio(const NgbSettings *s)
 
 static SDL_Texture *s_font;
 static int s_glyph_x[95];
+
+const char *ngb_vsync_name(int v)
+{
+    return v == 1 ? "Mailbox" : v == 2 ? "Adaptive" : v == 3 ? "FIFO" : "Off";
+}
+
+int ngb_vsync_step(int v, int dir)
+{
+    static const int order[4] = { 0, 1, 3, 2 };
+    int i = 0;
+    while (i < 3 && order[i] != v)
+        i++;
+    return order[(i + (dir < 0 ? 3 : 1)) % 4];
+}
 
 static int font_init(SDL_Renderer *r)
 {
@@ -308,7 +322,7 @@ void ngb_settings_change(NgbSettings *s, int row, int dir)
     }
     case ROW_DISPLAY: s->fullscreen = (s->fullscreen + (dir < 0 ? 2 : 1)) % 3; break;
     case ROW_SCALE:   s->scale = (s->scale - 1 + dir + 10) % 10 + 1; break;
-    case ROW_VSYNC:   s->vsync = (s->vsync + (dir < 0 ? 2 : 1)) % 3; break;
+    case ROW_VSYNC:   s->vsync = ngb_vsync_step(s->vsync, dir); break;
     case ROW_FPS:     s->show_fps = !s->show_fps; break;
     case ROW_TEXFILTER: {
         static const int STEPS[] = { 0, 2, 4, 8, 16 };
@@ -347,7 +361,7 @@ void ngb_settings_row_text(const NgbSettings *s, int row, const char **label, ch
     case ROW_SIZE:    *label = "Window size";   snprintf(val, n, "%d x %d", s->width, s->height); break;
     case ROW_DISPLAY: *label = "Display";       snprintf(val, n, "%s", s->fullscreen == 2 ? "Borderless" : s->fullscreen ? "Fullscreen" : "Windowed"); break;
     case ROW_SCALE:   *label = "Render resolution"; snprintf(val, n, "%s", SCALE_LABEL[s->scale - 1]); break;
-    case ROW_VSYNC:   *label = "V-Sync";        snprintf(val, n, "%s", s->vsync == 2 ? "Adaptive" : s->vsync ? "On" : "Off"); break;
+    case ROW_VSYNC:   *label = "V-Sync";        snprintf(val, n, "%s", ngb_vsync_name(s->vsync)); break;
     case ROW_FPS:     *label = "Show FPS";      snprintf(val, n, "%s", s->show_fps ? "On" : "Off"); break;
     case ROW_TEXFILTER: *label = "Anisotropic filtering"; if (s->anisotropy) snprintf(val, n, "%dx", s->anisotropy); else snprintf(val, n, "Off"); break;
     case ROW_MSAA:    *label = "Anti-aliasing (MSAA)"; if (s->msaa > 1) snprintf(val, n, "%dx", s->msaa); else snprintf(val, n, "Off"); break;

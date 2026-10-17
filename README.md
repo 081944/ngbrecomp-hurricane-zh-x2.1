@@ -68,7 +68,7 @@ of the pause menu. Changes apply at once and are saved.
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution
 - **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
-  borderless, V-Sync (Off, On, Adaptive), frame-rate counter
+  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
 - **Cheats** (for the session only): infinite health, ninpo, essence; golden scarabs
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each)

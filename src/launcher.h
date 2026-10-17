@@ -38,6 +38,12 @@ void ngb_settings_change(NgbSettings *s, int item, int dir);
 void ngb_settings_row_text(const NgbSettings *s, int item, const char **label,
                            char *val, size_t n);
 
+/* V-Sync's values: 0 Off, 1 Mailbox (the newest frame at each refresh: least delay; what Nvidia calls Fast),
+ * 2 Adaptive (FIFO relaxed), 3 FIFO (every frame in turn: classic V-Sync). Its name, and the next one the
+ * menus step to, in the order Off, Mailbox, FIFO, Adaptive. */
+const char *ngb_vsync_name(int v);
+int ngb_vsync_step(int v, int dir);
+
 /* The window sizes offered for an aspect ratio, smallest first; the index of
  * the settings' own (-1: none of them). */
 int ngb_settings_size_count(int aspect);

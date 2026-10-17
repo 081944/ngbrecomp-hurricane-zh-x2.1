@@ -31,7 +31,7 @@
 
 static SDL_Window *s_window;
 static double s_aspect = 4.0 / 3.0;
-static int s_vsync;                /* 0 off, 1 on, 2 adaptive */
+static int s_vsync;                /* 0 off, 1 mailbox, 2 adaptive, 3 FIFO */
 static volatile bool s_resized;
 
 static VkInstance s_instance;
@@ -406,7 +406,7 @@ void nv2a_present_set_aspect(double aspect)
     s_aspect = aspect > 0 ? aspect : 0;
 }
 
-/* For the vblank clock (nv2a_host.c): 0 off, 1 on, 2 adaptive. */
+/* For the vblank clock (nv2a_host.c): 0 off, 1 mailbox, 2 adaptive, 3 FIFO. */
 int nv2a_present_vsync(void)
 {
     return s_vsync;
@@ -607,7 +607,14 @@ static void destroy_swapchain(PGRAPHVkState *r)
  * So V-Sync is mailbox where the system has it -- no tearing, and the newest
  * frame at each refresh -- and FIFO (relaxed, for Adaptive) only where it has
  * not, on as few images as it allows. Off is immediate (tearing, the least
- * lag), else mailbox. */
+ * lag), else mailbox.
+ *
+ * But mailbox is what Nvidia calls Fast sync, and with the game's frames at
+ * the refresh rate it can stutter: each frame lands at a different point of
+ * the refresh, and now and then one is shown twice and the next not at all
+ * (#17). So V-Sync also offers FIFO (3): every frame in turn, classic
+ * V-Sync, the steadiest; with NGB_VBLANK_SYNC=1 on Windows the game's frames
+ * then follow the display's own refresh. */
 static VkPresentModeKHR choose_present_mode(PGRAPHVkState *r)
 {
     VkPresentModeKHR modes[16];
@@ -623,6 +630,8 @@ static VkPresentModeKHR choose_present_mode(PGRAPHVkState *r)
     }
     if (s_vsync == 0 && immediate)
         return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    if (s_vsync == 3)   /* the menus' FIFO */
+        return VK_PRESENT_MODE_FIFO_KHR;
     if (mailbox)
         return VK_PRESENT_MODE_MAILBOX_KHR;
     if (s_vsync == 2 && relaxed)

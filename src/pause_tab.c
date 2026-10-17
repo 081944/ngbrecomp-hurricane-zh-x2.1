@@ -40,6 +40,7 @@
 #include <string.h>
 
 #include "xbox_memory_layout.h"   /* xbox_HeapAlloc, xbox_ContiguousAlloc */
+#include "launcher.h"                 /* ngb_vsync_name, ngb_vsync_step */
 
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -90,7 +91,7 @@ static const char *const s_help[S_COUNT] = {
     "Keeps textures sharp at an angle. Off: the console's filtering.",
     "The detail of the characters' shadows; 1x is the console's.",
     "A window, the whole screen, or a window without a frame.",
-    "Waits for the refresh: no tearing. Adaptive: a late frame goes at once.",
+    "No tearing. Mailbox: least delay. FIFO: steadiest. Adaptive: a late frame goes at once.",
     "Frames per second, in the corner of the screen.",
     "The size of the window when not full screen.",
     "The shape of the picture and the window sizes offered.",
@@ -144,7 +145,7 @@ static void value_text(int row, char *out, size_t n)
     case S_MSAA:    if (v > 1) snprintf(out, n, "%dx", v); else snprintf(out, n, "Off"); break;
     case S_SHADOW:  snprintf(out, n, v == 1 ? "1x (console)" : "%dx", v); break;
     case S_DISPLAY: snprintf(out, n, "%s", v == 2 ? "Borderless" : v ? "Fullscreen" : "Windowed"); break;
-    case S_VSYNC:   snprintf(out, n, "%s", v == 2 ? "Adaptive" : v ? "On" : "Off"); break;
+    case S_VSYNC:   snprintf(out, n, "%s", ngb_vsync_name(v)); break;
     case S_WINDOW: {
         int w = 0, h = 0;
         ngb_settings_size_at(v / 8, v % 8, &w, &h);
@@ -193,8 +194,10 @@ static void change(int row, int step)
         break;
     }
     case S_DISPLAY:
-    case S_VSYNC:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
+        break;
+    case S_VSYNC:
+        ngb_pc_set_setting(row, ngb_vsync_step(v, step));
         break;
     case S_ASPECT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 3)) % 4);
