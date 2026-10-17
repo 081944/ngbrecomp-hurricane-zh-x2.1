@@ -630,10 +630,20 @@ bool VulkanBackend::FinishDevice() {
     ai.pVulkanFunctions = &fns;
     VKCHECK(vmaCreateAllocator(&ai, &vma_));
 
+    // Float depth where the device has it: the shadow test compares the game's depth, a float here,
+    // against the map, and a 24-bit map rounds what it stores, so a surface testing against its own
+    // depth came out shadowed at random texels -- blotches over everything, on Nvidia only, which
+    // has D24 (#16, #29). NGB_D3D_DEPTH24=1: the 24-bit one, to compare.
     VkFormatProperties fp;
-    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D24_UNORM_S8_UINT, &fp);
+    bool d24 = std::getenv("NGB_D3D_DEPTH24") != nullptr;
+    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D32_SFLOAT_S8_UINT, &fp);
+    ds_format_ = !d24 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                     ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D24_UNORM_S8_UINT;
+    vkGetPhysicalDeviceFormatProperties(phys_, ds_format_, &fp);
     if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
-        ds_format_ = VK_FORMAT_D32_SFLOAT_S8_UINT;
+        ds_format_ = ds_format_ == VK_FORMAT_D24_UNORM_S8_UINT ? VK_FORMAT_D32_SFLOAT_S8_UINT
+                                                                : VK_FORMAT_D24_UNORM_S8_UINT;
+    std::fprintf(stderr, "[D3D] depth: %s\n", ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT ? "32-bit float" : "24-bit");
     VkPhysicalDeviceProperties pr;
     vkGetPhysicalDeviceProperties(phys_, &pr);
     ringAlign_ = std::max<VkDeviceSize>(pr.limits.minUniformBufferOffsetAlignment, 16);
