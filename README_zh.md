@@ -51,7 +51,7 @@
 ## 版本号
 
 发布版本与所基于的 ngbrecomp 版本一致（`hurricane-v0.9.9` 即基于 ngbrecomp 0.9.9）；在同一版本上我们自己的更新加 `-1`、`-2`……
-窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.12-1`。
+窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.13`。
 
 ## 与 ngbrecomp 的区别
 

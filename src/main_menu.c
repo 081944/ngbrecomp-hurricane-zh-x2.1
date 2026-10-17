@@ -162,9 +162,9 @@ void sub_0017A010(void)
         if (ebx != lb || n != ln || shown != ls)
             fprintf(stderr, "[LIST] %08X n %u shown %u\n", lb = ebx, ln = n, ls = shown);
     }
-    /* Hurricane: kept at 38 while that list is up, not only for the rows: the highlight bar (sub_0017A620)
-     * places itself by the same table (sub_0017A400), and at 44 it sat a row lower by the last one (user
-     * 2026-10-17). Put back when another list is drawn. */
+    /* Kept 38 while that list is up, not only around its drawing: the highlight bar (sub_0017A620) places
+     * itself by the same table, read in sub_0017A400, and slipped a row low by Very Hard (#42, found by
+     * akirahayabusa). The game's value comes back once another list is drawn. */
     static int s_five;
     static uint16_t s_five_was;
     if (ebx == 0xC074E0 && shown == 5) {

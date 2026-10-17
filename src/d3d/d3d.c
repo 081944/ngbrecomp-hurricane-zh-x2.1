@@ -188,17 +188,6 @@ int d3d_hook(int fn)
     return d3d_handlers[fn] ? d3d_handlers[fn]() : 0;
 }
 
-/* D3DDevice_BeginVisibilityTest (inlined into the title, src/d3d/d3d_hooks.c): the renderer told, in a host
- * section like the hooks above -- it takes g_lock, and parked there by the scheduler the title's thread held
- * it while the thread with the CPU waited for it: the game froze (Hurricane, the sunset in Murai's dojo). */
-void d3d_visibility_begin(void);   /* src/d3d/hle.cpp */
-void d3d_visibility_hook(void)
-{
-    compat_host_enter();
-    d3d_visibility_begin();
-    compat_host_leave();
-}
-
 /* After the recompiled body ran (the call was not taken): its results. */
 void d3d_after(int fn)
 {
@@ -211,4 +200,15 @@ void d3d_after(int fn)
         compat_host_leave();
         s_in_fn = -1;
     }
+}
+
+/* D3DDevice_BeginVisibilityTest (inlined into the title, src/d3d/d3d_hooks.c): the renderer told in a host
+ * section like the hooks above, as it takes g_lock -- a guest thread parked while holding it froze the game
+ * in scenes with the sun (#40, found by akirahayabusa). */
+void d3d_visibility_begin(void);   /* src/d3d/hle.cpp */
+void d3d_visibility_hook(void)
+{
+    compat_host_enter();
+    d3d_visibility_begin();
+    compat_host_leave();
 }

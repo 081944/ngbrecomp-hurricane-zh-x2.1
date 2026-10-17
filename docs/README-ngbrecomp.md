@@ -1,4 +1,4 @@
-> The README of upstream [ngbrecomp](https://github.com/gamboozino/ngbrecomp) (gamboozino) as of v0.9.12 (4aff1ff), kept for reference. It describes the retail build; this branch is the vb-zh-x2.1 port: see the [README](../README.md).
+> The README of upstream [ngbrecomp](https://github.com/gamboozino/ngbrecomp) (gamboozino) as of v0.9.13 (916f27a), kept for reference. It describes the retail build; this branch is the vb-zh-x2.1 port: see the [README](../README.md).
 
 ![Ninja Gaiden Black Recompiled](images/banner.jpg)
 
@@ -160,6 +160,14 @@ How it works, and the details of every feature: [docs/TECHNICAL.md](TECHNICAL.md
 - Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
 - Keyboard and mouse prompts: Xelu's Free Controller & Key Prompts (CC0)
 - Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)
+
+### Contributors
+
+- [akirahayabusa](https://github.com/akirahayabusa): the freeze in scenes with the sun (#40), folders with
+  non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42)
+- [ManemanFTW](https://github.com/ManemanFTW): the Windows start-up hang (#9) and the audio crackling on
+  Windows (#34)
+- [HammerD72](https://github.com/HammerD72): the audio timing fix (#32)
 
 *Ninja Gaiden* is a trademark of Koei Tecmo. This project is not affiliated with or endorsed by Koei
 Tecmo or Team Ninja.
