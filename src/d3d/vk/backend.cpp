@@ -311,6 +311,8 @@ public:
     void SyncLate(uint32_t) override {}
     void Flush() override { Submit(); }
     void SetGamma(const uint8_t* ramp) override;
+    void VisibilityBegin() override { vis_on_ = true; vis_test_++; }
+    void VisibilityEnd(uint32_t report_va) override;
 
 private:
     // device: the NV2A renderer's, shared, when NGB_RENDERER=d3d (its presenter then shows our
@@ -379,6 +381,19 @@ private:
     uint32_t threed_ = 0, threed_prev_ = 0;   // 3D draws into the back buffer, this frame and the one before:
                                               // a screen with them is play (an underwater overlay is no menu)
     VolkDeviceTable d_{};
+
+    // the title's visibility tests (the sun's lens flare, #35): each draw in one counted by an occlusion query,
+    // per frame slot; when the slot's frame is done, the counts summed per test, in console pixels, and
+    // written to each ended test's report slot as the GPU would (xemu's renderer, not drawing, would say 0)
+    static constexpr uint32_t kVisQueries = 512;
+    struct VisQuery { uint32_t test; float div; };
+    VkQueryPool vis_pool_[2] = {};
+    std::vector<VisQuery> vis_q_[2];
+    std::vector<std::pair<uint32_t, uint32_t>> vis_end_[2];   // test, report slot
+    std::unordered_map<uint32_t, double> vis_sum_;
+    uint32_t vis_test_ = 0;
+    bool vis_on_ = false;
+    void VisResults(int slot);
     VkInstance inst_ = VK_NULL_HANDLE;
     VkPhysicalDevice phys_ = VK_NULL_HANDLE;
     VkDevice dev_ = VK_NULL_HANDLE;
@@ -743,6 +758,11 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
         dump_from_ = std::getenv("NGB_D3D_DUMP_FROM") ? uint32_t(std::atoi(std::getenv("NGB_D3D_DUMP_FROM"))) : 0;
         dump_count_ = std::getenv("NGB_D3D_DUMP_COUNT") ? uint32_t(std::atoi(std::getenv("NGB_D3D_DUMP_COUNT"))) : 1u << 30;
     }
+    VkQueryPoolCreateInfo qci{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+    qci.queryType = VK_QUERY_TYPE_OCCLUSION;
+    qci.queryCount = kVisQueries;
+    for (auto& p : vis_pool_)
+        if (d_.vkCreateQueryPool(dev_, &qci, nullptr, &p) != VK_SUCCESS) p = VK_NULL_HANDLE;
     Begin();
     Barrier(null2d_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Barrier(nullcube_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -778,6 +798,7 @@ void VulkanBackend::Begin() {
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     d_.vkBeginCommandBuffer(cmd_, &bi);
     recording_ = true;
+    if (vis_pool_[slot_]) d_.vkCmdResetQueryPool(cmd_, vis_pool_[slot_], 0, kVisQueries);
 }
 
 // Everything recorded so far, done: the slot's commands submitted and waited for, and the other
@@ -795,8 +816,10 @@ void VulkanBackend::Submit() {
     if (submitted_[slot_ ^ 1]) {
         d_.vkWaitForFences(dev_, 1, &fences_[slot_ ^ 1], VK_TRUE, UINT64_MAX);
         submitted_[slot_ ^ 1] = false;
+        VisResults(slot_ ^ 1);
     }
     submitted_[slot_] = false;
+    VisResults(slot_);
     d_.vkResetCommandBuffer(cmd_, 0);
     recording_ = false;
     ring_pos_ = 0;
@@ -822,6 +845,7 @@ void VulkanBackend::EndFrame() {
     if (submitted_[slot_]) {
         d_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
         submitted_[slot_] = false;
+        VisResults(slot_);
     }
     d_.vkResetCommandBuffer(cmd_, 0);
     ring_pos_ = 0;
@@ -1042,6 +1066,38 @@ void VulkanBackend::FillMs(Target& t) {
     d_.vkCmdPushDescriptorSetKHR(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe_layout_, 0, 2, w);
     d_.vkCmdDraw(cmd_, 3, 1, 0, 0);
     d_.vkCmdEndRendering(cmd_);
+}
+
+void VulkanBackend::VisibilityEnd(uint32_t report_va) {
+    vis_on_ = false;
+    vis_end_[slot_].push_back({vis_test_, report_va});
+}
+
+// The slot's frame is done: its queries' counts, and the reports of the tests that ended in it -- laid out as
+// the GPU writes them (xemu's pgraph_write_zpass_pixel_cnt_report): a timestamp, the count, 0.
+void VulkanBackend::VisResults(int slot) {
+    if (!vis_q_[slot].empty()) {
+        std::vector<uint64_t> r(vis_q_[slot].size());
+        if (d_.vkGetQueryPoolResults(dev_, vis_pool_[slot], 0, uint32_t(r.size()), r.size() * 8, r.data(), 8,
+                                     VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) == VK_SUCCESS)
+            for (size_t i = 0; i < r.size(); i++) vis_sum_[vis_q_[slot][i].test] += double(r[i]) / vis_q_[slot][i].div;
+        vis_q_[slot].clear();
+    }
+    for (const auto& e : vis_end_[slot]) {
+        auto it = vis_sum_.find(e.first);
+        uint32_t count = it == vis_sum_.end() ? 0 : uint32_t(std::lround(it->second));
+        if (it != vis_sum_.end()) vis_sum_.erase(it);
+        uint8_t* p = static_cast<uint8_t*>(HostPtr(e.second));
+        uint64_t stamp = 0x0011223344556677ull;
+        uint32_t done = 0;
+        std::memcpy(p, &stamp, 8);
+        std::memcpy(p + 8, &count, 4);
+        std::memcpy(p + 12, &done, 4);
+        static const bool log = std::getenv("NGB_VIS_LOG") != nullptr;
+        if (log) std::fprintf(stderr, "[VIS] test %u: %u pixels -> %08X\n", e.first, count, e.second);
+    }
+    vis_end_[slot].clear();
+    if (vis_sum_.size() > 256) vis_sum_.clear();   // tests begun and never ended
 }
 
 void VulkanBackend::SetGamma(const uint8_t* ramp) {
@@ -2438,12 +2494,19 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     VkBuffer bufs[16];
     for (uint32_t b = 0; b < a.buffer_count; b++) bufs[b] = ring_;
     if (a.buffer_count) d_.vkCmdBindVertexBuffers(cmd_, 0, a.buffer_count, bufs, voff);
+    uint32_t visq = ~0u;   // in a visibility test: counted, in console pixels (render scale and samples out)
+    if (vis_on_ && vis_pool_[slot_] && vis_q_[slot_].size() < kVisQueries) {
+        visq = uint32_t(vis_q_[slot_].size());
+        vis_q_[slot_].push_back({vis_test_, sx * sy * float(rt ? rt->samples : ds->samples)});
+        d_.vkCmdBeginQuery(cmd_, vis_pool_[slot_], visq, shared_ ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
+    }
     if (a.index_count) {
         d_.vkCmdBindIndexBuffer(cmd_, ring_, ioff, a.index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
         d_.vkCmdDrawIndexed(cmd_, a.index_count, 1, 0, a.base_vertex, 0);
     } else {
         d_.vkCmdDraw(cmd_, a.draw_count, 1, 0, 0);
     }
+    if (visq != ~0u) d_.vkCmdEndQuery(cmd_, vis_pool_[slot_], visq);
     // NGB_D3D_STEP=frame,every: the target after every so many draws of that frame
     static int step_every = -1;
     if (step_every == -1) {

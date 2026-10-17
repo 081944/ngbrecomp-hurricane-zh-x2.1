@@ -48,6 +48,7 @@ constexpr uint32_t kSimpleEncode = 0x3E9278;     // D3D__SimpleRenderStateEncode
 gpu::State g_state;
 std::recursive_mutex g_lock;
 std::unique_ptr<gpu::Backend> g_backend;
+uint32_t g_vis_index;   // D3DDevice_EndVisibilityTest's index (in eax), for its report slot after the body ran
 bool g_mirror = true;
 
 std::unordered_map<uint32_t, std::shared_ptr<gpu::VertexShader>> g_vs;
@@ -483,6 +484,9 @@ bool Before(int fn, Call c) {
     case D3DF_D3DDevice_SetGammaRamp:
         if (g_backend) g_backend->SetGamma(static_cast<const uint8_t*>(HostPtr(c.a(1))));
         break;
+    case D3DF_D3DDevice_EndVisibilityTest:
+        g_vis_index = c.r[EAX];
+        break;
     default:
         break;
     }
@@ -514,6 +518,13 @@ void After(int fn, Call c) {
     }
     case D3DF_D3DDevice_SetRenderTarget:             // the default target when the argument was 0
         break;
+    case D3DF_D3DDevice_EndVisibilityTest: {
+        // its report slot: 16 bytes in the device's pages of them (allocated by the body as needed), where the
+        // GPU writes the count; the renderer writes it there instead, once the frame's draws are done
+        uint32_t dev = R32(kDevicePtr), page = dev ? R32(dev + 0x7D4 + (g_vis_index >> 8) * 4) : 0;
+        if (g_backend && !g_mirror && page) g_backend->VisibilityEnd(page + (g_vis_index & 0xFF) * 16);
+        break;
+    }
     case D3DF_D3DDevice_Swap:
         // the swap turns the back buffer's surface to the other buffer's memory: the frame's first
         // clear (made before any SetRenderTarget) goes there, not into the picture just shown -- the
@@ -550,6 +561,13 @@ void Start() {
 extern "C" int d3d_hle_call(int fn, uint32_t regs[8]) {
     if (!g_started) Start();
     return Before(fn, Call{regs}) ? 1 : 0;
+}
+
+// D3DDevice_BeginVisibilityTest, inlined into the title (src/d3d/d3d_hooks.c)
+extern "C" void d3d_visibility_begin(void) {
+    if (!g_started) Start();
+    std::lock_guard<std::recursive_mutex> lock(g_lock);
+    if (g_backend && !g_mirror) g_backend->VisibilityBegin();
 }
 
 extern "C" void d3d_hle_after(int fn, const uint32_t regs[8]) {
