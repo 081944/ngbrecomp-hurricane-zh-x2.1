@@ -405,12 +405,41 @@ void ngb_quit_to_desktop(void)
  * pressed at the title (ngb_to_menu_tick). The settings are saved as they
  * change. */
 static char **s_argv;
-void ngb_set_argv(char **argv) { s_argv = argv; }
+#if !defined(_WIN32)
+static void note_inherited_fds(void);
+#endif
+void ngb_set_argv(char **argv)
+{
+    s_argv = argv;
+#if !defined(_WIN32)
+    note_inherited_fds();   /* at the start, before the program opens its own */
+#endif
+}
 
 #if !defined(_WIN32)
 /* The new program image keeps every file still open, unless it is marked close-on-exec: the game's
  * files (about 255 each run) piled up until a desktop's 1024-file limit made the next open fail and the
  * game wait for it on a black window -- the third Return to Main Menu. */
+/* Only the program's own: what it was started with stays open across the exec, as the starter expects.
+ * The AppImage runtime hands the program a descriptor that keeps its FUSE mount alive; closed, the mount
+ * went with it and the new image died reading its own code (SIGBUS) on Return to Main Menu. */
+static unsigned char s_inherited[1024];
+
+static void note_inherited_fds(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    struct dirent *e;
+
+    if (!d)
+        return;
+    while ((e = readdir(d))) {
+        int fd = atoi(e->d_name);
+        if (fd >= 0 && fd < 1024 && fd != dirfd(d))
+            s_inherited[fd] = 1;
+    }
+    closedir(d);
+}
+
 static void close_on_exec_all(void)
 {
     DIR *d = opendir("/proc/self/fd");
@@ -420,7 +449,7 @@ static void close_on_exec_all(void)
         return;
     while ((e = readdir(d))) {
         int fd = atoi(e->d_name);
-        if (fd > 2 && fd != dirfd(d))
+        if (fd > 2 && fd != dirfd(d) && !(fd < 1024 && s_inherited[fd]))
             fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
     }
     closedir(d);
