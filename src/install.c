@@ -530,8 +530,8 @@ static void to_slashes(char *p)
 static int win_welcome(const char *installed, int *portable)
 {
     typedef HRESULT(WINAPI * TaskDialogIndirectFn)(const TASKDIALOGCONFIG *, int *, int *, BOOL *);
-    char path[1024], text[2048];
-    wchar_t wtext[2048];
+    char path[1024], text[4096];
+    wchar_t wtext[4096];
     const char *lad = getenv("LOCALAPPDATA");
     size_t ln = lad ? strlen(lad) : 0;
     snprintf(path, sizeof path, "%s", installed);
@@ -543,17 +543,26 @@ static int win_welcome(const char *installed, int *portable)
         snprintf(rest, sizeof rest, "%s", path + ln);
         snprintf(path, sizeof path, "%%LOCALAPPDATA%%%s", rest);
     }
+    /* Hurricane: where it goes unless Portable is ticked -- the profile's folder, on drive C as a rule (user
+     * 2026-10-17); not said once portable already */
+    const char *portable_on = getenv("NGB_PORTABLE");
+    const char *note = portable_on ? "" :
+        "注意：不勾选下面的“便携模式”，游戏就装在上面这个位置（一般在 C 盘，C 盘要留出 6 GB）。"
+        "想装到其他磁盘，请把本程序放到那个磁盘，再勾选“便携模式”。\n";
+    const char *note_en = portable_on ? "" :
+        " Unless Portable below is ticked, that folder is in your profile, as a rule on drive C (6 GB needed "
+        "there); for another drive, put the program there and tick Portable.";
     snprintf(text, sizeof text,
              "欢迎！本程序不含游戏本体，请选择你自己的「忍者龙剑传 黑之章 飓风版[中英] vb-zh-x2.1」：\n"
              "\u2022  镜像文件 .iso（美版原版镜像打上哈雅布撒的 x2.1 补丁后得到的），或装着它的 .7z / .zip\n"
              "\u2022  或者解压出来的游戏文件夹（里面有 default.xbe）\n\n"
-             "选择镜像时，游戏只需安装一次（约 6 GB），会装到：\n%s\n"
+             "选择镜像时，游戏只需安装一次（约 6 GB），会装到：\n%s\n%s"
              "以后启动直接进入游戏。\n\n"
              "Welcome! The game is not included: choose your own NINJA GAIDEN BLACK [Hurricane] vb-zh-x2.1 "
              "(the retail USA disc with the x2.1 patch) -- a disc image (.iso, or the .7z / .zip it came in) or a "
              "folder of extracted files with default.xbe. A disc image is installed once (about 6 GB) into the "
-             "folder above.\n\n" NGB_CONTACT, path);
-    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 2048);
+             "folder above.%s\n\n" NGB_CONTACT, path, note, note_en);
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 4096);
 
     HMODULE cc = LoadLibraryA("comctl32.dll");
     TaskDialogIndirectFn td = cc ? (TaskDialogIndirectFn)(void *)GetProcAddress(cc, "TaskDialogIndirect") : NULL;
@@ -577,7 +586,7 @@ static int win_welcome(const char *installed, int *portable)
         c.nDefaultButton = 101;
         BOOL checked = FALSE;
         if (!getenv("NGB_PORTABLE"))   /* not already portable (issue #4) */
-            c.pszVerificationText = L"游戏、存档和设置都放在程序旁边（便携模式） / Portable";
+            c.pszVerificationText = L"便携模式：游戏、存档和设置都放在程序旁边（不勾选则装到上面的位置） / Portable";
         if (SUCCEEDED(td(&c, &pressed, NULL, &checked))) {
             *portable = checked != FALSE;
             return pressed == 101 ? 1 : pressed == 102 ? 2 : 0;
@@ -585,7 +594,7 @@ static int win_welcome(const char *installed, int *portable)
     }
     strncat(text, "\n\n是：选择镜像文件　否：选择游戏文件夹\nYes: choose a disc image.   No: choose a folder.",
             sizeof text - strlen(text) - 1);
-    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 2048);
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 4096);
     switch (MessageBoxW(NULL, wtext, L"Ninja Gaiden Black - Setup", MB_YESNOCANCEL | MB_ICONINFORMATION)) {
     case IDYES:
         return 1;
