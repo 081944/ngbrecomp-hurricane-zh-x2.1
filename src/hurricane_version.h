@@ -2,7 +2,7 @@
  * releases on top of it. Shown in the window title; packaging/windows/ngb.rc carries the same number. */
 #pragma once
 #define NGB_HURRICANE_VERSION "0.9.12"
-#define NGB_WINDOW_TITLE "Ninja Gaiden Black[Hurricane]v" NGB_HURRICANE_VERSION
+#define NGB_WINDOW_TITLE "Ninja Gaiden Black Hurricane_x2.1_v" NGB_HURRICANE_VERSION
 /* The folders of the installed game, saves, settings and shader cache (%LOCALAPPDATA%, %APPDATA%, XDG): its own,
  * so ngbrecomp's retail install beside it is never taken for this one (user 2026-10-17). */
 #define NGB_DATA_NAME "ngb-hurricane-zh-x2.1"

@@ -12,8 +12,8 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "FileDescription", "Ninja Gaiden Black[Hurricane] (static recompilation)"
-      VALUE "ProductName", "Ninja Gaiden Black[Hurricane]"
+      VALUE "FileDescription", "Ninja Gaiden Black Hurricane (static recompilation)"
+      VALUE "ProductName", "Ninja Gaiden Black Hurricane"
       VALUE "OriginalFilename", "ngb-hurricane-zh-x2.1.exe"
       VALUE "FileVersion", "0.9.12"
       VALUE "ProductVersion", "0.9.12"
