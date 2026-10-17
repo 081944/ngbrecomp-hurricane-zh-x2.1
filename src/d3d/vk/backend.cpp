@@ -946,11 +946,22 @@ Target* VulkanBackend::EnsureTarget(const Surface& s, bool depth) {
     uint32_t w, h;
     SurfaceSize(s, w, h);
     if (!w || !h) return nullptr;
-    // the render scale applies to display-sized targets; a small depth-only target is a shadow
-    // map (the title renders Ryu's shadow into 128x128) at the shadow scale; other small targets
-    // (the scarf simulation renders into little textures it then samples by the texel) stay 1:1
+    // the render scale applies to display-sized targets, and to the medium ones the screen effects draw
+    // into (256x128 and up: the sword's trail, the transitions, glows), else those stayed at the console's
+    // resolution, blocky at a high render scale (#37, found by HammerD72); colour and depth alike, so an
+    // effect's depth buffer matches its picture. A small depth-only target is a shadow map (the title
+    // renders Ryu's shadow into 128x128) at the shadow scale; other small targets (the scarf simulation
+    // renders into little textures it then samples by the texel) stay 1:1. NGB_D3D_EFFECT_SCALE=0: the
+    // effect targets 1:1, for comparing.
+    static const bool effect_scale = [] {
+        const char* e = std::getenv("NGB_D3D_EFFECT_SCALE");
+        return !e || std::strcmp(e, "0") != 0;
+    }();
     bool big = w >= 640 && h >= 448;
-    uint32_t scale = big ? uint32_t(scale_) : (depth && w <= 512 && h <= 512) ? uint32_t(shadow_) : 1;
+    bool effect = effect_scale && !big && w >= 256 && h >= 128;
+    uint32_t scale = big ? uint32_t(scale_)
+                   : effect ? std::max(1u, std::min(uint32_t(scale_), 8192u / std::max(w, h)))
+                   : (depth && w <= 512 && h <= 512) ? uint32_t(shadow_) : 1;
     uint32_t iw = w * scale, ih = h * scale;
     uint64_t key = uint64_t(s.data) << 1 | (depth ? 1 : 0);
     auto it = targets_.find(key);
