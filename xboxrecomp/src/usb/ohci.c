@@ -169,6 +169,9 @@ typedef struct {
      * thread watches it to tell a source nobody is servicing from one that
      * is simply busy -- see the delivery loop. */
     volatile unsigned ack_seq;
+    /* Transfers retired while the driver had not yet taken the last done
+     * queue (WDH still set): held, and published with the next one. */
+    uint32_t held_done;
 } OhciController;
 
 static void ohci_update_line(OhciController *hc);
@@ -742,11 +745,34 @@ static int ohci_walk_eds(OhciController *hc, uint32_t ed, uint32_t *done_head)
     return completed;
 }
 
-/* Publish the done queue where the driver reads it and say so. */
+/* Publish the done queue where the driver reads it and say so.
+ *
+ * Only once the driver has taken the last one, as OHCI has it: while WDH is
+ * still set, HccaDoneHead is the driver's, and writing over it lost every
+ * transfer published there before. Those are held and go out together with
+ * the next queue. A lost one is never noticed by the driver, and its request
+ * stays pending for good -- XInputSetState's, then the game asks for no more
+ * rumble (Ninja Gaiden Black's vibration stopping after a while, #15). */
 static void ohci_publish_done(OhciController *hc, uint32_t done_head)
 {
     uint32_t hcca = hc->reg[HcHCCA / 4];
 
+    if (done_head && hc->held_done) {   /* the older ones after the newer */
+        uint32_t td = done_head, next;
+        int guard = 0;
+        while ((next = rd32(td + 8) & ED_PTR_MASK) && guard++ < 1024)
+            td = next;
+        wr32(td + 8, hc->held_done);
+    } else if (!done_head) {
+        done_head = hc->held_done;
+    }
+    hc->held_done = 0;
+    if (!done_head)
+        return;
+    if (hc->reg[HcInterruptStatus / 4] & INTR_WDH) {
+        hc->held_done = done_head;   /* the driver has not taken the last */
+        return;
+    }
     if (hcca)
         wr32(hcca + HCCA_DONE_HEAD, done_head);
     hc->reg[HcDoneHead / 4] = done_head;
@@ -1206,7 +1232,7 @@ static DWORD WINAPI ohci_thread(LPVOID unused)
          * re-arms the interrupt endpoint from that completion -- stopped
          * polling the pad. A real controller accumulates everything that
          * retires in a frame and writes the queue back once; so does this. */
-        if (pass_done)
+        if (pass_done || hc->held_done)
             ohci_publish_done(hc, pass_done);
 
         /* Level-triggered, which is what OHCI is: while an enabled source is
