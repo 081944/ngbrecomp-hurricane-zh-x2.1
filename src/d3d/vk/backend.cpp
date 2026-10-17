@@ -381,6 +381,7 @@ private:
     uint32_t threed_ = 0, threed_prev_ = 0;   // 3D draws into the back buffer, this frame and the one before:
                                               // a screen with them is play (an underwater overlay is no menu)
     VolkDeviceTable d_{};
+    std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> sig_memo_;   // texture bytes' signature this frame
 
     // the title's visibility tests (the sun's lens flare, #35): each draw in one counted by an occlusion query,
     // per frame slot; when the slot's frame is done, the counts summed per test, in console pixels, and
@@ -1477,7 +1478,22 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     // the texture's bytes and palette
     uint32_t bytes = TotalSize(d);
     const uint8_t* guest = static_cast<const uint8_t*>(HostPtr(d.data));
-    uint64_t sig = Hash(guest, bytes, uint64_t(d.format) << 32 | d.width << 16 | d.height);
+    // its bytes' signature, once a frame: hashed again at every draw that used it, it was a tenth of the
+    // game thread's time in busy scenes (#17); a texture rewritten between two draws of one frame is seen
+    // changed from the next frame on
+    uint64_t sig;
+    {
+        uint64_t mk = uint64_t(d.data) << 32 ^ uint64_t(d.format) << 24 ^ uint64_t(d.width) << 12 ^ d.height ^
+                      uint64_t(bytes) << 40;
+        auto& m = sig_memo_[mk];
+        if (m.first == frame_ + 1) {
+            sig = m.second;
+        } else {
+            sig = Hash(guest, bytes, uint64_t(d.format) << 32 | d.width << 16 | d.height);
+            m = {frame_ + 1, sig};
+        }
+        if (sig_memo_.size() > 65536) sig_memo_.clear();
+    }
     const uint32_t* palette = nullptr;
     if (d.format == 0x0B && s.palettes[size_t(stage)]) {
         uint32_t pal = s.palettes[size_t(stage)];
