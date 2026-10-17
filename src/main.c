@@ -191,6 +191,14 @@ static void print_host_symbol(void *rip)
     sym->MaxNameLen = 255;
     if (SymFromAddr(GetCurrentProcess(), (DWORD64)(uintptr_t)rip, &disp, sym))
         fprintf(stderr, "  in %s+0x%llX\n", sym->Name, (unsigned long long)disp);
+    {   /* and which module: a fault in a driver or an overlay's DLL names it here (#39) */
+        HMODULE mod = NULL;
+        char path[MAX_PATH];
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)rip, &mod) && GetModuleFileNameA(mod, path, sizeof path))
+            fprintf(stderr, "  in module %s+0x%llX\n", path,
+                    (unsigned long long)((uintptr_t)rip - (uintptr_t)mod));
+    }
 #else
     Dl_info di;
 
