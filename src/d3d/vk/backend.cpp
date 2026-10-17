@@ -198,7 +198,8 @@ void DecodeBC(Host h, const uint8_t* src, uint32_t w, uint32_t h_, std::vector<u
 constexpr VkDeviceSize kRingSize = 64u << 20;   // vertices, indices and constants of one frame
 constexpr uint32_t kQuadVertices = 6;
 extern "C" float ngb_hud_shape(void);   // src/pc_menu.c: the menus' and HUD's narrowing
-extern "C" int ngb_2d_stretched(void);  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
+extern "C" int ngb_2d_stretched(void);
+extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
 extern "C" int ngb_2d_screen_frame(int threed);   // src/pc_menu.c: a 2D screen (a menu, the title, a chapter
                                                 // card), knowing the 3D this frame has drawn so far
 // This frame's draws into display-sized targets, all and 3D (src/pc_menu.c: a frame of next to no 3D is a
@@ -695,8 +696,8 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
             // drawing (unseen) for comparisons
             if (!std::getenv("NGB_D3D_KEEP_NV2A")) nv2a_vk_set_draws_off(true);
         } else {
-            std::fprintf(stderr, "[D3D] the NV2A renderer's device cannot be shared (%s): drawing unseen\n",
-                         st == 1 ? "no Vulkan 1.3 dynamic rendering or push descriptors" : "no device");
+            ngb_renderer_fatal(st == 1 ? "The GPU's Vulkan driver has no Vulkan 1.3 dynamic rendering or push descriptors."
+                                       : "No Vulkan device could be used.");
         }
     }
     if (!shared_ && (!CreateInstance() || !CreateDevice())) return false;
@@ -2551,7 +2552,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::fprintf(trace_, "%u %u prim %u n %u pre %d prog %d ps %08X blend %u %X %X %X wm %X z %u%u%X st %u "
                      "rt %08X %ux%u tex0 %08X @%08X %X %ux%u%s tex1 %08X %X tss0 %u %u %u %u|%u %u %u tss1 %u %u %u|%u "
                      "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X signed %u%u%u%u uv %s "
-                     "shaders %016llx %016llx light %X spec %g %g %g pow %g\n",
+                     "shaders %016llx %016llx light %X spec %g %g %g pow %g csign %X %X %X %X\n",
                      presents_, st_.drawn, prim, count, a.pretransformed, prog, s.ps ? s.ps->handle : 0, k.blend, k.src,
                      k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten, s.rt.data, rt ? rt->gw : 0, rt ? rt->gh : 0,
                      s.textures[0], h0 ? t0d.data : 0, h0 ? t0d.format : 0, h0 ? t0d.width : 0, h0 ? t0d.height : 0,
@@ -2587,7 +2588,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                          }
                          return o;
                      }().c_str(), (unsigned long long)k.vs, (unsigned long long)k.ps,   // NGB_D3D_SHADERDUMP's names
-                     prog ? 0u : MakeFixedKey(s).light, s.material[8], s.material[9], s.material[10], s.material[16]);
+                     prog ? 0u : MakeFixedKey(s).light, s.material[8], s.material[9], s.material[10], s.material[16],
+                     s.tss[0][kTssColorSign] >> 28, s.tss[1][kTssColorSign] >> 28, s.tss[2][kTssColorSign] >> 28,
+                     s.tss[3][kTssColorSign] >> 28);   // D3DTSS_COLORSIGN: A R G B signed, bits 0-3
     }
     if (int(presents_) == g_step_frame)
         std::fprintf(stderr, "[STEP] %u prim %u count %u pre %d prog %d ps %08X blend %u %X %X op %X wmask %X zen %u "

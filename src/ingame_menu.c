@@ -1622,3 +1622,20 @@ bool nv2a_overlay_frame(uint32_t *px, int w, int h, const uint32_t *backdrop)
     draw(backdrop);
     return s_open;
 }
+
+/* The renderer cannot run on this system (src/d3d): said in a message box, then the program ends. xemu's
+ * GPU model drawing instead (NGB_RENDERER=xemu) is for debugging only -- as a silent fallback it ran the
+ * game far slower than the player had any way to know why (#47). */
+_Noreturn void ngb_renderer_fatal(const char *detail)
+{
+    char msg[1024];
+    snprintf(msg, sizeof msg,
+             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3 (dynamic rendering and push "
+             "descriptors), and this system does not offer it:\n\n%s\n\n"
+             "Please update your graphics driver. GPUs from before about 2016 (for example Nvidia's "
+             "GTX 600 and 700 series) are not supported.", detail);
+    fprintf(stderr, "[D3D] %s\n", msg);
+    fflush(stderr);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ninja Gaiden Black", msg, NULL);
+    exit(1);
+}
