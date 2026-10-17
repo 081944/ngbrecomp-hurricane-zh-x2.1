@@ -580,7 +580,8 @@ static void sleep_until(const struct timespec *t)
  * On a fixed 60.0 Hz timer the game drifted against the monitor's refresh -- a "60 Hz" screen runs at
  * 59.95, or 60.0003 -- and whenever the two came round to the same moment, frames came out doubled and
  * dropped for a while, the frame counter still saying 60: smooth for minutes, then stuttering (issue
- * #17). Any other refresh (120, 144 Hz; anything outside 59-61 Hz) or V-Sync off keeps the timer. NGB_VBLANK_TIMER=1 forces it. */
+ * #17). Any other refresh (120, 144 Hz; anything outside 59-61 Hz) or V-Sync off keeps the timer.
+ * Only with NGB_VBLANK_SYNC=1 for now: on the PC it was meant for, it made the stutter start at once. */
 extern int nv2a_present_vsync(void);
 
 static IDXGIOutput *display_output(void)
@@ -625,7 +626,7 @@ static int display_vblank(void)
     IDXGIOutput *out;
     int vsync = nv2a_present_vsync();
 
-    if (getenv("NGB_VBLANK_TIMER") || vsync == 0) {
+    if (!getenv("NGB_VBLANK_SYNC") || vsync == 0) {
         last_vsync = vsync;
         return 0;
     }

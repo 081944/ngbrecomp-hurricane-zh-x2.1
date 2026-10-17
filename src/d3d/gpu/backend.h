@@ -44,6 +44,10 @@ public:
     virtual void WaitFence(uint32_t) {}
     virtual bool Busy(uint32_t /*resource*/) { return false; }
     virtual void WaitResource(uint32_t /*resource*/) {}
+    // the title's visibility tests: the draws between counted, the count written to the report slot
+    // (guest address) once known, as the GPU would
+    virtual void VisibilityBegin() {}
+    virtual void VisibilityEnd(uint32_t /*report_va*/) {}
 
 private:
     uint32_t fence_ = 0;

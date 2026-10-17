@@ -27,6 +27,11 @@ body:
     validations:
       required: true
   - type: input
+    id: cpu
+    attributes:
+      label: CPU
+      description: For example "AMD Ryzen 5 5600X" or "Intel i7-3770". The game runs on one CPU core, like the Xbox, so its speed matters for slowdowns and stutter.
+  - type: input
     id: gpu
     attributes:
       label: GPU and driver

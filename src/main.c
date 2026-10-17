@@ -1150,7 +1150,7 @@ int main(int argc, char **argv)
         if (cfg.show_fps && !getenv("NV2A_SHOW_FPS"))
             setenv("NV2A_SHOW_FPS", "1", 1);
         /* The boot "Warnings" screen is always skipped (its scrolling text drew badly, and it says only
-         * what the box does); the boot movie and the prologue with Skip intro. */
+         * what the box does); the boot movie with Skip intro. */
         if (cfg.skip_intro)
             ngb_skip_intro = 1;
         if (!getenv("NGB_KEEP_WARNINGS")) {

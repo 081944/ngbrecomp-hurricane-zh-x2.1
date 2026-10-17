@@ -18,6 +18,7 @@
  */
 
 #include "renderer.h"
+#include "nv2a_vk_share.h"
 
 void pgraph_vk_init_reports(PGRAPHState *pg)
 {
@@ -126,7 +127,9 @@ void pgraph_vk_process_pending_reports_internal(NV2AState *d)
         if (report->clear) {
             NV2A_VK_DPRINTF("Cleared");
             r->zpass_pixel_count_result = 0;
-        } else {
+        } else if (!nv2a_vk_draws_off()) {
+            /* (with the draws off, the renderer that draws instead writes the
+             * report: here it would always say nothing was visible) */
             pgraph_write_zpass_pixel_cnt_report(
                 d, report->parameter,
                 r->zpass_pixel_count_result / result_divisor);

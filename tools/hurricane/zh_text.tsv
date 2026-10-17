@@ -34,7 +34,7 @@ ctx	en	zh	use
 	Keeps textures sharp at an angle; Off is the console's filtering.	各向异性过滤：远处与侧面的纹理更清晰，关为原版	E
 	Sets the resolution of the character shadows.	设置角色阴影的分辨率	E
 	A window, the whole screen, or a window without a frame.	窗口、全屏或无边框窗口	E
-	Syncs frames to the refresh; Adaptive lets a late one through.	画面与刷新同步，自适应时迟到的帧立即显示	E
+	No tearing. Mailbox: least delay. FIFO: steadiest. Adaptive: a late frame goes at once.	画面与刷新同步。Mailbox：延迟最低，FIFO：最稳定，自适应：迟到的帧立即显示	E
 	Shows the frame rate in a corner of the screen.	在画面一角显示帧率	E
 	Skip Intros	跳过片头	E
 	Settings at Startup	启动时设置	E
@@ -76,7 +76,6 @@ cat	Controls	按键	P
 	Draws the game at a multiple of the console's resolution.	以主机分辨率的整数倍渲染游戏画面	P
 	Keeps textures sharp at an angle. Off: the console's filtering.	各向异性过滤：远处与侧面的纹理更清晰。关：主机原版	P
 	The detail of the characters' shadows; 1x is the console's.	角色阴影的精度，1x 为主机原版	P
-	Waits for the refresh: no tearing. Adaptive: a late frame goes at once.	等待屏幕刷新，画面不撕裂。自适应：迟到的帧立即显示	P
 	Frames per second, in the corner of the screen.	在画面一角显示每秒帧数	P
 	Starts at the title screen. From the next start.	直接从标题画面开始。下次启动起生效	P
 	The settings screen before the game. From the next start.	在游戏前显示设置画面。下次启动起生效	P

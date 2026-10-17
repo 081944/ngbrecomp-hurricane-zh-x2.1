@@ -19,6 +19,10 @@
 #include <string.h>
 #include <time.h>
 #if !defined(_WIN32)
+#include <dirent.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
 #include <unistd.h>
 #endif
 
@@ -404,6 +408,45 @@ void ngb_quit_to_desktop(void)
 static char **s_argv;
 void ngb_set_argv(char **argv) { s_argv = argv; }
 
+#if !defined(_WIN32)
+/* The new program image keeps every file still open, unless it is marked close-on-exec: the game's
+ * files (about 255 each run) piled up until a desktop's 1024-file limit made the next open fail and the
+ * game wait for it on a black window -- the third Return to Main Menu. */
+static void close_on_exec_all(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    struct dirent *e;
+
+    if (!d)
+        return;
+    while ((e = readdir(d))) {
+        int fd = atoi(e->d_name);
+        if (fd > 2 && fd != dirfd(d))
+            fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
+    }
+    closedir(d);
+}
+
+/* A real-time signal sent just before the exec -- the virtual CPU's preemption, every few milliseconds --
+ * stays pending into the new image, where it still has the default action, which ends the process
+ * (about one Return to Main Menu in twenty). Ignored, it is dropped, and stays so until the new image
+ * puts its handlers back. */
+static void quiet_signals(void)
+{
+    sigset_t all, none;
+    struct sigaction ign;
+
+    sigfillset(&all);
+    sigemptyset(&none);
+    memset(&ign, 0, sizeof ign);
+    ign.sa_handler = SIG_IGN;
+    pthread_sigmask(SIG_BLOCK, &all, NULL);
+    for (int sig = SIGRTMIN; sig <= SIGRTMAX; sig++)
+        sigaction(sig, &ign, NULL);
+    pthread_sigmask(SIG_SETMASK, &none, NULL);
+}
+#endif
+
 void ngb_restart_to_menu(void)
 {
 #if !defined(_WIN32)
@@ -414,6 +457,8 @@ void ngb_restart_to_menu(void)
         setenv("NGB_TO_MAIN_MENU", "1", 1);
         fprintf(stderr, "[MENU] Return to Main Menu: starting %s again\n", self);
         fflush(stderr);
+        close_on_exec_all();
+        quiet_signals();
         execv(self, s_argv);
         fprintf(stderr, "[MENU] could not start again; exiting\n");
     }

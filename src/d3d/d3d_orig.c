@@ -13735,3 +13735,56 @@ loc_003D21E8: ;
 
 }
 
+
+/**
+ * sub_001A0BB0 -- D3DDevice_BeginVisibilityTest, inlined into the title (the
+ * count cleared and turned on: NV097_CLEAR_REPORT_VALUE, SET_ZPASS_PIXEL_COUNT_ENABLE);
+ * src/d3d/d3d_hooks.c tells the renderer first.
+ * Original: 0x001A0BB0 - 0x001A0BF1 (65 bytes, 21 insns)
+ * Category: game_render
+ * CC: cdecl, 0 params, returns int_or_void
+ * Frame: fpo_leaf
+ */
+void d3d_orig_001A0BB0(void)
+{
+    RECOMP_ENTRY(0x001A0BB0u);
+    int _flags = 0; /* fallback flag var */
+    uint32_t _fa = 0, _fb = 0;
+    int32_t _fas = 0, _fbs = 0;
+    (void)_fa; (void)_fb; (void)_fas; (void)_fbs;
+
+loc_001A0BB0: ;
+    PUSH32(esp, esi);
+    esi = MEM32(0x3D83C8);
+    eax = MEM32(esi);
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fb = (uint32_t)(MEM32(esi + 4)) & 0xFFFFFFFFu;
+    _fas = (int32_t)(int32_t)(_fa); _fbs = (int32_t)(int32_t)(_fb); /* cmp eax, MEM32(esi + 4) (32-bit) */
+    if (CMP_B(_fa, _fb)) goto loc_001A0BCD; /* jb: below (unsigned <) */
+
+loc_001A0BBE: ;
+    eax = MEM32(0x3D9588);
+    ecx = eax;
+    ecx = ecx >> 1;
+    _fa = (uint32_t)(ecx) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* shift result */
+    { uint32_t _icall_esp = g_esp;
+    PUSH32(esp, ecx);
+    PUSH32(esp, 0x001A0BCDu); RECOMP_ICALL_SAFE(0x003CAB80u, _icall_esp); /* manual call 0x003CAB80 */
+    }
+
+loc_001A0BCD: ;
+    edx = MEM32(esp + 8);
+    MEM32(eax) = 0x817C8;
+    ecx = 1;
+    MEM32(eax + 4) = ecx;
+    MEM32(eax + 8) = ecx;
+    _fb = (uint32_t)(0xC) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
+    eax = eax + 0xC;
+    _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* add result */
+    MEM32(esi) = eax;
+    eax = MEM32(0x9777DC);
+    MEM32(edx + 0x54) = eax;
+    POP32(esp, esi);
+    esp += 4; return; /* ret */
+
+}
+

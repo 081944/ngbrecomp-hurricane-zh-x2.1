@@ -7,12 +7,12 @@
                         processorArchitecture="amd64" publicKeyToken="6595b64144ccf1df" language="*"/>
     </dependentAssembly>
   </dependency>
-  <!-- Hurricane: sizes in real pixels (a 1920 x 1080 window is not scaled up by the desktop's 125%)
-       and the mouse in them as they are -->
+  <!-- The screen's own pixels: without this, with display scaling on, Windows hands the game a smaller
+       desktop and stretches its picture, so fullscreen looks lower than the native resolution (#31). -->
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
-      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
     </windowsSettings>
   </application>
 </assembly>
