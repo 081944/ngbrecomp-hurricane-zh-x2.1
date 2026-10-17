@@ -856,10 +856,10 @@ void sub_003D20A0(void)  /* CDevice_SetStateUP */
 
 /* D3DDevice_BeginVisibilityTest, which the title has inlined (src/d3d/d3d_orig.c): the renderer counts the
  * draws that follow, until D3DDevice_EndVisibilityTest, for the report it reads (the sun's lens flare, #35). */
-void d3d_visibility_begin(void);   /* src/d3d/hle.cpp */
+void d3d_visibility_hook(void);   /* src/d3d/d3d.c: d3d_visibility_begin in a host section */
 void d3d_orig_001A0BB0(void);
 void sub_001A0BB0(void)
 {
-    d3d_visibility_begin();
+    d3d_visibility_hook();
     d3d_orig_001A0BB0();
 }

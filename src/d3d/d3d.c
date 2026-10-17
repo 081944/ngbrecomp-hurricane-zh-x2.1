@@ -201,3 +201,14 @@ void d3d_after(int fn)
         s_in_fn = -1;
     }
 }
+
+/* D3DDevice_BeginVisibilityTest (inlined into the title, src/d3d/d3d_hooks.c): the renderer told in a host
+ * section like the hooks above, as it takes g_lock -- a guest thread parked while holding it froze the game
+ * in scenes with the sun (#40, found by akirahayabusa). */
+void d3d_visibility_begin(void);   /* src/d3d/hle.cpp */
+void d3d_visibility_hook(void)
+{
+    compat_host_enter();
+    d3d_visibility_begin();
+    compat_host_leave();
+}
