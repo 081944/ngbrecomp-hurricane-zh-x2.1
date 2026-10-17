@@ -1079,6 +1079,13 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
         src = env;
         from_env = 1;
     }
+    /* Hurricane: Return to Main Menu starts the program again with this one's command line, which still
+     * names the disc image after the portable restart (or a disc dropped on the exe): it was installed
+     * again (player report, 2026-10-17). The installed copy is taken then. */
+    if (src && !from_env && getenv("NGB_TO_MAIN_MENU") && has_xbe(installed)) {
+        snprintf(out, n, "%s", installed);
+        goto check;
+    }
     if (!src) {
         if (has_xbe(installed)) { snprintf(out, n, "%s", installed); goto check; }
         if (has_xbe(beside))    { snprintf(out, n, "%s", beside);    goto check; }
