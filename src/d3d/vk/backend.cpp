@@ -1605,6 +1605,19 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             if (tx.gen == 1) out = top;   // the top level as decoded above (BGRA)
             else DecodeLevel(d, l, f, guest, palette, out, pitch);
             if (out.empty()) continue;
+            if (bump_src && l == 0 && f == 0) {   // a bump map's first upload: its values, in the log (#16: they differ by machine)
+                static int n;
+                if (n++ < 8) {
+                    int umin = 127, umax = -128, vmin = 127, vmax = -128;
+                    for (size_t i = 0; i < out.size(); i += 4) {
+                        umin = std::min(umin, int(int8_t(out[i]))); umax = std::max(umax, int(int8_t(out[i])));
+                        vmin = std::min(vmin, int(int8_t(out[i + 1]))); vmax = std::max(vmax, int(int8_t(out[i + 1])));
+                    }
+                    std::fprintf(stderr, "[D3D] bump map @%08X %ux%u levels %u: u %d..%d v %d..%d, first bytes %02X%02X %02X%02X %02X%02X %02X%02X\n",
+                                 d.data, d.width, d.height, d.levels, umin, umax, vmin, vmax,
+                                 guest[0], guest[1], guest[2], guest[3], guest[4], guest[5], guest[6], guest[7]);
+                }
+            }
             VkDeviceSize at = Upload(out.data(), out.size(), 16);
             VkBufferImageCopy c{};
             c.bufferOffset = at;
