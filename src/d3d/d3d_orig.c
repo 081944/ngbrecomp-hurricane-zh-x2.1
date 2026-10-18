@@ -10403,6 +10403,22 @@ loc_003CA7DB: ;
 }
 
 /**
+ * sub_003CAE80
+ * Original: 0x003CAE80 - 0x003CAEAD (45 bytes, 9 insns)
+ * D3D's write-combine flush before each kick-off: set the flush bit of NV_PFB_WC_CACHE (0x100410) and
+ * read it until the GPU clears it. Three trapped register accesses, about 1300 times a second -- most
+ * of the GPU's register traffic. Here the CPU's writes are in memory the GPU model reads directly, with
+ * nothing in between to flush, so it only leaves eax as the original does (the register base).
+ */
+void sub_003CAE80(void)
+{
+    RECOMP_ENTRY(0x003CAE80u);
+    eax = MEM32(0x3D83C8);
+    eax = MEM32(eax + 0x1C28);
+    esp += 4; return; /* ret */
+}
+
+/**
  * sub_003CAA10
  * Original: 0x003CAA10 - 0x003CAB76 (358 bytes, 117 insns)
  * Category: game_render
