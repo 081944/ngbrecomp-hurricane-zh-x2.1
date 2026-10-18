@@ -647,19 +647,14 @@ bool VulkanBackend::FinishDevice() {
     ai.pVulkanFunctions = &fns;
     VKCHECK(vmaCreateAllocator(&ai, &vma_));
 
-    // Float depth where the device has it: the shadow test compares the game's depth, a float here,
-    // against the map, and a 24-bit map rounds what it stores, so a surface testing against its own
-    // depth came out shadowed at random texels -- blotches over everything, on Nvidia only, which
-    // has D24 (#16, #29). NGB_D3D_DEPTH24=1: the 24-bit one, to compare.
+    // 24-bit depth, as the console has, where the device has it (Nvidia); else float (AMD). 0.9.17 gave
+    // Nvidia float depth too, for the shadow blotches of #29: they stayed, and second passes over a drawn
+    // surface came out flickering or missing on Nvidia (#51, #53). NGB_D3D_DEPTH32=1: float, to compare.
     VkFormatProperties fp;
-    bool d24 = std::getenv("NGB_D3D_DEPTH24") != nullptr;
-    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D32_SFLOAT_S8_UINT, &fp);
-    ds_format_ = !d24 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                     ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D24_UNORM_S8_UINT;
-    vkGetPhysicalDeviceFormatProperties(phys_, ds_format_, &fp);
-    if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
-        ds_format_ = ds_format_ == VK_FORMAT_D24_UNORM_S8_UINT ? VK_FORMAT_D32_SFLOAT_S8_UINT
-                                                                : VK_FORMAT_D24_UNORM_S8_UINT;
+    bool d32 = std::getenv("NGB_D3D_DEPTH32") != nullptr;
+    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D24_UNORM_S8_UINT, &fp);
+    ds_format_ = !d32 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                     ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_D32_SFLOAT_S8_UINT;
     std::fprintf(stderr, "[D3D] depth: %s\n", ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT ? "32-bit float" : "24-bit");
     VkPhysicalDeviceProperties pr;
     vkGetPhysicalDeviceProperties(phys_, &pr);
