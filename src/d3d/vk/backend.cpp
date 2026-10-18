@@ -949,6 +949,12 @@ void VulkanBackend::DestroyImage(Image& img) {
 
 void VulkanBackend::Barrier(Image& img, VkImageLayout to) {
     if (img.layout == to) return;
+    // A layout change is not allowed inside a rendering pass (dynamic rendering without local read):
+    // the pass ends first, the next draw begins it again. A draw sampling a render target other than
+    // the one bound (the water's screen copy, the haze's) changed its layout inside the pass still
+    // open from the draw before (the validation layer's VUID 09553); RADV let it through, what
+    // another driver makes of it is not defined (#16).
+    if (rendering_) EndRendering();
     VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
     b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
     b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
