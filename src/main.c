@@ -534,6 +534,18 @@ static void prof_report(void)
 
     if (!n)
         return;
+    /* NGB_PROFILE_RAW=<file>: every sample as its file and offset in it, for nm to name what dladdr
+     * cannot (static functions) */
+    if (getenv("NGB_PROFILE_RAW")) {
+        FILE *raw = fopen(getenv("NGB_PROFILE_RAW"), "w");
+        for (unsigned long i = 0; raw && i < n; i++) {
+            Dl_info di;
+            if (dladdr((void *)s_prof_pc[i], &di) && di.dli_fname)
+                fprintf(raw, "%s %lx\n", di.dli_fname, (unsigned long)(s_prof_pc[i] - (uintptr_t)di.dli_fbase));
+        }
+        if (raw)
+            fclose(raw);
+    }
     e = calloc(n, sizeof(*e));
     for (unsigned long i = 0; i < n; i++) {
         Dl_info di;
