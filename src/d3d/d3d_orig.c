@@ -10622,13 +10622,26 @@ loc_003CAB35: ;
     /* nop */
     /* the loop below polls the GPU's progress (a semaphore it writes to memory) until it has reached
      * the point: asleep in the GPU model instead, which wakes it when the GPU writes it; the loop then
-     * reads once and goes on with its registers as the console would have them */
+     * reads once and goes on with its registers as the console would have them. Not on Windows by
+     * default: there, 0.9.20's players saw the Game Over fade drop from 30 to 17 fps and play turn
+     * choppy (#43, #17), which Linux, Proton and the virtual machine here do not show.
+     * NGB_GPU_WAIT=1 or 0: the sleep, or the polling loop, on either. */
     {
         extern void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead);
         extern void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead);
         extern int g_ngb_gpu_model;
-        if (g_ngb_gpu_model && edx == 0xFD800044u) nv2a_vk_wait_dma_get(esi, eax);
-        else if (g_ngb_gpu_model) nv2a_vk_wait_progress((const uint32_t *)XBOX_PTR(edx), esi, eax);
+        static int sleep_wait = -1;
+        if (sleep_wait < 0) {
+            extern char *getenv(const char *);
+            const char *e = getenv("NGB_GPU_WAIT");
+#if defined(_WIN32)
+            sleep_wait = e && *e == '1';
+#else
+            sleep_wait = !(e && *e == '0');
+#endif
+        }
+        if (sleep_wait && g_ngb_gpu_model && edx == 0xFD800044u) nv2a_vk_wait_dma_get(esi, eax);
+        else if (sleep_wait && g_ngb_gpu_model) nv2a_vk_wait_progress((const uint32_t *)XBOX_PTR(edx), esi, eax);
     }
 
 loc_003CAB40: ;
