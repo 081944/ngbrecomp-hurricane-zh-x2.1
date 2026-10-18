@@ -10408,13 +10408,31 @@ loc_003CA7DB: ;
  * D3D's write-combine flush before each kick-off: set the flush bit of NV_PFB_WC_CACHE (0x100410) and
  * read it until the GPU clears it. Three trapped register accesses, about 1300 times a second -- most
  * of the GPU's register traffic. Here the CPU's writes are in memory the GPU model reads directly, with
- * nothing in between to flush, so it only leaves eax as the original does (the register base).
+ * nothing in between to flush, so it only leaves eax as the original does (the register base). Not on
+ * Windows by default: its players saw texture and white flashes in 0.9.20 (#16), the first version
+ * without the flush. NGB_WC_FLUSH=1 or 0: the flush, or none, on either.
  */
 void sub_003CAE80(void)
 {
     RECOMP_ENTRY(0x003CAE80u);
+    static int flush = -1;
+    if (flush < 0) {
+        extern char *getenv(const char *);
+        const char *e = getenv("NGB_WC_FLUSH");
+#if defined(_WIN32)
+        flush = !(e && *e == '0');
+#else
+        flush = e && *e == '1';
+#endif
+    }
     eax = MEM32(0x3D83C8);
     eax = MEM32(eax + 0x1C28);
+    if (flush) {
+        ecx = MEM32(eax + 0x100410) | 0x10000;
+        MEM32(eax + 0x100410) = ecx;
+        while (MEM32(eax + 0x100410) & 0x10000)
+            RECOMP_SPIN(0x003CAEA0u);
+    }
     esp += 4; return; /* ret */
 }
 
