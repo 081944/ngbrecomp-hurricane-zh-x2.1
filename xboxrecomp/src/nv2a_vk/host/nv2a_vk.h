@@ -28,6 +28,10 @@ int nv2a_vk_init(const NV2AHostConfig *cfg);
 
 /* Register access at an offset into the 16 MiB aperture (0xFD000000). */
 uint64_t nv2a_vk_mmio_read(uint32_t off, unsigned size);
+/* D3D_BlockOnTime's wait: until the GPU's progress (a semaphore word in memory, or DMA_GET) is no more
+ * than `ahead` behind `put`, asleep meanwhile. */
+void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead);
+void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead);
 void nv2a_vk_mmio_write(uint32_t off, uint64_t val, unsigned size);
 
 /* What the kernel's AvSetDisplayMode would have programmed. */

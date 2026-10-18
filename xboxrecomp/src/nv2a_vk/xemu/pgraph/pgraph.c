@@ -2969,7 +2969,11 @@ DEF_METHOD(NV097, BACK_END_WRITE_SEMAPHORE_RELEASE)
     assert(semaphore_offset < semaphore_dma_len);
     semaphore_data += semaphore_offset;
 
-    stl_le_p((uint32_t*)semaphore_data, parameter);
+    __atomic_store_n((uint32_t*)semaphore_data, parameter, __ATOMIC_SEQ_CST);
+    {
+        extern void nv2a_vk_progress(void);
+        nv2a_vk_progress();   /* a title waiting on this semaphore (host/nv2a_host.c) */
+    }
 
     //qemu_mutex_lock(&d->pgraph.lock);
     //bql_unlock();

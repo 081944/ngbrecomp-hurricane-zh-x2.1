@@ -10604,6 +10604,16 @@ loc_003CAB35: ;
     eax = eax - edi;
     _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* sub result */
     /* nop */
+    /* the loop below polls the GPU's progress (a semaphore it writes to memory) until it has reached
+     * the point: asleep in the GPU model instead, which wakes it when the GPU writes it; the loop then
+     * reads once and goes on with its registers as the console would have them */
+    {
+        extern void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead);
+        extern void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead);
+        extern int g_ngb_gpu_model;
+        if (g_ngb_gpu_model && edx == 0xFD800044u) nv2a_vk_wait_dma_get(esi, eax);
+        else if (g_ngb_gpu_model) nv2a_vk_wait_progress((const uint32_t *)XBOX_PTR(edx), esi, eax);
+    }
 
 loc_003CAB40: ;
     ecx = MEM32(edx);

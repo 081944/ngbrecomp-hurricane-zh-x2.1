@@ -472,6 +472,59 @@ static const NV2ABlockInfo *block_for(uint32_t off, uint32_t *rel)
     return NULL;
 }
 
+/* D3D's wait for the GPU (D3D_BlockOnTime): until the GPU's progress -- a semaphore the push buffer
+ * has it write to memory, or DMA_GET -- has reached a point. The title polls it in a loop, a core
+ * spinning for as long as the GPU is behind, most of every frame that is done early. Here the
+ * waiting thread sleeps, the virtual CPU let go, until the GPU model moves either. */
+static pthread_mutex_t s_progress_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_progress_cond = PTHREAD_COND_INITIALIZER;
+static int s_progress_waiters;
+
+/* The GPU model, its progress just written (a semaphore released, DMA_GET moved): wake whoever waits.
+ * Sequentially consistent on both sides (the write before this load, the waiter's count before its
+ * read), so a waiter either sees the new value or is seen here. */
+void nv2a_vk_progress(void)
+{
+    if (__atomic_load_n(&s_progress_waiters, __ATOMIC_SEQ_CST)) {
+        pthread_mutex_lock(&s_progress_lock);
+        pthread_cond_broadcast(&s_progress_cond);
+        pthread_mutex_unlock(&s_progress_lock);
+    }
+}
+
+/* Until *word is no more than `ahead` behind `put`, as the title's loop compares. */
+void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead)
+{
+    if (put - __atomic_load_n(word, __ATOMIC_SEQ_CST) <= ahead)
+        return;
+#if XBOX_HAS_VCPU
+    vcpu_block_begin();
+#endif
+    pthread_mutex_lock(&s_progress_lock);
+    __atomic_add_fetch(&s_progress_waiters, 1, __ATOMIC_SEQ_CST);
+    while (put - __atomic_load_n(word, __ATOMIC_SEQ_CST) > ahead) {
+        struct timespec ts;   /* a millisecond at most: a lost wake-up costs no more */
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_nsec += 1000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+        pthread_cond_timedwait(&s_progress_cond, &s_progress_lock, &ts);
+    }
+    __atomic_sub_fetch(&s_progress_waiters, 1, __ATOMIC_SEQ_CST);
+    pthread_mutex_unlock(&s_progress_lock);
+#if XBOX_HAS_VCPU
+    vcpu_block_end();
+#endif
+}
+
+/* The same for a guest polling DMA_GET (a register), should a title do that. */
+void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead)
+{
+    nv2a_vk_wait_progress(&s_nv2a.pfifo.regs[NV_PFIFO_CACHE1_DMA_GET], put, ahead);
+}
+
 uint64_t nv2a_vk_mmio_read(uint32_t off, unsigned size)
 {
     uint32_t rel;
