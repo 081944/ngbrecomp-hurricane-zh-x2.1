@@ -570,6 +570,7 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         F(shaderClipDistance, true),
         F(shaderTessellationAndGeometryPointSize, true),
         F(wideLines, false),
+        F(largePoints, false),
         F(textureCompressionBC, false),
         #undef F
         // clang-format on

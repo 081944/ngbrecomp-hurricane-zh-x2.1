@@ -57,6 +57,8 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode 
 std::string PixelHlsl(const PixelKey& k);
 // a screen quad's vertex or pixel shader: texture coordinates as the quad was drawn, before its far edges were pulled out
 std::string QuadHlsl(std::string s);
+std::string PointHlsl(std::string s, int kind);
+std::string SpriteHlsl(std::string s);
 
 // HLSL a backend extension adds; the defaults write the console path
 struct ShaderHooks {

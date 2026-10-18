@@ -922,6 +922,44 @@ std::string PixelHlsl(const PixelKey& k) {
     return k.quad ? QuadHlsl(std::move(s)) : s;
 }
 
+// A point list's vertex shader (#51): Vulkan draws a point only as large as the shader says, so the
+// size D3D gives -- D3DRS_POINTSIZE, scaled with the distance when D3DRS_POINTSCALEENABLE is on, in the
+// console's pixels -- goes out in the render scale's, with the point's centre and size for a sprite's
+// pixel shader. kind: 0 a vertex program (its oPts), 1 fixed function (vp in view space), 2 pretransformed.
+// The fixed function sizes come in c[190] (size, min, max, scaling on) and c[191] (A, B, C, viewport
+// height), registers its draws leave unused.
+std::string PointHlsl(std::string s, int kind) {
+    auto put = [&](const char* at, const std::string& add, bool before) {
+        size_t i = s.find(at);
+        if (i != std::string::npos) s.insert(before ? i : i + std::strlen(at), add);
+    };
+    put("    float fogamt : TEXCOORD4;\n", "    [[vk::builtin(\"PointSize\")]] float psize : PSIZE;\n    float4 ptc : TEXCOORD5;\n", false);
+    std::string size;
+    if (kind == 0) {
+        size = "    float psz = oPts.x;\n";
+    } else {
+        size = "    float psz = c[190].x;\n";
+        if (kind == 1)   // D3D: Vh * size * sqrt(1 / (A + B De + C De^2)), De the distance from the eye
+            size += "    if (c[190].w != 0) psz *= c[191].w * rsqrt(max(c[191].x + c[191].y * length(vp) + c[191].z * dot(vp, vp), 1e-20));\n";
+        size += "    psz = clamp(psz, c[190].y, c[190].z);\n";
+    }
+    size += "    o.psize = max(psz * surf.w, 1);\n    o.ptc = float4(p.xy * surf.w, o.psize, 0);\n";
+    put("    o.fogamt = fogfactor(oFog.x);\n    return o;\n", size, true);
+    return s;
+}
+
+// A point sprite's pixel shader: every stage's coordinates run 0 to 1 across the point, top left first.
+std::string SpriteHlsl(std::string s) {
+    size_t i = s.find("    float fogamt : TEXCOORD4;\n");
+    if (i != std::string::npos) s.insert(i + std::strlen("    float fogamt : TEXCOORD4;\n"), "    float4 ptc : TEXCOORD5;\n");
+    const char* tc = "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
+    i = s.find(tc);
+    if (i != std::string::npos)
+        s.replace(i, std::strlen(tc), "    float4 spr = float4((i.pos.xy - i.ptc.xy) / i.ptc.z + 0.5, 0, 1);\n"
+                                      "    float4 tc0 = spr, tc1 = spr, tc2 = spr, tc3 = spr;\n");
+    return s;
+}
+
 std::string QuadHlsl(std::string s) {
     // Full screen passes once had their far edges pulled out half a pixel, and their texture coordinates
     // put back; with the console's pixel centres kept (the vertex epilogue) they cover the target as drawn.

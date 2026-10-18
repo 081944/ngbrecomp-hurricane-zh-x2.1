@@ -347,6 +347,7 @@ private:
     int scale_ = 1, shadow_ = 1, aniso_level_ = 0, msaa_ = 1;
     bool anisotropy_ = false;
     bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
+    float point_max_ = 1.0f;    // the largest point (largePoints): the particles are point sprites (#51)
     float line_max_ = 1.0f;
     VkSampleCountFlags ms_counts_ = VK_SAMPLE_COUNT_1_BIT;   // the device's for colour and depth together
     void ReadQuality();
@@ -605,6 +606,7 @@ bool VulkanBackend::CreateDevice() {
         VkPhysicalDeviceFeatures have;
         vkGetPhysicalDeviceFeatures(phys_, &have);
         f2.features.wideLines = have.wideLines;
+        f2.features.largePoints = have.largePoints;
     }
     const char* exts[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 #ifdef __APPLE__
@@ -664,6 +666,7 @@ bool VulkanBackend::FinishDevice() {
     anisotropy_ = feat.samplerAnisotropy == VK_TRUE;
     wide_lines_ = feat.wideLines == VK_TRUE;
     line_max_ = pr.limits.lineWidthRange[1];
+    point_max_ = feat.largePoints == VK_TRUE ? pr.limits.pointSizeRange[1] : 1.0f;
     ms_counts_ = pr.limits.framebufferColorSampleCounts & pr.limits.framebufferDepthSampleCounts &
                  pr.limits.framebufferStencilSampleCounts;
     ReadQuality();
@@ -2039,12 +2042,17 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         vkey = Hash(&fk, sizeof(fk), vkey);
     }
     if (quad) vkey ^= 0xC3C30000;
+    // a point list: the shader says each point's size (PointHlsl), and a sprite's pixel shader makes its
+    // coordinates (SpriteHlsl); made as drawn, not kept in the cache, whose recipes make the plain ones
+    bool points = a.topology == Topology::Points;
+    bool sprite = points && s.rs[kRsPointSpriteEnable];
+    if (points) vkey ^= 0x9D7E0000;
     bool vnew;
     {
         std::lock_guard<std::recursive_mutex> g(cache_mu_);
         vnew = !modules_.count(vkey);
     }
-    if (vnew) {   // how it is made, for the cache (ShaderCache)
+    if (vnew && !points) {   // how it is made, for the cache (ShaderCache)
         std::vector<uint8_t> r;
         if (prog) {
             CurrentVertexProgramRecipe(s.vs->program, a.regs, a.decode, quad, r);
@@ -2063,6 +2071,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::string src = prog ? VertexProgramHlsl(s.vs->program, a.regs, a.decode)
                                : FixedVertexHlsl(a.regs, a.pretransformed, a.decode, fk);
         if (quad) src = QuadHlsl(std::move(src));
+        if (points) src = PointHlsl(std::move(src), prog ? 0 : a.pretransformed ? 2 : 1);
         static const char* dump = std::getenv("NGB_D3D_SHADERDUMP");
         if (dump) {
             char path[512];
@@ -2082,11 +2091,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     PixelKey pk = MakePixelKey(s, info);
     pk.quad = quad;
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
+    if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
     static const char* psdbg = std::getenv("NGB_D3D_PSDEBUG");
     static int flat = psdbg && !std::strcmp(psdbg, "flat");
     if (psdbg) pkey = Hash(psdbg, std::strlen(psdbg), pkey);
-    if (!psdbg) {
+    if (!psdbg && !sprite) {
         bool pnew;
         {
             std::lock_guard<std::recursive_mutex> g(cache_mu_);
@@ -2096,6 +2106,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
     VkShaderModule pmod = Module(pkey, [&] {
         std::string src = PixelHlsl(pk);
+        if (sprite) src = SpriteHlsl(std::move(src));
         if (psdbg) {
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
@@ -2195,6 +2206,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     c.surf[0] = float(gw);
     c.surf[1] = float(gh);
     c.surf[2] = 1.0f / s.zscale;
+    c.surf[3] = float((rt ? rt->img : ds->img).w) / float(gw);   // the target's pixels to the console's
     if (s.rs[kRsFogEnable]) {
         c.fog[0] = Bits(s.rs[kRsFogStart]);
         c.fog[1] = Bits(s.rs[kRsFogEnd]);
@@ -2450,7 +2462,19 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         for (int i = 0; i < 8; i++)
             if ((fk.types >> (i * 2)) & 3) LightToView(s.lights[size_t(i)], s.transforms[2].data(), c.lt[i]);
     }
-    VkDeviceSize vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
+    VkDeviceSize vc;
+    if (points && !prog) {   // the point sizes for PointHlsl, in registers fixed function leaves unused
+        auto v = s.vsc;
+        float vh = s.viewport.h > 0 ? float(s.viewport.h) : float(gh);
+        float mx = Bits(s.rs[kRsPointSizeMax]);
+        if (!(mx > 0)) mx = 64.0f;
+        v[190] = {Bits(s.rs[kRsPointSize]), Bits(s.rs[kRsPointSizeMin]), std::min(mx, point_max_ / c.surf[3]),
+                  s.rs[kRsPointScaleEnable] ? 1.0f : 0.0f};
+        v[191] = {Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), vh};
+        vc = Upload(v.data(), sizeof(v), ringAlign_);
+    } else {
+        vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
+    }
     VkDeviceSize dc = Upload(&c, sizeof(c), ringAlign_);
 
     // the vertices and indices
