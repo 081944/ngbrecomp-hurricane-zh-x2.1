@@ -125,6 +125,7 @@ void compat_host_leave(void);
 #include <time.h>
 static volatile int s_in_fn = -1;
 static volatile long s_in_since;
+static int s_watchdog;
 static long now_ms(void)
 {
     struct timespec ts;
@@ -158,12 +159,14 @@ int d3d_hook(int fn)
         s_hle = e && (!strcmp(e, "d3d") || !strcmp(e, "mirror"));
         if (getenv("NGB_D3D_WATCHDOG")) {
             pthread_t th;
+            s_watchdog = 1;
             if (pthread_create(&th, NULL, watchdog, NULL) == 0)
                 pthread_detach(th);
         }
     }
     s_in_fn = fn;
-    s_in_since = now_ms();
+    if (s_watchdog)   /* the clock only for it: two reads a call were 400,000 a second */
+        s_in_since = now_ms();
     if (fn == D3DF_D3DDevice_RunPushBuffer)
         push_dump();
     if (s_hle) {
@@ -194,7 +197,8 @@ void d3d_after(int fn)
     if (s_hle > 0) {
         uint32_t regs[8] = { eax, ecx, edx, ebx, esp, g_ebp, esi, edi };
         s_in_fn = fn;
-        s_in_since = now_ms();
+        if (s_watchdog)
+            s_in_since = now_ms();
         compat_host_enter();
         d3d_hle_after(fn, regs);
         compat_host_leave();
