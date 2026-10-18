@@ -397,7 +397,7 @@ std::string TexFetch(const PixelKey& k, int i) {
     auto put = [&](const std::string& v) {
         std::string r = F("float4 t%d = %s;\n", i, v.c_str());
         if ((t.flags & kTexSigned) && !uv2d.empty())   // a bump map: its du dv, each texel decoded first (bumpduv)
-            r += F("float2 duv%d = bumpduv(tex%d, smp%d, %s);\n", i, i, i, uv2d.c_str());
+            r += F("float2 duv%d = bumpduv%d(%s);\n", i, i, uv2d.c_str());
         return r;
     };
     // dpN, or dpNn for stage N + 1's product taken early
@@ -406,7 +406,7 @@ std::string TexFetch(const PixelKey& k, int i) {
     };
     auto tex2d = [&](const std::string& uv) {
         uv2d = uv;
-        if (t.flags & kTexWide) return F("spreadtap(tex%d, smp%d, %s, spread[%d], %s)", i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
+        if (t.flags & kTexWide) return F("spreadtap%d(%s, spread[%d], %s)", i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
         return F("tex%d.Sample(smp%d, %s)", i, i, uv.c_str());
     };
     auto cube = [&](const std::string& dir) {
@@ -426,8 +426,7 @@ std::string TexFetch(const PixelKey& k, int i) {
         return std::string("float4(0,0,0,1)");
     };
     auto depth = [&](const std::string& ref) {
-        return put(F("shadow(tex%d, smp%d, (%s.xy / %s.w)%s, %s, %d, i.pos.xy, texsize[%d].xy)", i, i, q, q, norm.c_str(), ref.c_str(),
-                     t.shadow, i));
+        return put(F("shadow%d((%s.xy / %s.w)%s, %s, %d, i.pos.xy, texsize[%d].xy)", i, q, q, norm.c_str(), ref.c_str(), t.shadow, i));
     };
     std::string s;
     switch (mode) {
@@ -471,48 +470,8 @@ std::string TexFetch(const PixelKey& k, int i) {
 const char* kPsSbyte = R"(
 // unorm to byte b, less lo under 128 or hi from 128, over d
 float3 sbyte(float3 u, float lo, float hi, float d) { float3 b = u * 255; return (b - (b >= 128 ? hi : lo)) / d; }
-// A bump map's du dv (V8U8: two signed bytes a texel). The texels are read whole and each decoded before
-// the filtering: filtered as the unsigned bytes they are stored as, two texels either side of zero blend
-// through the wrong range. Bilinear within the level the sampler would pick, linear on to the next, and
-// wrapping, as the ripple maps tile. (A second image holding the bytes offset by 128, and before it a
-// signed view of the plain one, filtered right on AMD but came out as the raw bytes on Nvidia, #16.)
-float2 bumptexel(Texture2D t, int2 p, int2 dim, int level) {
-    p = (p % dim + dim) % dim;
-    float2 b = t.Load(int3(p, level)).bg * 255;
-    return max((b - (b >= 128 ? 256 : 0)) / 127, -1);
-}
-float2 bumplevel(Texture2D t, float2 uv, int level) {
-    uint w, h, n;
-    t.GetDimensions(0, w, h, n);
-    int2 dim = max(int2(w, h) >> level, 1);
-    float2 p = uv * dim - 0.5;
-    int2 i0 = int2(floor(p));
-    float2 f = p - floor(p);
-    float2 a = bumptexel(t, i0, dim, level), b = bumptexel(t, i0 + int2(1, 0), dim, level);
-    float2 c = bumptexel(t, i0 + int2(0, 1), dim, level), d = bumptexel(t, i0 + int2(1, 1), dim, level);
-    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
-}
-float2 bumpduv(Texture2D t, SamplerState s, float2 uv) {
-    uint w, h, n;
-    t.GetDimensions(0, w, h, n);
-    float lod = clamp(t.CalculateLevelOfDetail(s, uv), 0, float(n) - 1);
-    int l0 = int(floor(lod));
-    float2 r = bumplevel(t, uv, l0);
-    if (lod > l0) r = lerp(r, bumplevel(t, uv, min(l0 + 1, int(n) - 1)), lod - l0);
-    return r;
-}
 )";
-const char* kPsTail = R"(float4 spreadtap(Texture2D t, SamplerState s, float2 uv, float4 w, float m) {
-    float4 c = 0;
-    int n = (int)w.z;
-    for (int y = 0; y < n; y++)
-        for (int x = 0; x < n; x++) {
-            float4 v = t.SampleLevel(s, uv + w.xy * (float2(x, y) - (n - 1) * 0.5), 0);
-            c += float4(saturate(v.rgb * m), v.a);
-        }
-    return c / (n * n);
-}
-void alphatest(float a) {
+const char* kPsTail = R"(void alphatest(float a) {
     int f = (int)misc.y;
     int v = (int)round(a * 255), r = (int)misc.x;
     bool ok = f == 0 ? false : f == 1 ? v < r : f == 2 ? v == r : f == 3 ? v <= r : f == 4 ? v > r : f == 5 ? v != r : f == 6 ? v >= r : true;
@@ -520,7 +479,21 @@ void alphatest(float a) {
 }
 )";
 
-std::string PsHelpers() { return kPsSbyte + Hooks().Shadow() + kPsTail; }
+std::string PsHelpers() { return std::string(kPsSbyte) + kPsTail; }
+
+// stage i's texture read n x n taps wide (a render target drawn at a scale, read at the console's)
+std::string SpreadTap(int i) {
+    return F("float4 spreadtap%d(float2 uv, float4 w, float m) {\n"
+             "    float4 c = 0;\n"
+             "    int n = (int)w.z;\n"
+             "    for (int y = 0; y < n; y++)\n"
+             "        for (int x = 0; x < n; x++) {\n"
+             "            float4 v = tex%d.SampleLevel(smp%d, uv + w.xy * (float2(x, y) - (n - 1) * 0.5), 0);\n"
+             "            c += float4(saturate(v.rgb * m), v.a);\n"
+             "        }\n"
+             "    return c / (n * n);\n"
+             "}\n", i, i, i);
+}
 
 // fixed function texture stage arguments, D3DTA
 std::string FfArg(uint32_t a, int stage, bool alpha) {
@@ -575,13 +548,12 @@ bool PixelKey::operator==(const PixelKey& o) const { return std::memcmp(this, &o
 
 std::string ShaderHooks::Constants() const { return "    float4 ext;\n"; }
 
-std::string ShaderHooks::Shadow() const {
-    return R"(// the sampler compares, a linear filter blends the four results like the console does
-float4 shadow(Texture2D<float> t, SamplerComparisonState s, float2 uv, float z, int fmt, float2 px, float2 size) {
-    float mx = fmt == 2 ? 65535.0 : 16777215.0;
-    return t.SampleCmpLevelZero(s, uv, clamp(z, 0, mx) / mx).xxxx;
-}
-)";
+std::string ShaderHooks::Shadow(int i) const {
+    return F("// the sampler compares, a linear filter blends the four results like the console does\n"
+             "float4 shadow%d(float2 uv, float z, int fmt, float2 px, float2 size) {\n"
+             "    float mx = fmt == 2 ? 65535.0 : 16777215.0;\n"
+             "    return tex%d.SampleCmpLevelZero(smp%d, uv, clamp(z, 0, mx) / mx).xxxx;\n"
+             "}\n", i, i, i);
 }
 
 std::string ShaderHooks::Output() const { return "outc.rgb = saturate(outc.rgb);\n"; }
@@ -864,6 +836,46 @@ std::string PixelHlsl(const PixelKey& k) {
         const char* type = t.shadow ? "Texture2D<float>" : t.kind == kTex3D ? "Texture3D" : t.kind == kTexCube ? "TextureCube" : "Texture2D";
         s += F("%s tex%d : register(t%d);\n%s smp%d : register(s%d);\n", type, i, i, t.shadow ? "SamplerComparisonState" : "SamplerState", i, i);
     }
+    // The helpers that read a texture, one per stage naming its texture and sampler: passed as parameters
+    // instead, glslang copies them into the call (an OpStore of an image: invalid SPIR-V, the validation
+    // layer's VUID 06924, which a driver may take literally).
+    for (int i = 0; i < 4; i++) {
+        const TexInfo& t = k.tex[i];
+        if (t.shadow) s += Hooks().Shadow(i);
+        else if (t.kind == kTex2D && (t.flags & kTexWide)) s += SpreadTap(i);
+    }
+    for (int i = 0; i < 4; i++) {
+        if (!(k.tex[i].flags & kTexSigned) || k.tex[i].kind != kTex2D) continue;
+        // A bump map's du dv (V8U8: two signed bytes a texel). The texels are read whole and each decoded
+        // before the filtering: filtered as the unsigned bytes they are stored as, two texels either side
+        // of zero blend through the wrong range. Bilinear within the level the sampler would pick, linear
+        // on to the next, and wrapping, as the ripple maps tile.
+        s += F("float2 bumptexel%d(int2 p, int2 dim, int level) {\n"
+               "    p = (p %% dim + dim) %% dim;\n"
+               "    float2 b = tex%d.Load(int3(p, level)).bg * 255;\n"
+               "    return max((b - (b >= 128 ? 256 : 0)) / 127, -1);\n"
+               "}\n"
+               "float2 bumplevel%d(float2 uv, int level) {\n"
+               "    uint w, h, n;\n"
+               "    tex%d.GetDimensions(0, w, h, n);\n"
+               "    int2 dim = max(int2(w, h) >> level, 1);\n"
+               "    float2 p = uv * dim - 0.5;\n"
+               "    int2 i0 = int2(floor(p));\n"
+               "    float2 f = p - floor(p);\n"
+               "    float2 a = bumptexel%d(i0, dim, level), b = bumptexel%d(i0 + int2(1, 0), dim, level);\n"
+               "    float2 c = bumptexel%d(i0 + int2(0, 1), dim, level), d = bumptexel%d(i0 + int2(1, 1), dim, level);\n"
+               "    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);\n"
+               "}\n"
+               "float2 bumpduv%d(float2 uv) {\n"
+               "    uint w, h, n;\n"
+               "    tex%d.GetDimensions(0, w, h, n);\n"
+               "    float lod = clamp(tex%d.CalculateLevelOfDetail(smp%d, uv), 0, float(n) - 1);\n"
+               "    int l0 = int(floor(lod));\n"
+               "    float2 r = bumplevel%d(uv, l0);\n"
+               "    if (lod > l0) r = lerp(r, bumplevel%d(uv, min(l0 + 1, int(n) - 1)), lod - l0);\n"
+               "    return r;\n"
+               "}\n", i, i, i, i, i, i, i, i, i, i, i, i, i, i);
+    }
     s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
     s += "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
     s += k.two_sided ? "    float4 v0 = front ? i.d0 : i.b0, v1 = front ? i.d1 : i.b1;\n" : "    float4 v0 = i.d0, v1 = i.d1;\n";
@@ -936,10 +948,10 @@ std::string PixelHlsl(const PixelKey& k) {
             std::string uv = (k.proj >> i) & 1 ? F("(tc%d.xy / tc%d.w)%s", i, i, norm.c_str()) : F("tc%d.xy%s", i, norm.c_str());
             std::string cube;
             if (t.shadow)
-                body += F("float4 t%d = shadow(tex%d, smp%d, (tc%d.xy / tc%d.w)%s, tc%d.z / tc%d.w, %d, i.pos.xy, texsize[%d].xy);\n", i, i,
-                          i, i, i, norm.c_str(), i, i, t.shadow, i);
+                body += F("float4 t%d = shadow%d((tc%d.xy / tc%d.w)%s, tc%d.z / tc%d.w, %d, i.pos.xy, texsize[%d].xy);\n", i, i, i, i,
+                          norm.c_str(), i, i, t.shadow, i);
             else if (t.kind == kTex2D && (t.flags & kTexWide))
-                body += F("float4 t%d = spreadtap(tex%d, smp%d, %s, spread[%d], %s);\n", i, i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
+                body += F("float4 t%d = spreadtap%d(%s, spread[%d], %s);\n", i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
             else if (t.kind == kTex2D) body += F("float4 t%d = tex%d.Sample(smp%d, %s);\n", i, i, i, uv.c_str());
             else if (t.kind == kTexCube && !(cube = Hooks().Cube(t, i, F("tc%d.xyz", i))).empty()) body += F("float4 t%d = %s;\n", i, cube.c_str());
             else if (t.kind) body += F("float4 t%d = tex%d.Sample(smp%d, tc%d.xyz);\n", i, i, i, i);

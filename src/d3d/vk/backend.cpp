@@ -2105,13 +2105,13 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
                 : !std::strcmp(psdbg, "bump") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w); return float4(t0.b, t0.g, 0, 1);"
-                : !std::strcmp(psdbg, "duv") ? "float2 d = bumpduv(tex0, smp0, i.tc0.xy / i.tc0.w); return float4(d * 0.5 + 0.5, 0, 1);"
+                : !std::strcmp(psdbg, "duv") ? "float2 d = bumpduv0(i.tc0.xy / i.tc0.w); return float4(d * 0.5 + 0.5, 0, 1);"
                 : !std::strcmp(psdbg, "copy") ? "return float4(tex2.Sample(smp2, i.tc2.xy + texsize[2].zw).rgb, 1);"
                 : !std::strcmp(psdbg, "tex") ? "return float4(tex0.Sample(smp0, i.tc0.xy).rgb, 1);"
                 : !std::strcmp(psdbg, "uv") ? "return float4(frac(i.tc0.xy), 0, 1);"
                 : !std::strcmp(psdbg, "shadow") ? (pk.tex[0].shadow
                     ? "float2 uv = (i.tc0.xy / i.tc0.w) / texsize[0].xy + texsize[0].zw;"
-                      " float t = shadow(tex0, smp0, uv, i.tc0.z / i.tc0.w, 1, i.pos.xy, texsize[0].xy).x;"
+                      " float t = shadow0(uv, i.tc0.z / i.tc0.w, 1, i.pos.xy, texsize[0].xy).x;"
                       " return float4(i.d0.rgb * t, 1);"
                     : "return float4(i.d0.rgb, 1);")
                 : "return float4(i.d0.rgb, 1);";

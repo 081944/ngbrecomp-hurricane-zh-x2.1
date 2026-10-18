@@ -65,8 +65,9 @@ struct ShaderHooks {
     virtual ~ShaderHooks() = default;
     // the cbuffer line for DrawConstants::ext
     virtual std::string Constants() const;
-    // float4 shadow(Texture2D<float> t, SamplerComparisonState s, float2 uv, float z, int fmt, float2 px, float2 size)
-    virtual std::string Shadow() const;
+    // float4 shadow%d(float2 uv, float z, int fmt, float2 px, float2 size): stage i's texture compared through its
+    // sampler (a helper per stage, naming them: see PixelHlsl)
+    virtual std::string Shadow(int i) const;
     // what spreadtap scales a render target's colour by
     virtual std::string ReadScale(const TexInfo&) const { return "1"; }
     // a cube sampled along dir at stage i, empty for a plain sample
