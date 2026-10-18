@@ -2252,6 +2252,34 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     float hud_clip0 = -1, hud_clip1 = -1;   // a menu's 4:3 area (guest pixels), the draw clipped to it
     float hud_clipy0 = -1, hud_clipy1 = -1;   // (and its height, on a narrower screen)
     const PipeKey& pipe_k = k;   // (k below the screen's shape)
+    // A pass over an effect target a pixel or two short of its edge: the heat haze over lava draws its
+    // 512x256 picture from 0 to 510 and 254, and the columns and rows it leaves out (never cleared:
+    // black here, white on the 360's emulator, harmless leftovers on the console) showed as a strip
+    // down the right of the screen (#55). Such a quad is stretched to the target's edge.
+    if (a.pretransformed && rt && rt->gw < 640 && count <= 4) {
+        const VertexElement& pe = a.elements[0];
+        if ((a.regs & 1) && pe.format == 2 && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src) {
+            const VertexBuffer& vb = a.buffers[pe.buffer];
+            float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
+            uint32_t n = vb.stride ? std::min<uint32_t>(vb.bytes / vb.stride, 4) : 0;
+            for (uint32_t i = 0; i < n; i++) {
+                float xy[2];
+                std::memcpy(xy, vb.src + size_t(i) * vb.stride + pe.offset, 8);
+                x0 = std::min(x0, xy[0]);
+                x1 = std::max(x1, xy[0]);
+                y0 = std::min(y0, xy[1]);
+                y1 = std::max(y1, xy[1]);
+            }
+            float w = float(rt->gw), h = float(rt->gh);
+            auto short_by = [](float lo, float hi, float size) { return lo <= 0.5f && hi > size - 3.0f && hi < size - 0.5f; };
+            if (n == 4 && short_by(x0, x1, w) && short_by(y0, y1, h)) {
+                c.ext[0] = (w - x0) / (x1 - x0);
+                c.ext[1] = x0;
+                c.ext[2] = (h - y0) / (y1 - y0);
+                c.ext[3] = y0;
+            }
+        }
+    }
     if (a.pretransformed && rt && rt->gw >= 640) {
         float k = ngb_hud_shape();
         const VertexElement& pe = a.elements[0];
