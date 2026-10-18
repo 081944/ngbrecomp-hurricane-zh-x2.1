@@ -18,7 +18,7 @@ struct TexInfo {
 };
 enum : uint8_t {
     kTexWide = 4,  // an upscaled target shrunk by the pass: each tap averaged over console texels
-    kTexSigned = 8,  // a bump map read through a signed view: its r g are du dv already
+    kTexSigned = 8,  // a bump map read from its offset binary copy: b g are du dv + 128 (in bytes)
 };
 
 struct PixelKey {
@@ -57,6 +57,8 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode 
 std::string PixelHlsl(const PixelKey& k);
 // a screen quad's vertex or pixel shader: texture coordinates as the quad was drawn, before its far edges were pulled out
 std::string QuadHlsl(std::string s);
+std::string PointHlsl(std::string s, int kind);
+std::string SpriteHlsl(std::string s);
 
 // HLSL a backend extension adds; the defaults write the console path
 struct ShaderHooks {

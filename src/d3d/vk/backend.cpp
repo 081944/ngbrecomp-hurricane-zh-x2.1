@@ -234,7 +234,7 @@ struct Target {
 
 struct Tex {
     Image img;
-    VkImageView snorm = VK_NULL_HANDLE;   // V8U8 (G8B8's code) read signed, for a bump map stage
+    Image sgn;                 // V8U8 (G8B8's code) for a bump map stage: its bytes ^ 0x80 (offset binary)
     int gen = -1;              // made with generated mipmaps (1), or as given (0)
     uint64_t sig = 0;          // the guest bytes (and palette) it was made from
     uint32_t used = 0;         // frame last used
@@ -347,6 +347,7 @@ private:
     int scale_ = 1, shadow_ = 1, aniso_level_ = 0, msaa_ = 1;
     bool anisotropy_ = false;
     bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
+    float point_max_ = 1.0f;    // the largest point (largePoints): the particles are point sprites (#51)
     float line_max_ = 1.0f;
     VkSampleCountFlags ms_counts_ = VK_SAMPLE_COUNT_1_BIT;   // the device's for colour and depth together
     void ReadQuality();
@@ -551,6 +552,12 @@ bool VulkanBackend::CreateInstance() {
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
+#ifdef __APPLE__
+    const char *extensions[] = {VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME};
+    ci.enabledExtensionCount = 1;
+    ci.ppEnabledExtensionNames = extensions;
+    ci.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
     VKCHECK(vkCreateInstance(&ci, nullptr, &inst_));
     // the instance functions: shared with the NV2A renderer's when it has loaded them (loader
     // trampolines, good for either instance), else ours
@@ -599,13 +606,18 @@ bool VulkanBackend::CreateDevice() {
         VkPhysicalDeviceFeatures have;
         vkGetPhysicalDeviceFeatures(phys_, &have);
         f2.features.wideLines = have.wideLines;
+        f2.features.largePoints = have.largePoints;
     }
-    const char* exts[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME};
+    const char* exts[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+#ifdef __APPLE__
+                          "VK_KHR_portability_subset",
+#endif
+    };
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &f2;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = sizeof(exts) / sizeof(exts[0]);
     dci.ppEnabledExtensionNames = exts;
     VKCHECK(vkCreateDevice(phys_, &dci, nullptr, &dev_));
     volkLoadDeviceTable(&d_, dev_);
@@ -637,19 +649,14 @@ bool VulkanBackend::FinishDevice() {
     ai.pVulkanFunctions = &fns;
     VKCHECK(vmaCreateAllocator(&ai, &vma_));
 
-    // Float depth where the device has it: the shadow test compares the game's depth, a float here,
-    // against the map, and a 24-bit map rounds what it stores, so a surface testing against its own
-    // depth came out shadowed at random texels -- blotches over everything, on Nvidia only, which
-    // has D24 (#16, #29). NGB_D3D_DEPTH24=1: the 24-bit one, to compare.
+    // 24-bit depth, as the console has, where the device has it (Nvidia); else float (AMD). 0.9.17 gave
+    // Nvidia float depth too, for the shadow blotches of #29: they stayed, and second passes over a drawn
+    // surface came out flickering or missing on Nvidia (#51, #53). NGB_D3D_DEPTH32=1: float, to compare.
     VkFormatProperties fp;
-    bool d24 = std::getenv("NGB_D3D_DEPTH24") != nullptr;
-    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D32_SFLOAT_S8_UINT, &fp);
-    ds_format_ = !d24 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                     ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D24_UNORM_S8_UINT;
-    vkGetPhysicalDeviceFormatProperties(phys_, ds_format_, &fp);
-    if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
-        ds_format_ = ds_format_ == VK_FORMAT_D24_UNORM_S8_UINT ? VK_FORMAT_D32_SFLOAT_S8_UINT
-                                                                : VK_FORMAT_D24_UNORM_S8_UINT;
+    bool d32 = std::getenv("NGB_D3D_DEPTH32") != nullptr;
+    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D24_UNORM_S8_UINT, &fp);
+    ds_format_ = !d32 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                     ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_D32_SFLOAT_S8_UINT;
     std::fprintf(stderr, "[D3D] depth: %s\n", ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT ? "32-bit float" : "24-bit");
     VkPhysicalDeviceProperties pr;
     vkGetPhysicalDeviceProperties(phys_, &pr);
@@ -659,6 +666,7 @@ bool VulkanBackend::FinishDevice() {
     anisotropy_ = feat.samplerAnisotropy == VK_TRUE;
     wide_lines_ = feat.wideLines == VK_TRUE;
     line_max_ = pr.limits.lineWidthRange[1];
+    point_max_ = feat.largePoints == VK_TRUE ? pr.limits.pointSizeRange[1] : 1.0f;
     ms_counts_ = pr.limits.framebufferColorSampleCounts & pr.limits.framebufferDepthSampleCounts &
                  pr.limits.framebufferStencilSampleCounts;
     ReadQuality();
@@ -1540,15 +1548,15 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     if (tx.img.image && tx.sig == sig && tx.img.w == d.width && tx.img.h == d.height &&
         (tx.gen == 2 || tx.gen == (mip_candidate ? 1 : 0))) {
         tx.used = frame_;
-        if (bump_src && tx.snorm) {
+        if (bump_src && tx.sgn.image) {
             info.flags |= kTexSigned;
-            return tx.snorm;
+            return tx.sgn.view;
         }
         return tx.img.view;
     }
     if (tx.img.image) {   // made again: the old one goes when no frame in flight uses it
-        Retire(tx.img, tx.snorm);
-        tx.snorm = VK_NULL_HANDLE;
+        Retire(tx.img);
+        if (tx.sgn.image) Retire(tx.sgn);
     }
     uint32_t faces = d.cube ? 6 : 1;
     VkFormat fmt = TextureFormat(fi.host);
@@ -1585,23 +1593,15 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     if (!CreateImage(tx.img, fmt, d.width, d.height, faces, levels, false, d.cube,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                         (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, twoch))
+                         (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, false))
         return VK_NULL_HANDLE;
-    if (twoch) {   // the same bytes (U V U V after decoding) as signed: r = U, g = V
-        VkImageViewCreateInfo vci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        vci.image = tx.img.image;
-        vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vci.format = VK_FORMAT_R8G8B8A8_SNORM;
-        vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, d.levels, 0, 1};
-        VkResult vr = d_.vkCreateImageView(dev_, &vci, nullptr, &tx.snorm);
-        if (vr != VK_SUCCESS) {   // said out loud: its bump maps are then read unsigned (water banding, #16)
-            tx.snorm = VK_NULL_HANDLE;
-            static int n;
-            if (n++ < 4)
-                std::fprintf(stderr, "[D3D] no signed view for a %ux%u bump map (format %X): VkResult %d\n",
-                             d.width, d.height, d.format, int(vr));
-        }
-    }
+    // A bump map's du dv are signed bytes, filtered as signed values. Kept beside the plain copy as
+    // offset binary (two's complement with the top bit flipped: 0 at 128), which a plain unsigned image
+    // filters the same way, linearly; the shader takes 128 back off. A signed view of the plain image
+    // did that on AMD, but drew the water as blotches on Nvidia (#16).
+    if (twoch && !CreateImage(tx.sgn, fmt, d.width, d.height, 1, levels, false, false,
+                              VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 1, false))
+        tx.sgn = Image{};
     tx.sig = sig;
     tx.used = frame_;
     // NGB_D3D_TEXDUMP=dir: the first textures' top level, as DDS (DXT) or PPM (BGRA), to check the data
@@ -1613,6 +1613,7 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     EndRendering();
     Barrier(tx.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    if (tx.sgn.image) Barrier(tx.sgn, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     std::vector<uint8_t> out;
     for (uint32_t f = 0; f < faces; f++)
         for (uint32_t l = 0; l < d.levels; l++) {
@@ -1626,6 +1627,11 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, f, 1};
             c.imageExtent = {std::max(d.width >> l, 1u), std::max(d.height >> l, 1u), 1};
             d_.vkCmdCopyBufferToImage(cmd_, ring_, tx.img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            if (tx.sgn.image) {
+                for (auto& b : out) b ^= 0x80;
+                c.bufferOffset = Upload(out.data(), out.size(), 16);
+                d_.vkCmdCopyBufferToImage(cmd_, ring_, tx.sgn.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            }
         }
     if (tx.gen == 1) {   // the rest of the chain, each level a 2:1 linear blit (a box filter) of the one above
         VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -1658,15 +1664,16 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         d_.vkCmdPipelineBarrier2(cmd_, &di);
     }
     Barrier(tx.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (tx.sgn.image) Barrier(tx.sgn, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     tx.info = info;
-    if (bump_src && tx.snorm) {
+    if (bump_src && tx.sgn.image) {
         info.flags |= kTexSigned;
-        return tx.snorm;
+        return tx.sgn.view;
     }
     if (bump_src) {   // debugging #16: a bump map read unsigned, converted after filtering (banding)
         static int n;
         if (n++ < 4)
-            std::fprintf(stderr, "[D3D] bump map %08X (format %X %ux%u) read unsigned: no signed view\n", d.data,
+            std::fprintf(stderr, "[D3D] bump map %08X (format %X %ux%u) read unsigned: no signed copy\n", d.data,
                          d.format, d.width, d.height);
     }
     return tx.img.view;
@@ -2035,12 +2042,17 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         vkey = Hash(&fk, sizeof(fk), vkey);
     }
     if (quad) vkey ^= 0xC3C30000;
+    // a point list: the shader says each point's size (PointHlsl), and a sprite's pixel shader makes its
+    // coordinates (SpriteHlsl); made as drawn, not kept in the cache, whose recipes make the plain ones
+    bool points = a.topology == Topology::Points;
+    bool sprite = points && s.rs[kRsPointSpriteEnable];
+    if (points) vkey ^= 0x9D7E0000;
     bool vnew;
     {
         std::lock_guard<std::recursive_mutex> g(cache_mu_);
         vnew = !modules_.count(vkey);
     }
-    if (vnew) {   // how it is made, for the cache (ShaderCache)
+    if (vnew && !points) {   // how it is made, for the cache (ShaderCache)
         std::vector<uint8_t> r;
         if (prog) {
             CurrentVertexProgramRecipe(s.vs->program, a.regs, a.decode, quad, r);
@@ -2059,6 +2071,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::string src = prog ? VertexProgramHlsl(s.vs->program, a.regs, a.decode)
                                : FixedVertexHlsl(a.regs, a.pretransformed, a.decode, fk);
         if (quad) src = QuadHlsl(std::move(src));
+        if (points) src = PointHlsl(std::move(src), prog ? 0 : a.pretransformed ? 2 : 1);
         static const char* dump = std::getenv("NGB_D3D_SHADERDUMP");
         if (dump) {
             char path[512];
@@ -2078,11 +2091,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     PixelKey pk = MakePixelKey(s, info);
     pk.quad = quad;
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
+    if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
     static const char* psdbg = std::getenv("NGB_D3D_PSDEBUG");
     static int flat = psdbg && !std::strcmp(psdbg, "flat");
     if (psdbg) pkey = Hash(psdbg, std::strlen(psdbg), pkey);
-    if (!psdbg) {
+    if (!psdbg && !sprite) {
         bool pnew;
         {
             std::lock_guard<std::recursive_mutex> g(cache_mu_);
@@ -2092,6 +2106,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
     VkShaderModule pmod = Module(pkey, [&] {
         std::string src = PixelHlsl(pk);
+        if (sprite) src = SpriteHlsl(std::move(src));
         if (psdbg) {
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
@@ -2191,6 +2206,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     c.surf[0] = float(gw);
     c.surf[1] = float(gh);
     c.surf[2] = 1.0f / s.zscale;
+    c.surf[3] = float((rt ? rt->img : ds->img).w) / float(gw);   // the target's pixels to the console's
     if (s.rs[kRsFogEnable]) {
         c.fog[0] = Bits(s.rs[kRsFogStart]);
         c.fog[1] = Bits(s.rs[kRsFogEnd]);
@@ -2446,7 +2462,19 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         for (int i = 0; i < 8; i++)
             if ((fk.types >> (i * 2)) & 3) LightToView(s.lights[size_t(i)], s.transforms[2].data(), c.lt[i]);
     }
-    VkDeviceSize vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
+    VkDeviceSize vc;
+    if (points && !prog) {   // the point sizes for PointHlsl, in registers fixed function leaves unused
+        auto v = s.vsc;
+        float vh = s.viewport.h > 0 ? float(s.viewport.h) : float(gh);
+        float mx = Bits(s.rs[kRsPointSizeMax]);
+        if (!(mx > 0)) mx = 64.0f;
+        v[190] = {Bits(s.rs[kRsPointSize]), Bits(s.rs[kRsPointSizeMin]), std::min(mx, point_max_ / c.surf[3]),
+                  s.rs[kRsPointScaleEnable] ? 1.0f : 0.0f};
+        v[191] = {Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), vh};
+        vc = Upload(v.data(), sizeof(v), ringAlign_);
+    } else {
+        vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
+    }
     VkDeviceSize dc = Upload(&c, sizeof(c), ringAlign_);
 
     // the vertices and indices

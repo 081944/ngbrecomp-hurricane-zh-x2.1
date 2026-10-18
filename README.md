@@ -58,7 +58,7 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.18`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.19`.
 
 ## Changes from ngbrecomp
 
@@ -81,7 +81,9 @@ Branch `hurricane`, merged with upstream as it moves on:
 ## Building from source (Windows)
 
 Only the Windows build below is used and tested for this branch. Upstream's `tools/pipeline.sh` (Linux)
-does not pass the Hurricane recompiler options and is not supported here.
+does not pass the Hurricane recompiler options and is not supported here. Upstream ngbrecomp also builds for
+Linux and, experimentally, Apple Silicon macOS (see its README, [docs/README-ngbrecomp.md](docs/README-ngbrecomp.md));
+neither is supported for this branch.
 
 Requirements: llvm-mingw (UCRT, x86_64 Windows host), the MSYS2 CLANG64 packages in
 `packaging/windows/deps.txt` unpacked into `<deps>/sysroot/clang64`, CMake, Ninja, Git Bash, and a Python

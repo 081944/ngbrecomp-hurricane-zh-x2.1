@@ -52,7 +52,7 @@
 ## 版本号
 
 发布版本与所基于的 ngbrecomp 版本一致（`hurricane-v0.9.9` 即基于 ngbrecomp 0.9.9）；在同一版本上我们自己的更新加 `-1`、`-2`……
-窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.18`。
+窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.19`。
 
 ## 与 ngbrecomp 的区别
 
@@ -71,6 +71,7 @@
 ## 从源码构建（Windows）
 
 本分支只使用并测试过下面的 Windows 构建流程。上游的 `tools/pipeline.sh`（Linux）不带飓风版需要的重编译选项，此处不支持。
+上游 ngbrecomp 另外支持 Linux 与 Apple Silicon macOS（实验性），见其说明 [docs/README-ngbrecomp.md](docs/README-ngbrecomp.md)；本分支均不支持。
 
 需要：llvm-mingw（UCRT，x86_64 Windows 宿主版）、`packaging/windows/deps.txt` 列出的 MSYS2 CLANG64 包（解压到 `<deps>/sysroot/clang64`）、
 CMake、Ninja、Git Bash，以及装有 `capstone` 的 Python。在 Git Bash 中：

@@ -436,7 +436,7 @@ std::string TexFetch(const PixelKey& k, int i) {
             return s;
         case 6:
         case 7:  // bump env map: signed du dv through the 2x2 matrix, 7 scales by luminance
-            s = (k.tex[in].flags & kTexSigned) ? F("float2 duv%d = t%u.rg;\n", i, in)
+            s = (k.tex[in].flags & kTexSigned) ? F("float2 duv%d = max((t%u.bg * 255 - 128) / 127, -1);\n", i, in)
                                                : F("float2 duv%d = sbyte(t%u.bgr, 0, 256, 127).xy;\n", i, in);
             s += put(sample2(F("%s.xy + float2(dot(bumpmat[%d].xz, duv%d), dot(bumpmat[%d].yw, duv%d))", q, i, i, i, i)));
             if (mode == 7) s += F("t%d *= bumplum[%d].x * t%u.r + bumplum[%d].y;\n", i, i, in, i);
@@ -920,6 +920,44 @@ std::string PixelHlsl(const PixelKey& k) {
     body += "alphatest(outc.a);\n" + Hooks().Output() + "return outc;\n}\n";
     s += body;
     return k.quad ? QuadHlsl(std::move(s)) : s;
+}
+
+// A point list's vertex shader (#51): Vulkan draws a point only as large as the shader says, so the
+// size D3D gives -- D3DRS_POINTSIZE, scaled with the distance when D3DRS_POINTSCALEENABLE is on, in the
+// console's pixels -- goes out in the render scale's, with the point's centre and size for a sprite's
+// pixel shader. kind: 0 a vertex program (its oPts), 1 fixed function (vp in view space), 2 pretransformed.
+// The fixed function sizes come in c[190] (size, min, max, scaling on) and c[191] (A, B, C, viewport
+// height), registers its draws leave unused.
+std::string PointHlsl(std::string s, int kind) {
+    auto put = [&](const char* at, const std::string& add, bool before) {
+        size_t i = s.find(at);
+        if (i != std::string::npos) s.insert(before ? i : i + std::strlen(at), add);
+    };
+    put("    float fogamt : TEXCOORD4;\n", "    [[vk::builtin(\"PointSize\")]] float psize : PSIZE;\n    float4 ptc : TEXCOORD5;\n", false);
+    std::string size;
+    if (kind == 0) {
+        size = "    float psz = oPts.x;\n";
+    } else {
+        size = "    float psz = c[190].x;\n";
+        if (kind == 1)   // D3D: Vh * size * sqrt(1 / (A + B De + C De^2)), De the distance from the eye
+            size += "    if (c[190].w != 0) psz *= c[191].w * rsqrt(max(c[191].x + c[191].y * length(vp) + c[191].z * dot(vp, vp), 1e-20));\n";
+        size += "    psz = clamp(psz, c[190].y, c[190].z);\n";
+    }
+    size += "    o.psize = max(psz * surf.w, 1);\n    o.ptc = float4(p.xy * surf.w, o.psize, 0);\n";
+    put("    o.fogamt = fogfactor(oFog.x);\n    return o;\n", size, true);
+    return s;
+}
+
+// A point sprite's pixel shader: every stage's coordinates run 0 to 1 across the point, top left first.
+std::string SpriteHlsl(std::string s) {
+    size_t i = s.find("    float fogamt : TEXCOORD4;\n");
+    if (i != std::string::npos) s.insert(i + std::strlen("    float fogamt : TEXCOORD4;\n"), "    float4 ptc : TEXCOORD5;\n");
+    const char* tc = "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
+    i = s.find(tc);
+    if (i != std::string::npos)
+        s.replace(i, std::strlen(tc), "    float4 spr = float4((i.pos.xy - i.ptc.xy) / i.ptc.z + 0.5, 0, 1);\n"
+                                      "    float4 tc0 = spr, tc1 = spr, tc2 = spr, tc3 = spr;\n");
+    return s;
 }
 
 std::string QuadHlsl(std::string s) {
