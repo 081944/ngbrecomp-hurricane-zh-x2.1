@@ -234,7 +234,7 @@ struct Target {
 
 struct Tex {
     Image img;
-    VkImageView snorm = VK_NULL_HANDLE;   // V8U8 (G8B8's code) read signed, for a bump map stage
+    Image sgn;                 // V8U8 (G8B8's code) for a bump map stage: its bytes ^ 0x80 (offset binary)
     int gen = -1;              // made with generated mipmaps (1), or as given (0)
     uint64_t sig = 0;          // the guest bytes (and palette) it was made from
     uint32_t used = 0;         // frame last used
@@ -1545,15 +1545,15 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     if (tx.img.image && tx.sig == sig && tx.img.w == d.width && tx.img.h == d.height &&
         (tx.gen == 2 || tx.gen == (mip_candidate ? 1 : 0))) {
         tx.used = frame_;
-        if (bump_src && tx.snorm) {
+        if (bump_src && tx.sgn.image) {
             info.flags |= kTexSigned;
-            return tx.snorm;
+            return tx.sgn.view;
         }
         return tx.img.view;
     }
     if (tx.img.image) {   // made again: the old one goes when no frame in flight uses it
-        Retire(tx.img, tx.snorm);
-        tx.snorm = VK_NULL_HANDLE;
+        Retire(tx.img);
+        if (tx.sgn.image) Retire(tx.sgn);
     }
     uint32_t faces = d.cube ? 6 : 1;
     VkFormat fmt = TextureFormat(fi.host);
@@ -1590,23 +1590,15 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     if (!CreateImage(tx.img, fmt, d.width, d.height, faces, levels, false, d.cube,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                         (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, twoch))
+                         (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, false))
         return VK_NULL_HANDLE;
-    if (twoch) {   // the same bytes (U V U V after decoding) as signed: r = U, g = V
-        VkImageViewCreateInfo vci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        vci.image = tx.img.image;
-        vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vci.format = VK_FORMAT_R8G8B8A8_SNORM;
-        vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, d.levels, 0, 1};
-        VkResult vr = d_.vkCreateImageView(dev_, &vci, nullptr, &tx.snorm);
-        if (vr != VK_SUCCESS) {   // said out loud: its bump maps are then read unsigned (water banding, #16)
-            tx.snorm = VK_NULL_HANDLE;
-            static int n;
-            if (n++ < 4)
-                std::fprintf(stderr, "[D3D] no signed view for a %ux%u bump map (format %X): VkResult %d\n",
-                             d.width, d.height, d.format, int(vr));
-        }
-    }
+    // A bump map's du dv are signed bytes, filtered as signed values. Kept beside the plain copy as
+    // offset binary (two's complement with the top bit flipped: 0 at 128), which a plain unsigned image
+    // filters the same way, linearly; the shader takes 128 back off. A signed view of the plain image
+    // did that on AMD, but drew the water as blotches on Nvidia (#16).
+    if (twoch && !CreateImage(tx.sgn, fmt, d.width, d.height, 1, levels, false, false,
+                              VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 1, false))
+        tx.sgn = Image{};
     tx.sig = sig;
     tx.used = frame_;
     // NGB_D3D_TEXDUMP=dir: the first textures' top level, as DDS (DXT) or PPM (BGRA), to check the data
@@ -1618,6 +1610,7 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     EndRendering();
     Barrier(tx.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    if (tx.sgn.image) Barrier(tx.sgn, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     std::vector<uint8_t> out;
     for (uint32_t f = 0; f < faces; f++)
         for (uint32_t l = 0; l < d.levels; l++) {
@@ -1631,6 +1624,11 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, f, 1};
             c.imageExtent = {std::max(d.width >> l, 1u), std::max(d.height >> l, 1u), 1};
             d_.vkCmdCopyBufferToImage(cmd_, ring_, tx.img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            if (tx.sgn.image) {
+                for (auto& b : out) b ^= 0x80;
+                c.bufferOffset = Upload(out.data(), out.size(), 16);
+                d_.vkCmdCopyBufferToImage(cmd_, ring_, tx.sgn.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            }
         }
     if (tx.gen == 1) {   // the rest of the chain, each level a 2:1 linear blit (a box filter) of the one above
         VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -1663,15 +1661,16 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         d_.vkCmdPipelineBarrier2(cmd_, &di);
     }
     Barrier(tx.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (tx.sgn.image) Barrier(tx.sgn, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     tx.info = info;
-    if (bump_src && tx.snorm) {
+    if (bump_src && tx.sgn.image) {
         info.flags |= kTexSigned;
-        return tx.snorm;
+        return tx.sgn.view;
     }
     if (bump_src) {   // debugging #16: a bump map read unsigned, converted after filtering (banding)
         static int n;
         if (n++ < 4)
-            std::fprintf(stderr, "[D3D] bump map %08X (format %X %ux%u) read unsigned: no signed view\n", d.data,
+            std::fprintf(stderr, "[D3D] bump map %08X (format %X %ux%u) read unsigned: no signed copy\n", d.data,
                          d.format, d.width, d.height);
     }
     return tx.img.view;

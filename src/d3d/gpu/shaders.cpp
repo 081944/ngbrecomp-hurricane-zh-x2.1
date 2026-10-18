@@ -436,7 +436,7 @@ std::string TexFetch(const PixelKey& k, int i) {
             return s;
         case 6:
         case 7:  // bump env map: signed du dv through the 2x2 matrix, 7 scales by luminance
-            s = (k.tex[in].flags & kTexSigned) ? F("float2 duv%d = t%u.rg;\n", i, in)
+            s = (k.tex[in].flags & kTexSigned) ? F("float2 duv%d = max((t%u.bg * 255 - 128) / 127, -1);\n", i, in)
                                                : F("float2 duv%d = sbyte(t%u.bgr, 0, 256, 127).xy;\n", i, in);
             s += put(sample2(F("%s.xy + float2(dot(bumpmat[%d].xz, duv%d), dot(bumpmat[%d].yw, duv%d))", q, i, i, i, i)));
             if (mode == 7) s += F("t%d *= bumplum[%d].x * t%u.r + bumplum[%d].y;\n", i, i, in, i);
