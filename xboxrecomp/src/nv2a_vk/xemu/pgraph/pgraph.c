@@ -549,14 +549,15 @@ static void method_stats(unsigned int graphics_class, unsigned int method)
     memset(counts, 0, sizeof(counts));
 }
 
-static void pgraph_method_log(unsigned int subchannel,
-                              unsigned int graphics_class,
-                              unsigned int method, uint32_t parameter)
+static int s_method_log = -1;   /* any of the debugging switches below set */
+
+static void pgraph_method_log_slow(unsigned int subchannel,
+                                   unsigned int graphics_class,
+                                   unsigned int method, uint32_t parameter)
 {
     const char *method_name = "?";
     static unsigned int last = 0;
     static unsigned int count = 0;
-
     method_stats(graphics_class, method);
     {
         /* NV2A_CLEAR_LOG=N: the first N clear-related method parameters. */
@@ -653,6 +654,18 @@ static void pgraph_method_log(unsigned int subchannel,
         count = 0;
     }
     last = method;
+}
+
+/* Only debugging switches use the log (the traces are empty here), and it is called for every method
+ * the title sends: without any of them, not even called -- it was 3% of the profile in busy scenes. */
+static inline __attribute__((always_inline)) void pgraph_method_log(unsigned int subchannel, unsigned int graphics_class,
+                                     unsigned int method, uint32_t parameter)
+{
+    if (__builtin_expect(s_method_log < 0, 0))
+        s_method_log = getenv("NV2A_METHOD_STATS") || getenv("NV2A_CLEAR_LOG") || getenv("NV2A_WATCH") ||
+                       getenv("NV2A_NANWATCH");
+    if (s_method_log)
+        pgraph_method_log_slow(subchannel, graphics_class, method, parameter);
 }
 
 static void pgraph_method_inc(MethodFunc handler, uint32_t end,

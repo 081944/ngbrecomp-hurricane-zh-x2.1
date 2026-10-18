@@ -1,6 +1,4 @@
-> The README of upstream [ngbrecomp](https://github.com/gamboozino/ngbrecomp) (gamboozino) as of v0.9.13 (916f27a), kept for reference. It describes the retail build; this branch is the vb-zh-x2.1 port: see the [README](../README.md).
-
-![Ninja Gaiden Black Recompiled](images/banner.jpg)
+![Ninja Gaiden Black Recompiled](docs/images/banner.jpg)
 
 # Ninja Gaiden Black Recompiled
 
@@ -114,8 +112,9 @@ Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
   automatically.
 - **Steam Deck:** do the first start (installing the game) in Desktop Mode. In Game Mode the window
   to choose your disc image cannot open, and the game closes (#11).
-- The **Ninja Gaiden arcade cabinet** in Han's bar has been reported to crash on 0.9.5 (#18); 0.9.6
-  and later may fix it.
+- The **Ninja Gaiden arcade cabinet** in Han's bar does not work: the game closes when you play it
+  (#18). The NES games are a separate program on the disc (`NinjaTrilogy.xbe`) that the Xbox switches
+  to, and only Ninja Gaiden Black itself is recompiled. Save before trying it.
 - At **21:9**, objects at the far left and right of the screen can appear a moment late (the game
   decides what to draw for a narrower view).
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
@@ -145,8 +144,8 @@ build/linux/NinjaGaidenBlack
 Packages: `packaging/appimage/build.sh` (in a Docker container, for an AppImage that runs on older
 systems) and `packaging/windows/build.sh` (cross-compiled from Linux with llvm-mingw).
 
-How it works, and the details of every feature: [docs/TECHNICAL.md](TECHNICAL.md) and
-[docs/renderer.md](renderer.md). For contributors and coding agents: [AGENTS.md](../AGENTS.md).
+How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNICAL.md) and
+[docs/renderer.md](docs/renderer.md). For contributors and coding agents: [AGENTS.md](AGENTS.md).
 
 ## Credits
 
@@ -177,5 +176,5 @@ Tecmo or Team Ninja.
 This project's code is free software: you can redistribute it and/or modify it under the terms of
 the GNU General Public License as published by the Free Software Foundation, either version 2 of the
 License, or (at your option) any later version (`GPL-2.0-or-later`; the text of version 2 is in
-[LICENSE](../LICENSE)). It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
-The parts it is built from keep their own licenses: see [THIRD_PARTY.md](../THIRD_PARTY.md).
+[LICENSE](LICENSE)). It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
+The parts it is built from keep their own licenses: see [THIRD_PARTY.md](THIRD_PARTY.md).

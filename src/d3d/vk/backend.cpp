@@ -198,7 +198,8 @@ void DecodeBC(Host h, const uint8_t* src, uint32_t w, uint32_t h_, std::vector<u
 constexpr VkDeviceSize kRingSize = 64u << 20;   // vertices, indices and constants of one frame
 constexpr uint32_t kQuadVertices = 6;
 extern "C" float ngb_hud_shape(void);   // src/pc_menu.c: the menus' and HUD's narrowing
-extern "C" int ngb_2d_stretched(void);  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
+extern "C" int ngb_2d_stretched(void);
+extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
 extern "C" int ngb_2d_screen_frame(int threed);   // src/pc_menu.c: a 2D screen (a menu, the title, a chapter
                                                 // card), knowing the 3D this frame has drawn so far
 // This frame's draws into display-sized targets, all and 3D (src/pc_menu.c: a frame of next to no 3D is a
@@ -345,6 +346,8 @@ private:
     // at scale_ times their size, small depth-only ones (shadow maps) at shadow_ times
     int scale_ = 1, shadow_ = 1, aniso_level_ = 0, msaa_ = 1;
     bool anisotropy_ = false;
+    bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
+    float line_max_ = 1.0f;
     VkSampleCountFlags ms_counts_ = VK_SAMPLE_COUNT_1_BIT;   // the device's for colour and depth together
     void ReadQuality();
     float hud_cover_ = 0;      // this frame's 2D picture area, in screens
@@ -381,6 +384,7 @@ private:
     uint32_t threed_ = 0, threed_prev_ = 0;   // 3D draws into the back buffer, this frame and the one before:
                                               // a screen with them is play (an underwater overlay is no menu)
     VolkDeviceTable d_{};
+    std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> sig_memo_;   // texture bytes' signature this frame
 
     // the title's visibility tests (the sun's lens flare, #35): each draw in one counted by an occlusion query,
     // per frame slot; when the slot's frame is done, the counts summed per test, in console pixels, and
@@ -591,6 +595,11 @@ bool VulkanBackend::CreateDevice() {
     f2.features.samplerAnisotropy = VK_TRUE;
     f2.features.fillModeNonSolid = VK_TRUE;
     f2.features.textureCompressionBC = VK_TRUE;
+    {
+        VkPhysicalDeviceFeatures have;
+        vkGetPhysicalDeviceFeatures(phys_, &have);
+        f2.features.wideLines = have.wideLines;
+    }
     const char* exts[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME};
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &f2;
@@ -628,16 +637,28 @@ bool VulkanBackend::FinishDevice() {
     ai.pVulkanFunctions = &fns;
     VKCHECK(vmaCreateAllocator(&ai, &vma_));
 
+    // Float depth where the device has it: the shadow test compares the game's depth, a float here,
+    // against the map, and a 24-bit map rounds what it stores, so a surface testing against its own
+    // depth came out shadowed at random texels -- blotches over everything, on Nvidia only, which
+    // has D24 (#16, #29). NGB_D3D_DEPTH24=1: the 24-bit one, to compare.
     VkFormatProperties fp;
-    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D24_UNORM_S8_UINT, &fp);
+    bool d24 = std::getenv("NGB_D3D_DEPTH24") != nullptr;
+    vkGetPhysicalDeviceFormatProperties(phys_, VK_FORMAT_D32_SFLOAT_S8_UINT, &fp);
+    ds_format_ = !d24 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                     ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D24_UNORM_S8_UINT;
+    vkGetPhysicalDeviceFormatProperties(phys_, ds_format_, &fp);
     if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
-        ds_format_ = VK_FORMAT_D32_SFLOAT_S8_UINT;
+        ds_format_ = ds_format_ == VK_FORMAT_D24_UNORM_S8_UINT ? VK_FORMAT_D32_SFLOAT_S8_UINT
+                                                                : VK_FORMAT_D24_UNORM_S8_UINT;
+    std::fprintf(stderr, "[D3D] depth: %s\n", ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT ? "32-bit float" : "24-bit");
     VkPhysicalDeviceProperties pr;
     vkGetPhysicalDeviceProperties(phys_, &pr);
     ringAlign_ = std::max<VkDeviceSize>(pr.limits.minUniformBufferOffsetAlignment, 16);
     VkPhysicalDeviceFeatures feat;
     vkGetPhysicalDeviceFeatures(phys_, &feat);   // both devices enable it when it is there
     anisotropy_ = feat.samplerAnisotropy == VK_TRUE;
+    wide_lines_ = feat.wideLines == VK_TRUE;
+    line_max_ = pr.limits.lineWidthRange[1];
     ms_counts_ = pr.limits.framebufferColorSampleCounts & pr.limits.framebufferDepthSampleCounts &
                  pr.limits.framebufferStencilSampleCounts;
     ReadQuality();
@@ -694,8 +715,8 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
             // drawing (unseen) for comparisons
             if (!std::getenv("NGB_D3D_KEEP_NV2A")) nv2a_vk_set_draws_off(true);
         } else {
-            std::fprintf(stderr, "[D3D] the NV2A renderer's device cannot be shared (%s): drawing unseen\n",
-                         st == 1 ? "no Vulkan 1.3 dynamic rendering or push descriptors" : "no device");
+            ngb_renderer_fatal(st == 1 ? "The GPU's Vulkan driver has no Vulkan 1.3 dynamic rendering or push descriptors."
+                                       : "No Vulkan device could be used.");
         }
     }
     if (!shared_ && (!CreateInstance() || !CreateDevice())) return false;
@@ -1477,7 +1498,22 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     // the texture's bytes and palette
     uint32_t bytes = TotalSize(d);
     const uint8_t* guest = static_cast<const uint8_t*>(HostPtr(d.data));
-    uint64_t sig = Hash(guest, bytes, uint64_t(d.format) << 32 | d.width << 16 | d.height);
+    // its bytes' signature, once a frame: hashed again at every draw that used it, it was a tenth of the
+    // game thread's time in busy scenes (#17); a texture rewritten between two draws of one frame is seen
+    // changed from the next frame on
+    uint64_t sig;
+    {
+        uint64_t mk = uint64_t(d.data) << 32 ^ uint64_t(d.format) << 24 ^ uint64_t(d.width) << 12 ^ d.height ^
+                      uint64_t(bytes) << 40;
+        auto& m = sig_memo_[mk];
+        if (m.first == frame_ + 1) {
+            sig = m.second;
+        } else {
+            sig = Hash(guest, bytes, uint64_t(d.format) << 32 | d.width << 16 | d.height);
+            m = {frame_ + 1, sig};
+        }
+        if (sig_memo_.size() > 65536) sig_memo_.clear();
+    }
     const uint32_t* palette = nullptr;
     if (d.format == 0x0B && s.palettes[size_t(stage)]) {
         uint32_t pal = s.palettes[size_t(stage)];
@@ -1827,6 +1863,9 @@ VkPipeline VulkanBackend::Pipeline(const PipeKey& k) {
     return pipe;
 }
 
+// Lines, or triangles drawn as their edges: the pipelines with a line width.
+static bool Lines(const PipeKey& k) { return k.topo == 1 || k.fill == 0x1B01; }
+
 VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkShaderModule ps) {
     VkPipeline pipe = VK_NULL_HANDLE;
     if (vs && ps) {
@@ -1894,10 +1933,11 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
         VkPipelineColorBlendStateCreateInfo cbs{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
         cbs.attachmentCount = k.has_rt ? 1 : 0;
         cbs.pAttachments = &cb;
+        // the line width only on the line pipelines: the others, nearly all, stay as the caches have them
         VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
-                                VK_DYNAMIC_STATE_STENCIL_REFERENCE};
+                                VK_DYNAMIC_STATE_STENCIL_REFERENCE, VK_DYNAMIC_STATE_LINE_WIDTH};
         VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-        dy.dynamicStateCount = 4;
+        dy.dynamicStateCount = Lines(k) ? 5 : 4;
         dy.pDynamicStates = dyn;
         VkFormat cf = kColorFormat;
         VkPipelineRenderingCreateInfo pr{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
@@ -2501,6 +2541,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     Color(SimpleState(s, kMBlendColor), bf);
     d_.vkCmdSetBlendConstants(cmd_, bf);
     d_.vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, SimpleState(s, kMStencilRef) & 0xFF);
+    if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale
+        d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx, 1.0f, line_max_) : 1.0f);
 
     VkBuffer bufs[16];
     for (uint32_t b = 0; b < a.buffer_count; b++) bufs[b] = ring_;
@@ -2535,7 +2577,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::fprintf(trace_, "%u %u prim %u n %u pre %d prog %d ps %08X blend %u %X %X %X wm %X z %u%u%X st %u "
                      "rt %08X %ux%u tex0 %08X @%08X %X %ux%u%s tex1 %08X %X tss0 %u %u %u %u|%u %u %u tss1 %u %u %u|%u "
                      "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X signed %u%u%u%u uv %s "
-                     "shaders %016llx %016llx light %X spec %g %g %g pow %g\n",
+                     "shaders %016llx %016llx light %X spec %g %g %g pow %g csign %X %X %X %X lw %08X\n",
                      presents_, st_.drawn, prim, count, a.pretransformed, prog, s.ps ? s.ps->handle : 0, k.blend, k.src,
                      k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten, s.rt.data, rt ? rt->gw : 0, rt ? rt->gh : 0,
                      s.textures[0], h0 ? t0d.data : 0, h0 ? t0d.format : 0, h0 ? t0d.width : 0, h0 ? t0d.height : 0,
@@ -2571,7 +2613,10 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                          }
                          return o;
                      }().c_str(), (unsigned long long)k.vs, (unsigned long long)k.ps,   // NGB_D3D_SHADERDUMP's names
-                     prog ? 0u : MakeFixedKey(s).light, s.material[8], s.material[9], s.material[10], s.material[16]);
+                     prog ? 0u : MakeFixedKey(s).light, s.material[8], s.material[9], s.material[10], s.material[16],
+                     s.tss[0][kTssColorSign] >> 28, s.tss[1][kTssColorSign] >> 28, s.tss[2][kTssColorSign] >> 28,
+                     s.tss[3][kTssColorSign] >> 28,   // D3DTSS_COLORSIGN: A R G B signed, bits 0-3
+                     s.rs[kRsLineWidth]);
     }
     if (int(presents_) == g_step_frame)
         std::fprintf(stderr, "[STEP] %u prim %u count %u pre %d prog %d ps %08X blend %u %X %X op %X wmask %X zen %u "

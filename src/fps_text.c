@@ -8,6 +8,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define STBTT_STATIC
@@ -31,8 +33,38 @@ static uint32_t mix(uint32_t bg, uint32_t fg, unsigned a)
     return out;
 }
 
+static bool fps_rasterize(const char *text, uint32_t line_px, uint32_t *px, uint32_t maxw, uint32_t maxh,
+                          uint32_t *ow, uint32_t *oh);
+
+/* Called at every present, for each frame's buffer; the text changes twice a second. Rasterized once and
+ * copied after: drawing it every frame was 9% of the game thread's time with the counter on. */
 bool nv2a_fps_render(const char *text, uint32_t line_px, uint32_t *px, uint32_t maxw, uint32_t maxh,
                      uint32_t *ow, uint32_t *oh)
+{
+    static char last[64];
+    static uint32_t last_line, last_mw, last_mh, w, h;
+    static uint32_t *cache;
+    static bool ok;
+
+    if (!cache || strncmp(text, last, sizeof last) || line_px != last_line || maxw != last_mw || maxh != last_mh) {
+        uint32_t *grown = realloc(cache, (size_t)maxw * maxh * 4);
+        if (!grown)
+            return fps_rasterize(text, line_px, px, maxw, maxh, ow, oh);
+        cache = grown;
+        snprintf(last, sizeof last, "%s", text);
+        last_line = line_px, last_mw = maxw, last_mh = maxh;
+        ok = fps_rasterize(text, line_px, cache, maxw, maxh, &w, &h);
+    }
+    if (!ok)
+        return false;
+    memcpy(px, cache, (size_t)w * h * 4);
+    *ow = w;
+    *oh = h;
+    return true;
+}
+
+static bool fps_rasterize(const char *text, uint32_t line_px, uint32_t *px, uint32_t maxw, uint32_t maxh,
+                          uint32_t *ow, uint32_t *oh)
 {
     static stbtt_fontinfo font;
     static int ready = -1;

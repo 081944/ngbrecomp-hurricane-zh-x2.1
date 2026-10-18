@@ -41,7 +41,9 @@ No game data is included. You need your own copy of the game and the x2.1 patch.
   Exit page and dialogs) in Chinese while the game's text language is Asia (the x2.1 default).
 
 Not included: the SFC Ninja Gaiden trilogy and the arcade game. They are separate programs that are
-not recompiled, so their main-menu entries are hidden.
+not recompiled, so their main-menu entries are hidden. The Ninja Gaiden arcade cabinet in Han's bar
+is that same separate program and does not work either: the game closes when you play it (upstream #18).
+Save before trying it.
 
 ## Getting started (Windows)
 
@@ -56,7 +58,7 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.14`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.18`.
 
 ## Changes from ngbrecomp
 
