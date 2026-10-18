@@ -10403,6 +10403,40 @@ loc_003CA7DB: ;
 }
 
 /**
+ * sub_003CAE80
+ * Original: 0x003CAE80 - 0x003CAEAD (45 bytes, 9 insns)
+ * D3D's write-combine flush before each kick-off: set the flush bit of NV_PFB_WC_CACHE (0x100410) and
+ * read it until the GPU clears it. Three trapped register accesses, about 1300 times a second -- most
+ * of the GPU's register traffic. Here the CPU's writes are in memory the GPU model reads directly, with
+ * nothing in between to flush, so it only leaves eax as the original does (the register base). Not on
+ * Windows by default: its players saw texture and white flashes in 0.9.20 (#16), the first version
+ * without the flush. NGB_WC_FLUSH=1 or 0: the flush, or none, on either.
+ */
+void sub_003CAE80(void)
+{
+    RECOMP_ENTRY(0x003CAE80u);
+    static int flush = -1;
+    if (flush < 0) {
+        extern char *getenv(const char *);
+        const char *e = getenv("NGB_WC_FLUSH");
+#if defined(_WIN32)
+        flush = !(e && *e == '0');
+#else
+        flush = e && *e == '1';
+#endif
+    }
+    eax = MEM32(0x3D83C8);
+    eax = MEM32(eax + 0x1C28);
+    if (flush) {
+        ecx = MEM32(eax + 0x100410) | 0x10000;
+        MEM32(eax + 0x100410) = ecx;
+        while (MEM32(eax + 0x100410) & 0x10000)
+            RECOMP_SPIN(0x003CAEA0u);
+    }
+    esp += 4; return; /* ret */
+}
+
+/**
  * sub_003CAA10
  * Original: 0x003CAA10 - 0x003CAB76 (358 bytes, 117 insns)
  * Category: game_render
@@ -10604,6 +10638,29 @@ loc_003CAB35: ;
     eax = eax - edi;
     _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* sub result */
     /* nop */
+    /* the loop below polls the GPU's progress (a semaphore it writes to memory) until it has reached
+     * the point: asleep in the GPU model instead, which wakes it when the GPU writes it; the loop then
+     * reads once and goes on with its registers as the console would have them. Not on Windows by
+     * default: there, 0.9.20's players saw the Game Over fade drop from 30 to 17 fps and play turn
+     * choppy (#43, #17), which Linux, Proton and the virtual machine here do not show.
+     * NGB_GPU_WAIT=1 or 0: the sleep, or the polling loop, on either. */
+    {
+        extern void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead);
+        extern void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead);
+        extern int g_ngb_gpu_model;
+        static int sleep_wait = -1;
+        if (sleep_wait < 0) {
+            extern char *getenv(const char *);
+            const char *e = getenv("NGB_GPU_WAIT");
+#if defined(_WIN32)
+            sleep_wait = e && *e == '1';
+#else
+            sleep_wait = !(e && *e == '0');
+#endif
+        }
+        if (sleep_wait && g_ngb_gpu_model && edx == 0xFD800044u) nv2a_vk_wait_dma_get(esi, eax);
+        else if (sleep_wait && g_ngb_gpu_model) nv2a_vk_wait_progress((const uint32_t *)XBOX_PTR(edx), esi, eax);
+    }
 
 loc_003CAB40: ;
     ecx = MEM32(edx);

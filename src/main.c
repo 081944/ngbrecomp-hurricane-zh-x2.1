@@ -61,6 +61,9 @@ extern int ngb_skip_intro;
 extern void ngb_movie_read(const char *host_path);
 extern void (*xbox_FileReadHook)(const char *host_path, uint64_t offset, size_t len);
 
+/* The GPU model is running: it wakes a title waiting on the GPU's progress (src/d3d/d3d_orig.c). */
+int g_ngb_gpu_model;
+
 /* Skipping the boot "Warnings" screen (always; NGB_KEEP_WARNINGS=1 shows it). The screen reads
  * its assets from demo.afs (the last of them at offset 0x151000) and then
  * nothing until it ends; the title it leads to starts with more reads. So
@@ -533,6 +536,18 @@ static void prof_report(void)
 
     if (!n)
         return;
+    /* NGB_PROFILE_RAW=<file>: every sample as its file and offset in it, for nm to name what dladdr
+     * cannot (static functions) */
+    if (getenv("NGB_PROFILE_RAW")) {
+        FILE *raw = fopen(getenv("NGB_PROFILE_RAW"), "w");
+        for (unsigned long i = 0; raw && i < n; i++) {
+            Dl_info di;
+            if (dladdr((void *)s_prof_pc[i], &di) && di.dli_fname)
+                fprintf(raw, "%s %lx\n", di.dli_fname, (unsigned long)(s_prof_pc[i] - (uintptr_t)di.dli_fbase));
+        }
+        if (raw)
+            fclose(raw);
+    }
     e = calloc(n, sizeof(*e));
     for (unsigned long i = 0; i < n; i++) {
         Dl_info di;
@@ -761,6 +776,7 @@ static void *guest_main(void *unused)
             fprintf(stderr, "Cannot start the GPU.\n");
             exit(1);
         }
+        g_ngb_gpu_model = 1;   /* D3D_BlockOnTime sleeps on its progress (src/d3d/d3d_orig.c) */
     } else
 #endif
     {

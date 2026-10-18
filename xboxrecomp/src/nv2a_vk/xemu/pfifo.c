@@ -21,6 +21,8 @@
 
 #include "nv2a_int.h"
 
+void nv2a_vk_progress(void);
+
 typedef struct RAMHTEntry {
     uint32_t handle;
     hwaddr instance;
@@ -427,7 +429,8 @@ static void pfifo_run_pusher(NV2AState *d)
             }
         }
 
-        *dma_get = dma_get_v;
+        __atomic_store_n(dma_get, dma_get_v, __ATOMIC_SEQ_CST);
+        nv2a_vk_progress();   /* a title waiting for the GPU (host/nv2a_host.c) */
 
         if (GET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_ERROR)) {
             break;
