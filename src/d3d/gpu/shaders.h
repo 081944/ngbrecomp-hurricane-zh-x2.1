@@ -18,7 +18,7 @@ struct TexInfo {
 };
 enum : uint8_t {
     kTexWide = 4,  // an upscaled target shrunk by the pass: each tap averaged over console texels
-    kTexSigned = 8,  // a bump map read from its offset binary copy: b g are du dv + 128 (in bytes)
+    kTexSigned = 8,  // a bump map (V8U8): its du dv decoded texel by texel in the shader (bumpduv)
 };
 
 struct PixelKey {

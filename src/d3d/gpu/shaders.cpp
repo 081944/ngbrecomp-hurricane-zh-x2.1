@@ -393,12 +393,19 @@ std::string TexFetch(const PixelKey& k, int i) {
     const std::string tc = F("tc%d", i);
     const char* q = tc.c_str();
     std::string norm = (t.rect ? F(" / texsize[%d].xy", i) : "") + F(" + texsize[%d].zw", i);
-    auto put = [&](const std::string& v) { return F("float4 t%d = %s;\n", i, v.c_str()); };
+    std::string uv2d;   // the last 2D sample's coordinates, for a bump map's decoded fetch
+    auto put = [&](const std::string& v) {
+        std::string r = F("float4 t%d = %s;\n", i, v.c_str());
+        if ((t.flags & kTexSigned) && !uv2d.empty())   // a bump map: its du dv, each texel decoded first (bumpduv)
+            r += F("float2 duv%d = bumpduv(tex%d, smp%d, %s);\n", i, i, i, uv2d.c_str());
+        return r;
+    };
     // dpN, or dpNn for stage N + 1's product taken early
     auto dp = [&](int n, int coord, uint32_t map, uint32_t src) {
         return F("float dp%d%s = dot(tc%d.xyz, %s);\n", n, coord == n ? "" : "n", coord, DotInput(map, src).c_str());
     };
     auto tex2d = [&](const std::string& uv) {
+        uv2d = uv;
         if (t.flags & kTexWide) return F("spreadtap(tex%d, smp%d, %s, spread[%d], %s)", i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
         return F("tex%d.Sample(smp%d, %s)", i, i, uv.c_str());
     };
@@ -436,7 +443,7 @@ std::string TexFetch(const PixelKey& k, int i) {
             return s;
         case 6:
         case 7:  // bump env map: signed du dv through the 2x2 matrix, 7 scales by luminance
-            s = (k.tex[in].flags & kTexSigned) ? F("float2 duv%d = max((t%u.bg * 255 - 128) / 127, -1);\n", i, in)
+            s = (k.tex[in].flags & kTexSigned) ? F("float2 duv%d = duv%u;\n", i, in)
                                                : F("float2 duv%d = sbyte(t%u.bgr, 0, 256, 127).xy;\n", i, in);
             s += put(sample2(F("%s.xy + float2(dot(bumpmat[%d].xz, duv%d), dot(bumpmat[%d].yw, duv%d))", q, i, i, i, i)));
             if (mode == 7) s += F("t%d *= bumplum[%d].x * t%u.r + bumplum[%d].y;\n", i, i, in, i);
@@ -464,6 +471,36 @@ std::string TexFetch(const PixelKey& k, int i) {
 const char* kPsSbyte = R"(
 // unorm to byte b, less lo under 128 or hi from 128, over d
 float3 sbyte(float3 u, float lo, float hi, float d) { float3 b = u * 255; return (b - (b >= 128 ? hi : lo)) / d; }
+// A bump map's du dv (V8U8: two signed bytes a texel). The texels are read whole and each decoded before
+// the filtering: filtered as the unsigned bytes they are stored as, two texels either side of zero blend
+// through the wrong range. Bilinear within the level the sampler would pick, linear on to the next, and
+// wrapping, as the ripple maps tile. (A second image holding the bytes offset by 128, and before it a
+// signed view of the plain one, filtered right on AMD but came out as the raw bytes on Nvidia, #16.)
+float2 bumptexel(Texture2D t, int2 p, int2 dim, int level) {
+    p = (p % dim + dim) % dim;
+    float2 b = t.Load(int3(p, level)).bg * 255;
+    return max((b - (b >= 128 ? 256 : 0)) / 127, -1);
+}
+float2 bumplevel(Texture2D t, float2 uv, int level) {
+    uint w, h, n;
+    t.GetDimensions(0, w, h, n);
+    int2 dim = max(int2(w, h) >> level, 1);
+    float2 p = uv * dim - 0.5;
+    int2 i0 = int2(floor(p));
+    float2 f = p - floor(p);
+    float2 a = bumptexel(t, i0, dim, level), b = bumptexel(t, i0 + int2(1, 0), dim, level);
+    float2 c = bumptexel(t, i0 + int2(0, 1), dim, level), d = bumptexel(t, i0 + int2(1, 1), dim, level);
+    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+float2 bumpduv(Texture2D t, SamplerState s, float2 uv) {
+    uint w, h, n;
+    t.GetDimensions(0, w, h, n);
+    float lod = clamp(t.CalculateLevelOfDetail(s, uv), 0, float(n) - 1);
+    int l0 = int(floor(lod));
+    float2 r = bumplevel(t, uv, l0);
+    if (lod > l0) r = lerp(r, bumplevel(t, uv, min(l0 + 1, int(n) - 1)), lod - l0);
+    return r;
+}
 )";
 const char* kPsTail = R"(float4 spreadtap(Texture2D t, SamplerState s, float2 uv, float4 w, float m) {
     float4 c = 0;

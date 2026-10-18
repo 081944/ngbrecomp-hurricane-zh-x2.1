@@ -234,7 +234,6 @@ struct Target {
 
 struct Tex {
     Image img;
-    Image sgn;                 // V8U8 (G8B8's code) for a bump map stage: its bytes ^ 0x80 (offset binary)
     int gen = -1;              // made with generated mipmaps (1), or as given (0)
     uint64_t sig = 0;          // the guest bytes (and palette) it was made from
     uint32_t used = 0;         // frame last used
@@ -1530,8 +1529,8 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     uint64_t key = uint64_t(d.data) << 8 | d.format;
     Tex& tx = textures_[key];
-    // a bump map (the next stage's texture mode 6 or 7 reads this one): V8U8 read signed, so that the
-    // filter blends signed values (as unsigned, texels either side of zero blend through the wrong range)
+    // a bump map (the next stage's texture mode 6 or 7 reads this one): V8U8, its signed bytes decoded
+    // texel by texel in the shader (gpu/shaders.cpp bumpduv), not by the sampler's filter
     bool bump_src = s.ps && stage < 3 && (d.format == 0x28 || d.format == 0x17) && [&] {
         uint32_t m = (s.rs[kRsPsTextureModes] >> ((stage + 1) * 5)) & 0x1F;
         return m == 6 || m == 7;
@@ -1548,19 +1547,12 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     if (tx.img.image && tx.sig == sig && tx.img.w == d.width && tx.img.h == d.height &&
         (tx.gen == 2 || tx.gen == (mip_candidate ? 1 : 0))) {
         tx.used = frame_;
-        if (bump_src && tx.sgn.image) {
-            info.flags |= kTexSigned;
-            return tx.sgn.view;
-        }
+        if (bump_src) info.flags |= kTexSigned;
         return tx.img.view;
     }
-    if (tx.img.image) {   // made again: the old one goes when no frame in flight uses it
-        Retire(tx.img);
-        if (tx.sgn.image) Retire(tx.sgn);
-    }
+    if (tx.img.image) Retire(tx.img);   // made again: the old one goes when no frame in flight uses it
     uint32_t faces = d.cube ? 6 : 1;
     VkFormat fmt = TextureFormat(fi.host);
-    bool twoch = (d.format == 0x28 || d.format == 0x17) && fmt == VK_FORMAT_B8G8R8A8_UNORM && !d.cube;
     uint32_t levels = d.levels;
     std::vector<uint8_t> top;
     tx.gen = 0;
@@ -1595,13 +1587,6 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                          (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, false))
         return VK_NULL_HANDLE;
-    // A bump map's du dv are signed bytes, filtered as signed values. Kept beside the plain copy as
-    // offset binary (two's complement with the top bit flipped: 0 at 128), which a plain unsigned image
-    // filters the same way, linearly; the shader takes 128 back off. A signed view of the plain image
-    // did that on AMD, but drew the water as blotches on Nvidia (#16).
-    if (twoch && !CreateImage(tx.sgn, fmt, d.width, d.height, 1, levels, false, false,
-                              VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 1, false))
-        tx.sgn = Image{};
     tx.sig = sig;
     tx.used = frame_;
     // NGB_D3D_TEXDUMP=dir: the first textures' top level, as DDS (DXT) or PPM (BGRA), to check the data
@@ -1613,7 +1598,6 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     EndRendering();
     Barrier(tx.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    if (tx.sgn.image) Barrier(tx.sgn, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     std::vector<uint8_t> out;
     for (uint32_t f = 0; f < faces; f++)
         for (uint32_t l = 0; l < d.levels; l++) {
@@ -1627,11 +1611,6 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, f, 1};
             c.imageExtent = {std::max(d.width >> l, 1u), std::max(d.height >> l, 1u), 1};
             d_.vkCmdCopyBufferToImage(cmd_, ring_, tx.img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
-            if (tx.sgn.image) {
-                for (auto& b : out) b ^= 0x80;
-                c.bufferOffset = Upload(out.data(), out.size(), 16);
-                d_.vkCmdCopyBufferToImage(cmd_, ring_, tx.sgn.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
-            }
         }
     if (tx.gen == 1) {   // the rest of the chain, each level a 2:1 linear blit (a box filter) of the one above
         VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -1664,18 +1643,8 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         d_.vkCmdPipelineBarrier2(cmd_, &di);
     }
     Barrier(tx.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    if (tx.sgn.image) Barrier(tx.sgn, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     tx.info = info;
-    if (bump_src && tx.sgn.image) {
-        info.flags |= kTexSigned;
-        return tx.sgn.view;
-    }
-    if (bump_src) {   // debugging #16: a bump map read unsigned, converted after filtering (banding)
-        static int n;
-        if (n++ < 4)
-            std::fprintf(stderr, "[D3D] bump map %08X (format %X %ux%u) read unsigned: no signed copy\n", d.data,
-                         d.format, d.width, d.height);
-    }
+    if (bump_src) info.flags |= kTexSigned;
     return tx.img.view;
 }
 
@@ -2108,16 +2077,16 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::string src = PixelHlsl(pk);
         if (sprite) src = SpriteHlsl(std::move(src));
         // NGB_D3D_PSDEBUG=bump | duv | copy: the water's draws only (a bump map in stage 0 displacing stage
-        // 2's texture, #16): the ripple texture as sampled (u red, v green), the displacement it gives
-        // (grey = none), or stage 2's texture undisplaced (the copy of the screen the water refracts)
+        // 2's texture, #16): the ripple texture's raw bytes as sampled (u red, v green: two-tone, as small
+        // signed values look unsigned), the displacement decoded from it (grey = none), or stage 2's
+        // texture undisplaced (the copy of the screen the water refracts)
         bool water_dbg = psdbg && (!std::strcmp(psdbg, "bump") || !std::strcmp(psdbg, "duv") || !std::strcmp(psdbg, "copy"));
         bool water_draw = (pk.tex[0].flags & kTexSigned) && pk.tex[2].kind;
         if (psdbg && (!water_dbg || water_draw)) {
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
                 : !std::strcmp(psdbg, "bump") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w); return float4(t0.b, t0.g, 0, 1);"
-                : !std::strcmp(psdbg, "duv") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w);"
-                                               " float2 d = max((t0.bg * 255 - 128) / 127, -1); return float4(d * 0.5 + 0.5, 0, 1);"
+                : !std::strcmp(psdbg, "duv") ? "float2 d = bumpduv(tex0, smp0, i.tc0.xy / i.tc0.w); return float4(d * 0.5 + 0.5, 0, 1);"
                 : !std::strcmp(psdbg, "copy") ? "return float4(tex2.Sample(smp2, i.tc2.xy + texsize[2].zw).rgb, 1);"
                 : !std::strcmp(psdbg, "tex") ? "return float4(tex0.Sample(smp0, i.tc0.xy).rgb, 1);"
                 : !std::strcmp(psdbg, "uv") ? "return float4(frac(i.tc0.xy), 0, 1);"
