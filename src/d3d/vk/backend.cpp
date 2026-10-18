@@ -2107,9 +2107,18 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     VkShaderModule pmod = Module(pkey, [&] {
         std::string src = PixelHlsl(pk);
         if (sprite) src = SpriteHlsl(std::move(src));
-        if (psdbg) {
+        // NGB_D3D_PSDEBUG=bump | duv | copy: the water's draws only (a bump map in stage 0 displacing stage
+        // 2's texture, #16): the ripple texture as sampled (u red, v green), the displacement it gives
+        // (grey = none), or stage 2's texture undisplaced (the copy of the screen the water refracts)
+        bool water_dbg = psdbg && (!std::strcmp(psdbg, "bump") || !std::strcmp(psdbg, "duv") || !std::strcmp(psdbg, "copy"));
+        bool water_draw = (pk.tex[0].flags & kTexSigned) && pk.tex[2].kind;
+        if (psdbg && (!water_dbg || water_draw)) {
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
+                : !std::strcmp(psdbg, "bump") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w); return float4(t0.b, t0.g, 0, 1);"
+                : !std::strcmp(psdbg, "duv") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w);"
+                                               " float2 d = max((t0.bg * 255 - 128) / 127, -1); return float4(d * 0.5 + 0.5, 0, 1);"
+                : !std::strcmp(psdbg, "copy") ? "return float4(tex2.Sample(smp2, i.tc2.xy + texsize[2].zw).rgb, 1);"
                 : !std::strcmp(psdbg, "tex") ? "return float4(tex0.Sample(smp0, i.tc0.xy).rgb, 1);"
                 : !std::strcmp(psdbg, "uv") ? "return float4(frac(i.tc0.xy), 0, 1);"
                 : !std::strcmp(psdbg, "shadow") ? (pk.tex[0].shadow
