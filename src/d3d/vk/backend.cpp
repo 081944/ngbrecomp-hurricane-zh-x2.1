@@ -19,6 +19,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <atomic>
 #include <chrono>
@@ -238,6 +239,7 @@ struct Tex {
     uint64_t sig = 0;          // the guest bytes (and palette) it was made from
     uint32_t used = 0;         // frame last used
     TexInfo info;
+    std::vector<uint8_t> check;   // NGB_D3D_BUMPCHECK: a bump map's top level as uploaded, to read back against
 };
 
 struct PipeKey {
@@ -420,6 +422,10 @@ private:
     // images no longer used, destroyed once no frame in flight can use them
     struct Retired { Image img; VkImageView view; uint32_t frame; };
     std::vector<Retired> graveyard_;
+    const bool bumpcheck_ = std::getenv("NGB_D3D_BUMPCHECK") != nullptr;
+    uint64_t bump_key_ = 0;           // textures_ key of the bump map last bound (NGB_D3D_BUMPCHECK)
+    void BumpCheck(Tex& tx, const char* when);
+    std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16)
     void Retire(Image& img, VkImageView extra = VK_NULL_HANDLE);
     bool recording_ = false;
     void Begin();
@@ -1499,8 +1505,20 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     // a render target read as a texture
     // (targets are keyed by the surface's physical address, the description has the virtual one)
     auto tit = targets_.find(uint64_t(d.data & 0x7FFFFFFFu) << 1 | (fi.depth ? 1 : 0));
-    if (tit != targets_.end() && !d.cube && d.depth == 1) {
+    // A bump map (V8U8: nothing renders into that) or a mip chain is never a target: the game has put a
+    // texture where it once drew, and the target left behind is not it (#16: the pond's ripple maps,
+    // read as the target that memory had held, a picture of something else).
+    bool never_target = d.format == 0x28 || d.format == 0x17 || d.levels > 1;
+    if (tit != targets_.end() && !d.cube && d.depth == 1 && never_target) {
+        static std::set<uint32_t> told;
+        if (told.size() < 32 && told.insert(d.data).second)
+            std::fprintf(stderr, "[D3D] texture @%08X fmt %X %ux%u levels %u: a target's memory (%ux%u), read as the texture\n",
+                         d.data, d.format, d.width, d.height, d.levels, tit->second.gw, tit->second.gh);
+    } else if (tit != targets_.end() && !d.cube && d.depth == 1) {
         Target& t = tit->second;
+        if ((d.width != t.gw || d.height != t.gh) && told_size_.size() < 32 && told_size_.insert(d.data).second)
+            std::fprintf(stderr, "[D3D] texture @%08X fmt %X %ux%u reads a target of %ux%u\n", d.data, d.format, d.width,
+                         d.height, t.gw, t.gh);
         if (&t == bound_rt_ || &t == bound_ds_) EndRendering();
         if (t.img.depth) info.shadow = (d.format == 0x2C || d.format == 0x30) ? 2 : 1;
         Barrier(t.img, t.img.depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1553,7 +1571,10 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     if (tx.img.image && tx.sig == sig && tx.img.w == d.width && tx.img.h == d.height &&
         (tx.gen == 2 || tx.gen == (mip_candidate ? 1 : 0))) {
         tx.used = frame_;
-        if (bump_src) info.flags |= kTexSigned;
+        if (bump_src) {
+            info.flags |= kTexSigned;
+            bump_key_ = key;
+        }
         return tx.img.view;
     }
     if (tx.img.image) Retire(tx.img);   // made again: the old one goes when no frame in flight uses it
@@ -1611,6 +1632,7 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             if (tx.gen == 1) out = top;   // the top level as decoded above (BGRA)
             else DecodeLevel(d, l, f, guest, palette, out, pitch);
             if (out.empty()) continue;
+            if (bump_src && l == 0 && f == 0 && bumpcheck_) tx.check = out;
             if (bump_src && l == 0 && f == 0) {   // a bump map's first upload: its values, in the log (#16: they differ by machine)
                 static int n;
                 if (n++ < 8) {
@@ -1663,8 +1685,58 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     }
     Barrier(tx.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     tx.info = info;
-    if (bump_src) info.flags |= kTexSigned;
+    if (bump_src) {
+        info.flags |= kTexSigned;
+        bump_key_ = key;
+        if (bumpcheck_) BumpCheck(tx, "after its upload");
+    }
     return tx.img.view;
+}
+
+// NGB_D3D_BUMPCHECK=1: a bump map's top level read back from the GPU and compared with the bytes that were
+// uploaded (#16: on Nvidia the water's shader sees other values than the texture holds in memory)
+void VulkanBackend::BumpCheck(Tex& tx, const char* when) {
+    static int n;
+    if (n >= 12 || tx.check.empty() || !tx.img.image) return;
+    n++;
+    EndRendering();
+    VkBuffer buf;
+    VmaAllocation mem;
+    VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bci.size = tx.check.size();
+    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VmaAllocationCreateInfo aci{};
+    aci.usage = VMA_MEMORY_USAGE_AUTO;
+    aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo ai;
+    if (vmaCreateBuffer(vma_, &bci, &aci, &buf, &mem, &ai) != VK_SUCCESS) return;
+    VkImageLayout was = tx.img.layout;
+    Barrier(tx.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    VkBufferImageCopy c{};
+    c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    c.imageExtent = {tx.img.w, tx.img.h, 1};
+    d_.vkCmdCopyImageToBuffer(cmd_, tx.img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buf, 1, &c);
+    Barrier(tx.img, was);
+    Submit();
+    vmaInvalidateAllocation(vma_, mem, 0, VK_WHOLE_SIZE);
+    const uint8_t* gpu = static_cast<const uint8_t*>(ai.pMappedData);
+    const uint8_t* cpu = tx.check.data();
+    size_t texels = tx.check.size() / 4, differ = 0;
+    int umin = 127, umax = -128, vmin = 127, vmax = -128;
+    for (size_t i = 0; i < texels; i++) {
+        if (gpu[i * 4] != cpu[i * 4] || gpu[i * 4 + 1] != cpu[i * 4 + 1]) differ++;
+        umin = std::min(umin, int(int8_t(gpu[i * 4]))); umax = std::max(umax, int(int8_t(gpu[i * 4])));
+        vmin = std::min(vmin, int(int8_t(gpu[i * 4 + 1]))); vmax = std::max(vmax, int(int8_t(gpu[i * 4 + 1])));
+    }
+    VkMemoryPropertyFlags imf = 0, rf = 0;
+    vmaGetAllocationMemoryProperties(vma_, tx.img.mem, &imf);
+    vmaGetAllocationMemoryProperties(vma_, ring_mem_, &rf);
+    std::fprintf(stderr,
+                 "[D3D] bump map %s: the GPU's copy %s the upload (%zu of %zu texels differ; GPU u %d..%d v %d..%d; "
+                 "first bytes GPU %02X%02X %02X%02X CPU %02X%02X %02X%02X; image %ux%u levels %u memory %X, ring memory %X)\n",
+                 when, differ ? "DIFFERS from" : "matches", differ, texels, umin, umax, vmin, vmax, gpu[0], gpu[1], gpu[4], gpu[5],
+                 cpu[0], cpu[1], cpu[4], cpu[5], tx.img.w, tx.img.h, tx.img.levels, imf, rf);
+    vmaDestroyBuffer(vma_, buf, mem);
 }
 
 VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info) {
@@ -2074,6 +2146,14 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     VkImageView views[4];
     bool from_target[4];
     for (int i = 0; i < 4; i++) views[i] = BindTexture(s, i, info[i], from_target[i]);
+    if (bumpcheck_ && (info[0].flags & kTexSigned) && bump_key_) {   // the water's ripple map, as the shader is about to read it
+        auto bit = textures_.find(bump_key_);
+        if (bit != textures_.end()) {
+            if (bit->second.img.view != views[0])
+                std::fprintf(stderr, "[D3D] water draw: tex0 is not the bump map last bound\n");
+            BumpCheck(bit->second, "at the water draw");
+        }
+    }
     static bool noshadow = std::getenv("NGB_D3D_NOSHADOW") != nullptr;   // debugging: no shadow-map passes
     if (noshadow && (info[0].shadow || info[1].shadow || info[2].shadow || info[3].shadow)) return;
     PixelKey pk = MakePixelKey(s, info);
