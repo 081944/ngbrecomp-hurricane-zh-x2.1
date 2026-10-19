@@ -349,7 +349,8 @@ private:
     int scale_ = 1, shadow_ = 1, aniso_level_ = 0, msaa_ = 1;
     bool anisotropy_ = false;
     bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
-    float point_max_ = 1.0f;    // the largest point (largePoints): the particles are point sprites (#51)
+    float point_max_ = 1.0f;
+    float lod_bias_max_ = 0.0f;   // maxSamplerLodBias    // the largest point (largePoints): the particles are point sprites (#51)
     float line_max_ = 1.0f;
     VkSampleCountFlags ms_counts_ = VK_SAMPLE_COUNT_1_BIT;   // the device's for colour and depth together
     void ReadQuality();
@@ -674,6 +675,7 @@ bool VulkanBackend::FinishDevice() {
     wide_lines_ = feat.wideLines == VK_TRUE;
     line_max_ = pr.limits.lineWidthRange[1];
     point_max_ = feat.largePoints == VK_TRUE ? pr.limits.pointSizeRange[1] : 1.0f;
+    lod_bias_max_ = pr.limits.maxSamplerLodBias;
     ms_counts_ = pr.limits.framebufferColorSampleCounts & pr.limits.framebufferDepthSampleCounts &
                  pr.limits.framebufferStencilSampleCounts;
     ReadQuality();
@@ -1800,7 +1802,17 @@ VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info)
         ci.anisotropyEnable = VK_TRUE;
         ci.maxAnisotropy = smooth ? float(aniso_level_) : 8.0f;
     }
-    ci.mipLodBias = Bits(t[kTssMipLodBias]);
+    // The console's D3D turns the bias into the GPU's signed 5.8 fixed-point field: x87 float to int, the
+    // low 13 bits. A value out of range -- the Chapter 2 pond's ripple map has FFFFFFFF, a NaN -- is the
+    // x87's integer indefinite, 80000000, so a bias of 0. Given to Vulkan as a NaN it is undefined: AMD
+    // took 0, Nvidia picked other levels, and the water came out banded (#16).
+    {
+        double b = double(Bits(t[kTssMipLodBias])) * 256.0;
+        int32_t fx = (b >= -2147483648.0 && b < 2147483648.0) ? int32_t(b) : INT32_MIN;
+        fx &= 0x1FFF;
+        if (fx & 0x1000) fx -= 0x2000;
+        ci.mipLodBias = std::clamp(float(fx) / 256.0f, -lod_bias_max_, lod_bias_max_);
+    }
     ci.minLod = float(t[kTssMaxMipLevel]);
     if (!mip) ci.maxLod = ci.minLod + 0.25f;
     if (info.shadow) {
@@ -2191,6 +2203,14 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     draw_rt_ = rt;
     for (int i = 0; i < 4; i++) views[i] = BindTexture(s, i, info[i], from_target[i]);
     draw_rt_ = nullptr;
+    if ((info[0].flags & kTexSigned) && std::getenv("NGB_D3D_BUMPLOG")) {   // the water's stage 0 sampling (#16)
+        static int n;
+        if (n++ < 6) {
+            const auto& t = s.tss[0];
+            std::fprintf(stderr, "[D3D] water stage 0: mag %u min %u mip %u maxmip %u lodbias %08X addr %u %u\n", t[kTssMagFilter],
+                         t[kTssMinFilter], t[kTssMipFilter], t[kTssMaxMipLevel], t[kTssMipLodBias], t[kTssAddressU], t[kTssAddressV]);
+        }
+    }
     if (bumpcheck_ && (info[0].flags & kTexSigned) && bump_key_) {   // the water's ripple map, as the shader is about to read it
         auto bit = textures_.find(bump_key_);
         if (bit != textures_.end()) {
