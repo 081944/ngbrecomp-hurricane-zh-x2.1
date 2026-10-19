@@ -1812,6 +1812,10 @@ VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info)
         fx &= 0x1FFF;
         if (fx & 0x1000) fx -= 0x2000;
         ci.mipLodBias = std::clamp(float(fx) / 256.0f, -lod_bias_max_, lod_bias_max_);
+        static const bool biaslog = std::getenv("NGB_D3D_BIASLOG") != nullptr;   // debugging: the biases used, once each
+        static std::set<uint32_t> told;
+        if (biaslog && told.size() < 64 && told.insert(t[kTssMipLodBias]).second)
+            std::fprintf(stderr, "[D3D] lod bias %08X (%g) -> %g\n", t[kTssMipLodBias], Bits(t[kTssMipLodBias]), ci.mipLodBias);
     }
     ci.minLod = float(t[kTssMaxMipLevel]);
     if (!mip) ci.maxLod = ci.minLod + 0.25f;
@@ -2397,6 +2401,14 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
     Color(SimpleState(s, kMPsFinalConstant0), c.pc[16]);
     Color(SimpleState(s, kMPsFinalConstant1), c.pc[17]);
+    if (s.ps && std::getenv("NGB_D3D_PSCLOG")) {   // debugging: each pixel shader's combiner constants, once (#29)
+        static std::set<uint64_t> told;
+        uint64_t k = uint64_t(s.ps->handle) << 32 ^ SimpleState(s, kMPsConstant0);
+        if (told.size() < 64 && told.insert(k).second)
+            std::fprintf(stderr, "[D3D] ps %08X c0 %08X %08X c1 %08X %08X final %08X %08X\n", s.ps->handle,
+                         SimpleState(s, kMPsConstant0), SimpleState(s, kMPsConstant0 + 4), SimpleState(s, kMPsConstant1),
+                         SimpleState(s, kMPsConstant1 + 4), SimpleState(s, kMPsFinalConstant0), SimpleState(s, kMPsFinalConstant1));
+    }
     Color(s.rs[kRsTextureFactor], c.tfactor);
     for (int i = 0; i < 4; i++) {
         TextureDesc d;

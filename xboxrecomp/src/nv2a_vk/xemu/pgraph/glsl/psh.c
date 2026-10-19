@@ -103,6 +103,23 @@ void pgraph_glsl_set_psh_state(PGRAPHState *pg, PshState *state)
             pgraph_reg_r(pg, NV_PGRAPH_COMBINEALPHAO0 + i * 4);
     }
 
+    if (getenv("NV2A_PSC_LOG")) {   /* #29: each combiner setup's constants, once, to compare with the D3D renderer's */
+        static uint32_t seen[64];
+        static int n;
+        uint32_t key = pgraph_reg_r(pg, NV_PGRAPH_COMBINECOLORI0) * 31 + pgraph_reg_r(pg, NV_PGRAPH_COMBINEFACTOR0) * 7 +
+                       pgraph_reg_r(pg, NV_PGRAPH_COMBINECTL);
+        int k = 0;
+        while (k < n && seen[k] != key) k++;
+        if (k == n && n < 64) {
+            seen[n++] = key;
+            fprintf(stderr, "[PSH] consts: stage0 rgb in %08X out %08X ctl %08X c0 %08X %08X c1 %08X %08X final %08X %08X\n",
+                    pgraph_reg_r(pg, NV_PGRAPH_COMBINECOLORI0), pgraph_reg_r(pg, NV_PGRAPH_COMBINECOLORO0),
+                    pgraph_reg_r(pg, NV_PGRAPH_COMBINECTL), pgraph_reg_r(pg, NV_PGRAPH_COMBINEFACTOR0),
+                    pgraph_reg_r(pg, NV_PGRAPH_COMBINEFACTOR0 + 4), pgraph_reg_r(pg, NV_PGRAPH_COMBINEFACTOR1),
+                    pgraph_reg_r(pg, NV_PGRAPH_COMBINEFACTOR1 + 4), pgraph_reg_r(pg, NV_PGRAPH_SPECFOGFACTOR0),
+                    pgraph_reg_r(pg, NV_PGRAPH_SPECFOGFACTOR1));
+        }
+    }
     if (state->point_sprite && getenv("NV2A_SPRITE_LOG")) {   /* #51: what a point sprite's combiners read */
         static uint64_t seen[32];
         static int n;
