@@ -2107,9 +2107,18 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     VkShaderModule pmod = Module(pkey, [&] {
         std::string src = PixelHlsl(pk);
         if (sprite) src = SpriteHlsl(std::move(src));
-        if (psdbg) {
+        // NGB_D3D_PSDEBUG=bump | duv | copy: the water's draws only (a bump map in stage 0 displacing stage
+        // 2's texture, #16): the ripple texture as sampled (u red, v green), the displacement it gives
+        // (grey = none), or stage 2's texture undisplaced (the copy of the screen the water refracts)
+        bool water_dbg = psdbg && (!std::strcmp(psdbg, "bump") || !std::strcmp(psdbg, "duv") || !std::strcmp(psdbg, "copy"));
+        bool water_draw = (pk.tex[0].flags & kTexSigned) && pk.tex[2].kind;
+        if (psdbg && (!water_dbg || water_draw)) {
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
+                : !std::strcmp(psdbg, "bump") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w); return float4(t0.b, t0.g, 0, 1);"
+                : !std::strcmp(psdbg, "duv") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w);"
+                                               " float2 d = max((t0.bg * 255 - 128) / 127, -1); return float4(d * 0.5 + 0.5, 0, 1);"
+                : !std::strcmp(psdbg, "copy") ? "return float4(tex2.Sample(smp2, i.tc2.xy + texsize[2].zw).rgb, 1);"
                 : !std::strcmp(psdbg, "tex") ? "return float4(tex0.Sample(smp0, i.tc0.xy).rgb, 1);"
                 : !std::strcmp(psdbg, "uv") ? "return float4(frac(i.tc0.xy), 0, 1);"
                 : !std::strcmp(psdbg, "shadow") ? (pk.tex[0].shadow
@@ -2252,6 +2261,34 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     float hud_clip0 = -1, hud_clip1 = -1;   // a menu's 4:3 area (guest pixels), the draw clipped to it
     float hud_clipy0 = -1, hud_clipy1 = -1;   // (and its height, on a narrower screen)
     const PipeKey& pipe_k = k;   // (k below the screen's shape)
+    // A pass over an effect target a pixel or two short of its edge: the heat haze over lava draws its
+    // 512x256 picture from 0 to 510 and 254, and the columns and rows it leaves out (never cleared:
+    // black here, white on the 360's emulator, harmless leftovers on the console) showed as a strip
+    // down the right of the screen (#55). Such a quad is stretched to the target's edge.
+    if (a.pretransformed && rt && rt->gw < 640 && count <= 4) {
+        const VertexElement& pe = a.elements[0];
+        if ((a.regs & 1) && pe.format == 2 && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src) {
+            const VertexBuffer& vb = a.buffers[pe.buffer];
+            float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
+            uint32_t n = vb.stride ? std::min<uint32_t>(vb.bytes / vb.stride, 4) : 0;
+            for (uint32_t i = 0; i < n; i++) {
+                float xy[2];
+                std::memcpy(xy, vb.src + size_t(i) * vb.stride + pe.offset, 8);
+                x0 = std::min(x0, xy[0]);
+                x1 = std::max(x1, xy[0]);
+                y0 = std::min(y0, xy[1]);
+                y1 = std::max(y1, xy[1]);
+            }
+            float w = float(rt->gw), h = float(rt->gh);
+            auto short_by = [](float lo, float hi, float size) { return lo <= 0.5f && hi > size - 3.0f && hi < size - 0.5f; };
+            if (n == 4 && short_by(x0, x1, w) && short_by(y0, y1, h)) {
+                c.ext[0] = (w - x0) / (x1 - x0);
+                c.ext[1] = x0;
+                c.ext[2] = (h - y0) / (y1 - y0);
+                c.ext[3] = y0;
+            }
+        }
+    }
     if (a.pretransformed && rt && rt->gw >= 640) {
         float k = ngb_hud_shape();
         const VertexElement& pe = a.elements[0];

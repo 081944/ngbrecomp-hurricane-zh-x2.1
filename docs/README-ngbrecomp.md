@@ -112,13 +112,6 @@ Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 
 - **Water** in some places (the pond in Chapter 2, for example) can look banded instead of clear, so
   far reported on Nvidia cards on Windows (#16).
-- **Controller vibration on Windows** may only start working after switching Vibration off and on
-  again in the game's Options (#15).
-- **Installing directly from an ISO** fails on some Windows PCs (#6, #14). Until that is fixed:
-  extract the ISO to a folder named `game` next to `NinjaGaidenBlack.exe`, and it is found
-  automatically.
-- **Steam Deck:** do the first start (installing the game) in Desktop Mode. In Game Mode the window
-  to choose your disc image cannot open, and the game closes (#11).
 - The **Ninja Gaiden arcade cabinet** in Han's bar does not work: the game closes when you play it
   (#18). The NES games are a separate program on the disc (`NinjaTrilogy.xbe`) that the Xbox switches
   to, and only Ninja Gaiden Black itself is recompiled. Save before trying it.
