@@ -2206,7 +2206,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         // 2's texture, #16): the ripple texture's raw bytes as sampled (u red, v green: two-tone, as small
         // signed values look unsigned), the displacement decoded from it (grey = none), or stage 2's
         // texture undisplaced (the copy of the screen the water refracts)
-        bool water_dbg = psdbg && (!std::strcmp(psdbg, "bump") || !std::strcmp(psdbg, "duv") || !std::strcmp(psdbg, "copy"));
+        bool water_dbg = psdbg && (!std::strcmp(psdbg, "bump") || !std::strcmp(psdbg, "duv") || !std::strcmp(psdbg, "copy") ||
+                                   !std::strcmp(psdbg, "lod") || !std::strcmp(psdbg, "texel"));
         bool water_draw = (pk.tex[0].flags & kTexSigned) && pk.tex[2].kind;
         // NGB_D3D_PSDEBUG=spr: point sprites only, their texture coordinates as red and green (#51)
         bool spr_dbg = psdbg && !std::strcmp(psdbg, "spr");
@@ -2226,6 +2227,15 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 : !std::strcmp(psdbg, "bump") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w); return float4(t0.b, t0.g, 0, 1);"
                 : !std::strcmp(psdbg, "duv") ? "float2 d = bumpduv0(i.tc0.xy / i.tc0.w); return float4(d * 0.5 + 0.5, 0, 1);"
                 : !std::strcmp(psdbg, "copy") ? "return float4(tex2.Sample(smp2, i.tc2.xy + texsize[2].zw).rgb, 1);"
+                // the ripple texture as the GPU reports it: its level of detail here / 4 red, levels / 4 green,
+                // width / 256 blue (on AMD: green 0.75, blue 0.5) -- and its texels one by one, decoded at the
+                // top level without filtering, 8 times as strong (grey none) (#16)
+                : !std::strcmp(psdbg, "lod") ? "uint w, h, n; tex0.GetDimensions(0, w, h, n);"
+                                               " float l = tex0.CalculateLevelOfDetail(smp0, i.tc0.xy / i.tc0.w);"
+                                               " return float4(saturate(l / 4), n / 4.0, w / 256.0, 1);"
+                : !std::strcmp(psdbg, "texel") ? "uint w, h, n; tex0.GetDimensions(0, w, h, n); int2 dim = int2(w, h);"
+                                                 " int2 p = int2(floor(frac(i.tc0.xy / i.tc0.w) * float2(dim)));"
+                                                 " float2 d = bumptexel0(p, dim, 0); return float4(d * 8 + 0.5, 0.5, 1);"
                 : !std::strcmp(psdbg, "tex") ? "return float4(tex0.Sample(smp0, i.tc0.xy).rgb, 1);"
                 : !std::strcmp(psdbg, "uv") ? "return float4(frac(i.tc0.xy), 0, 1);"
                 : !std::strcmp(psdbg, "shadow") ? (pk.tex[0].shadow
