@@ -2107,6 +2107,24 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     bool points = a.topology == Topology::Points;
     bool sprite = points && s.rs[kRsPointSpriteEnable];
     if (points) vkey ^= 0x9D7E0000;
+    static const bool spritelog = std::getenv("NGB_D3D_SPRITELOG") != nullptr;
+    if (sprite && spritelog) {   // NGB_D3D_SPRITELOG: each point sprite setup once, every stage (#51)
+        static std::set<uint64_t> told;
+        uint64_t k = uint64_t(s.textures[0]) << 32 ^ s.textures[3] ^ uint64_t(s.tss[0][kTssColorOp]) << 8;
+        if (told.size() < 24 && told.insert(k).second) {
+            std::fprintf(stderr, "[D3D] point sprites:");
+            for (int st = 0; st < 4; st++) {
+                TextureDesc td;
+                bool h = s.textures[st] && Describe(s.textures[st], td);
+                std::fprintf(stderr, " stage %d tex %08X @%08X fmt %X %ux%u levels %u op %u/%u lodbias %08X maxmip %u texcoord %X;", st,
+                             s.textures[st], h ? td.data : 0, h ? td.format : 0, h ? td.width : 0, h ? td.height : 0,
+                             h ? td.levels : 0, s.tss[st][kTssColorOp], s.tss[st][kTssAlphaOp], s.tss[st][kTssMipLodBias],
+                             s.tss[st][kTssMaxMipLevel], s.tss[st][kTssTexCoordIndex]);
+            }
+            std::fprintf(stderr, " size %g min %g max %g\n", Bits(s.rs[kRsPointSize]), Bits(s.rs[kRsPointSizeMin]),
+                         Bits(s.rs[kRsPointSizeMax]));
+        }
+    }
     bool vnew;
     {
         std::lock_guard<std::recursive_mutex> g(cache_mu_);
@@ -2158,6 +2176,15 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     if (noshadow && (info[0].shadow || info[1].shadow || info[2].shadow || info[3].shadow)) return;
     PixelKey pk = MakePixelKey(s, info);
     pk.quad = quad;
+    if (sprite && !pk.programmable) {   // stage 3 alone, whatever the stages before it hold (PixelHlsl)
+        const auto& t = s.tss[3];
+        uint32_t v[9] = {t[kTssColorOp], t[kTssColorArg1], t[kTssColorArg2], t[kTssColorArg0], t[kTssAlphaOp],
+                         t[kTssAlphaArg1], t[kTssAlphaArg2], t[kTssAlphaArg0], t[kTssResultArg]};
+        std::memset(pk.ff, 0, sizeof(pk.ff));
+        std::memcpy(pk.ff[3], v, sizeof(v));
+        pk.alphakill &= 8;
+        pk.sprite = 1;
+    }
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
     if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
@@ -2181,7 +2208,19 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         // texture undisplaced (the copy of the screen the water refracts)
         bool water_dbg = psdbg && (!std::strcmp(psdbg, "bump") || !std::strcmp(psdbg, "duv") || !std::strcmp(psdbg, "copy"));
         bool water_draw = (pk.tex[0].flags & kTexSigned) && pk.tex[2].kind;
-        if (psdbg && (!water_dbg || water_draw)) {
+        // NGB_D3D_PSDEBUG=spr: point sprites only, their texture coordinates as red and green (#51)
+        bool spr_dbg = psdbg && !std::strcmp(psdbg, "spr");
+        // NGB_D3D_PSDEBUG=sprtex: point sprites only, stage 3's texture (the sprite's picture) at its top level
+        bool sprtex_dbg = psdbg && !std::strcmp(psdbg, "sprtex");
+        if (spr_dbg && sprite) {
+            size_t at = src.find("float4 main(");
+            src = src.substr(0, at) + "float4 main(VOut i) : SV_Target { float2 s = (i.pos.xy - i.ptc.xy) / i.ptc.z + 0.5; "
+                  "return float4(saturate(s), s.x < 0 || s.y < 0 || s.x > 1 || s.y > 1 ? 1 : 0, 1); }\n";
+        } else if (sprtex_dbg && sprite) {
+            size_t at = src.find("float4 main(");
+            src = src.substr(0, at) + "float4 main(VOut i) : SV_Target { float2 s = (i.pos.xy - i.ptc.xy) / i.ptc.z + 0.5; "
+                  "float4 t = tex3.SampleLevel(smp3, s, 0); return float4(t.rgb * t.a, 1); }\n";
+        } else if (psdbg && !spr_dbg && !sprtex_dbg && (!water_dbg || water_draw)) {
             size_t at = src.find("float4 main(");
             std::string body = flat ? "return float4(1, 0, 0, 1);"
                 : !std::strcmp(psdbg, "bump") ? "float4 t0 = tex0.Sample(smp0, i.tc0.xy / i.tc0.w); return float4(t0.b, t0.g, 0, 1);"
@@ -2710,7 +2749,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::fprintf(trace_, "%u %u prim %u n %u pre %d prog %d ps %08X blend %u %X %X %X wm %X z %u%u%X st %u "
                      "rt %08X %ux%u tex0 %08X @%08X %X %ux%u%s tex1 %08X %X tss0 %u %u %u %u|%u %u %u tss1 %u %u %u|%u "
                      "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X signed %u%u%u%u uv %s "
-                     "shaders %016llx %016llx light %X spec %g %g %g pow %g csign %X %X %X %X lw %08X\n",
+                     "shaders %016llx %016llx light %X spec %g %g %g pow %g csign %X %X %X %X lw %08X "
+                     "pt %u %u %g %g %g %u %g %g %g regs %X\n",
                      presents_, st_.drawn, prim, count, a.pretransformed, prog, s.ps ? s.ps->handle : 0, k.blend, k.src,
                      k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten, s.rt.data, rt ? rt->gw : 0, rt ? rt->gh : 0,
                      s.textures[0], h0 ? t0d.data : 0, h0 ? t0d.format : 0, h0 ? t0d.width : 0, h0 ? t0d.height : 0,
@@ -2749,7 +2789,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                      prog ? 0u : MakeFixedKey(s).light, s.material[8], s.material[9], s.material[10], s.material[16],
                      s.tss[0][kTssColorSign] >> 28, s.tss[1][kTssColorSign] >> 28, s.tss[2][kTssColorSign] >> 28,
                      s.tss[3][kTssColorSign] >> 28,   // D3DTSS_COLORSIGN: A R G B signed, bits 0-3
-                     s.rs[kRsLineWidth]);
+                     s.rs[kRsLineWidth],
+                     // points: sprite on, scaling on, size, min, max (D3D's, before the render scale), A B C, the
+                     // vertex's attributes (bit 9: texture coordinates 0; #51)
+                     s.rs[kRsPointSpriteEnable], s.rs[kRsPointScaleEnable], Bits(s.rs[kRsPointSize]),
+                     Bits(s.rs[kRsPointSizeMin]), Bits(s.rs[kRsPointSizeMax]), prim == 1 ? 1u : 0u,
+                     Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), a.regs);
     }
     if (int(presents_) == g_step_frame)
         std::fprintf(stderr, "[STEP] %u prim %u count %u pre %d prog %d ps %08X blend %u %X %X op %X wmask %X zen %u "

@@ -32,7 +32,9 @@ struct PixelKey {
     uint32_t alphakill = 0;  // bit per stage
     uint32_t flat = 0, two_sided = 0;
     uint32_t proj = 0;       // fixed function: bit per stage sampled at coordinates divided by w
-    uint32_t quad = 0;       // a screen quad: QuadHlsl
+    // a screen quad (QuadHlsl); a point sprite, stage 3 at the point's own coordinates after the stages before it
+    // (#51). Halves of what was one uint32_t quad: the key's size and bytes as the shader cache has them.
+    uint16_t quad = 0, sprite = 0;
     bool operator==(const PixelKey& o) const;
 };
 

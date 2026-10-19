@@ -923,7 +923,11 @@ std::string PixelHlsl(const PixelKey& k) {
         }
     } else {
         body += "float4 cur = v0, tmp = 0;\n";
-        for (int i = 0; i < 4; i++) {
+        // A point sprite is stage 3 alone: the console makes the point's coordinates for that stage only
+        // (xemu's pT3), and its D3D builds the combiners from that stage's state, on the vertex colour --
+        // the attract demo's Ninpo sparks are one combiner, v0 x t3, with a MODULATE2X of a render target
+        // left in stage 0 not read at all. The torch embers keep their 16x16 spark there too (#51).
+        for (int i = k.sprite ? 3 : 0; i < 4; i++) {
             const uint32_t* f = k.ff[i];
             if (f[0] <= 1) break;
             const TexInfo& t = k.tex[i];
@@ -992,12 +996,20 @@ std::string PointHlsl(std::string s, int kind) {
             size += "    if (c[190].w != 0) psz *= c[191].w * rsqrt(max(c[191].x + c[191].y * length(vp) + c[191].z * dot(vp, vp), 1e-20));\n";
         size += "    psz = clamp(psz, c[190].y, c[190].z);\n";
     }
-    size += "    o.psize = max(psz * surf.w, 1);\n    o.ptc = float4(p.xy * surf.w, o.psize, 0);\n";
-    put("    o.fogamt = fogfactor(oFog.x);\n    return o;\n", size, true);
+    // the centre in the console's pixels (half a pixel in, as the vertex epilogue puts it), from the position
+    // as it goes out: fixed function has no p
+    size += "    float2 pc = float2((o.pos.x / o.pos.w + 1) * surf.x * 0.5, (1 - o.pos.y / o.pos.w) * surf.y * 0.5);\n";
+    size += "    o.psize = max(psz * surf.w, 1);\n    o.ptc = float4(pc * surf.w, o.psize, 0);\n";
+    // before main's return, whatever comes ahead of it: the fog line differs (fixed function fog from the
+    // depth, #51's torch embers), and anchored on one form the size went unwritten -- a point with no size
+    // (validation VUID 08773), not drawn at all
+    size_t r = s.rfind("    return o;\n");
+    if (r != std::string::npos) s.insert(r, size);
     return s;
 }
 
-// A point sprite's pixel shader: every stage's coordinates run 0 to 1 across the point, top left first.
+// A point sprite's pixel shader: stage 3's coordinates run 0 to 1 across the point, top left first; the
+// other stages keep the vertex's, as on the console (xemu: pT3 = gl_PointCoord).
 std::string SpriteHlsl(std::string s) {
     size_t i = s.find("    float fogamt : TEXCOORD4;\n");
     if (i != std::string::npos) s.insert(i + std::strlen("    float fogamt : TEXCOORD4;\n"), "    float4 ptc : TEXCOORD5;\n");
@@ -1005,7 +1017,7 @@ std::string SpriteHlsl(std::string s) {
     i = s.find(tc);
     if (i != std::string::npos)
         s.replace(i, std::strlen(tc), "    float4 spr = float4((i.pos.xy - i.ptc.xy) / i.ptc.z + 0.5, 0, 1);\n"
-                                      "    float4 tc0 = spr, tc1 = spr, tc2 = spr, tc3 = spr;\n");
+                                      "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = spr;\n");
     return s;
 }
 
