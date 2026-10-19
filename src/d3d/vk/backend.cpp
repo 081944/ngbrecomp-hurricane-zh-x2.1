@@ -231,6 +231,7 @@ struct Target {
     uint32_t samples = 1;
     bool drawn = false;
     bool ms_stale = false;     // img holds the picture, ms not yet: filled from img before the next pass
+    Image fb;                  // a copy of img for a draw that reads the target it draws into (BindTexture)
 };
 
 struct Tex {
@@ -425,7 +426,7 @@ private:
     const bool bumpcheck_ = std::getenv("NGB_D3D_BUMPCHECK") != nullptr;
     uint64_t bump_key_ = 0;           // textures_ key of the bump map last bound (NGB_D3D_BUMPCHECK)
     void BumpCheck(Tex& tx, const char* when);
-    std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16)
+    std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16), or their own (| 1)
     void Retire(Image& img, VkImageView extra = VK_NULL_HANDLE);
     bool recording_ = false;
     void Begin();
@@ -452,6 +453,7 @@ private:
     Target* MakeTarget(const Surface& s, bool depth, uint64_t key, uint32_t w, uint32_t h, uint32_t iw, uint32_t ih,
                        uint32_t samples);
     Target* bound_rt_ = nullptr;
+    Target* draw_rt_ = nullptr;      // the colour target of the draw whose textures are being bound
     Target* bound_ds_ = nullptr;
     bool rendering_ = false;
     void BeginRendering(Target* rt, Target* ds);
@@ -1033,6 +1035,7 @@ Target* VulkanBackend::EnsureTarget(const Surface& s, bool depth) {
         if (shared_) nv2a_vk_queue_unlock();
         DestroyImage(old.img);
         DestroyImage(old.ms);
+        DestroyImage(old.fb);
         return t;
     }
     return MakeTarget(s, depth, key, w, h, iw, ih, samples);
@@ -1520,6 +1523,28 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             std::fprintf(stderr, "[D3D] texture @%08X fmt %X %ux%u reads a target of %ux%u\n", d.data, d.format, d.width,
                          d.height, t.gw, t.gh);
         if (&t == bound_rt_ || &t == bound_ds_) EndRendering();
+        if (&t == draw_rt_ && !t.img.depth) {
+            // The draw reads the target it draws into (a glow or water pass building on its last picture):
+            // Vulkan leaves sampling an image while it is the colour attachment undefined (validation VUID
+            // 00344; AMD read the old picture, other drivers need not). It reads a copy of the picture as
+            // it is before the draw, which is what such a pass can count on the console too.
+            if (!t.fb.image && told_size_.size() < 64 && told_size_.insert(d.data | 1).second)
+                std::fprintf(stderr, "[D3D] target @%08X %ux%u read by a draw into it: from a copy\n", d.data, t.gw, t.gh);
+            if (t.fb.image && (t.fb.w != t.img.w || t.fb.h != t.img.h)) Retire(t.fb);
+            if (!t.fb.image && !CreateImage(t.fb, t.img.format, t.img.w, t.img.h, 1, 1, false, false,
+                                            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 1, false))
+                return VK_NULL_HANDLE;
+            Barrier(t.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            Barrier(t.fb, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            VkImageCopy c{};
+            c.srcSubresource = c.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            c.extent = {t.img.w, t.img.h, 1};
+            d_.vkCmdCopyImage(cmd_, t.img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, t.fb.image,
+                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            Barrier(t.fb, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            from_target = true;
+            return t.fb.view;
+        }
         if (t.img.depth) info.shadow = (d.format == 0x2C || d.format == 0x30) ? 2 : 1;
         Barrier(t.img, t.img.depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         from_target = true;
@@ -2163,7 +2188,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     TexInfo info[4];
     VkImageView views[4];
     bool from_target[4];
+    draw_rt_ = rt;
     for (int i = 0; i < 4; i++) views[i] = BindTexture(s, i, info[i], from_target[i]);
+    draw_rt_ = nullptr;
     if (bumpcheck_ && (info[0].flags & kTexSigned) && bump_key_) {   // the water's ripple map, as the shader is about to read it
         auto bit = textures_.find(bump_key_);
         if (bit != textures_.end()) {
