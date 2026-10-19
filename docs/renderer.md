@@ -93,10 +93,16 @@ debug knobs out once it is the default.
   or 7), are decoded in the shader texel by texel (`bumpduv%d`: Load, signed bytes, then bilinear within the
   level and linear on to the next) -- filtered as the unsigned bytes they are stored as, texels either side
   of zero blend through the wrong range. A bump map is never read from a render target at its address.
-- The LOD bias (D3DTSS_MIPMAPLODBIAS) is converted as the console's D3D does: an x87 float to int into the
-  GPU's signed 5.8 field, so a NaN or out-of-range value is 0, then clamped to maxSamplerLodBias. The
-  chapter 2 pond's ripple map has FFFFFFFF, a NaN: passed to Vulkan as it was, AMD took 0 and Nvidia
-  other levels, and the water was banded on Nvidia only (#16).
+- The LOD bias (D3DTSS_MIPMAPLODBIAS) is converted as the console's D3D does, into the GPU's signed 5.8
+  field (-16 to just under 16), then clamped to maxSamplerLodBias (LodBias in backend.cpp). A NaN becomes
+  0x1000, -16, as xemu's register model shows (TEXFILTER0 E2063000 for the pond): the chapter 2 pond's
+  ripple maps have FFFFFFFF, and the game fills only their top level -- the other two hold leftover data.
+  Passed to Vulkan as a NaN, AMD took 0 and Nvidia other levels: the water was banded on Nvidia only;
+  read with a bias of 0, the far water picked up the leftovers (#16). The bump decode chooses its own
+  level, so it adds the stage's bias and most detailed level to the one it computes (bumplum.zw).
+- Fog: D3DRS_FOGTABLEMODE 1-3 compute the factor from the depth or a vertex program's oFog.x; with fog on
+  and table mode none, a vertex program's oFog.x is the factor itself (the hardware's linear fog with
+  parameters 1 and 1, in xemu) -- the water's own haze, the chapter 7 pool's blue (fogfactor's mode 4).
 - Anisotropic filtering on: single-level opaque textures get a generated mip chain (2:1 linear blits),
   DXT1/2/3 ones decoded to BGRA for it (DecodeBC) -- most of the game's world textures have no mipmaps
   and sparkle in the distance otherwise (xemu's smooth mode did this for BGRA only). `NGB_D3D_MIPLOG=1`
@@ -150,5 +156,8 @@ debug knobs out once it is the default.
   refracts, the level of detail and mip count the GPU reports, the texels decoded one by one) and
   `spr | sprtex` (point sprites only: their coordinates, stage 3's texture); `NGB_D3D_BUMPCHECK=1` reads a
   bump map back from the GPU and compares it with the upload; `NGB_D3D_BUMPLOG=1` the water's stage 0
-  sampler state. F7 traces carry each point draw's state (`pt`: sprite, scaling, size, min, max, A B C,
+  sampler state and every mip level's value range; `NGB_D3D_BUMPLEVEL=n` reads the ripple texture at
+  level n everywhere. `NGB_D3D_PSCLOG=1` logs each pixel shader's combiner constants, `NGB_D3D_BIASLOG=1`
+  each LOD bias used; on xemu's side `NV2A_PSC_LOG=1`, `NV2A_BUMP_FILTER_LOG=1` (the ripple map's
+  TEXFILTER0) and `NGB_NV2A_FOGLOG=1` (the fog registers) give the hardware's view of the same state. F7 traces carry each point draw's state (`pt`: sprite, scaling, size, min, max, A B C,
   the vertex's attribute bits).

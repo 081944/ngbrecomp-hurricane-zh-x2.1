@@ -72,6 +72,8 @@ Driving and watching a headless run:
 - At the title, the first Start can be ignored while it loads; on the main menu the cursor starts at
   Load Game when saves exist. The recomp's own pause pages (Settings, Exit) read the host's keyboard, not
   `RECOMP_PAD_LIVE`: a stray Start in play opens the pause menu and the pad cannot close it.
+- The attract demo plays out a little differently on every run: compare captures by what they show
+  (counts, colours over a region), not frame by frame against another run.
 - `NGB_CHEATS=1000` (infinite health) keeps a scripted walk alive; `NGB_D3D_SHADERDUMP=<dir>` writes every
   shader made (file names match a trace's `shaders` field).
 - `NGB_MODE_LOG=2` (2D-screen decisions per frame), `NGB_HUD_GROUP_TRACE=1` (HUD placement),
