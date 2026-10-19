@@ -91,7 +91,7 @@ struct DrawConstants {
     float tfactor[4];
     float texsize[4][4];
     float bump[4][4];   // 00 01 10 11
-    float bumpl[4][4];  // scale offset
+    float bumpl[4][4];  // scale offset, and for bumpduv the stage's LOD bias and most detailed level
     float wvp[16];      // fixed function
     float ext[4];       // a backend extension's, declared by ShaderHooks::Constants
     float spread[4][4]; // kTexWide: tap step in uv, taps per axis

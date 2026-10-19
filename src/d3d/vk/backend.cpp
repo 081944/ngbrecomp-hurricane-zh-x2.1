@@ -49,6 +49,17 @@ using kernel::HostPtr;
 
 float Bits(uint32_t v) { float f; std::memcpy(&f, &v, 4); return f; }
 
+// D3DTSS_MIPMAPLODBIAS as the console's D3D gives it to the GPU: its signed 5.8 fixed-point field, -16 to just
+// under 16. A NaN -- the Chapter 2 pond's ripple maps have FFFFFFFF -- comes out as 0x1000, -16 (xemu's
+// register model, fed by the game's own D3D code, shows it): the hardware then always reads the top level,
+// and the game never fills the others (they hold noise). Given to Vulkan as a NaN, AMD took 0 and Nvidia
+// other levels: the banded water of #16.
+float LodBias(uint32_t raw) {
+    float b = Bits(raw);
+    if (!(b == b)) return -16.0f;
+    return std::clamp(std::floor(b * 256.0f), -4096.0f, 4095.0f) / 256.0f;
+}
+
 void Color(uint32_t argb, float* o) {
     o[0] = ((argb >> 16) & 255) / 255.0f;
     o[1] = ((argb >> 8) & 255) / 255.0f;
@@ -1660,16 +1671,16 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             else DecodeLevel(d, l, f, guest, palette, out, pitch);
             if (out.empty()) continue;
             if (bump_src && l == 0 && f == 0 && bumpcheck_) tx.check = out;
-            if (bump_src && l == 0 && f == 0) {   // a bump map's first upload: its values, in the log (#16: they differ by machine)
+            if (bump_src && f == 0 && (l == 0 || std::getenv("NGB_D3D_BUMPLOG"))) {   // a bump map's first upload: its values, in the log (#16: they differ by machine)
                 static int n;
-                if (n++ < 8) {
+                if (n++ < (std::getenv("NGB_D3D_BUMPLOG") ? 24 : 8)) {
                     int umin = 127, umax = -128, vmin = 127, vmax = -128;
                     for (size_t i = 0; i < out.size(); i += 4) {
                         umin = std::min(umin, int(int8_t(out[i]))); umax = std::max(umax, int(int8_t(out[i])));
                         vmin = std::min(vmin, int(int8_t(out[i + 1]))); vmax = std::max(vmax, int(int8_t(out[i + 1])));
                     }
-                    std::fprintf(stderr, "[D3D] bump map @%08X %ux%u levels %u: u %d..%d v %d..%d, first bytes %02X%02X %02X%02X %02X%02X %02X%02X\n",
-                                 d.data, d.width, d.height, d.levels, umin, umax, vmin, vmax,
+                    std::fprintf(stderr, "[D3D] bump map @%08X %ux%u levels %u (level %u at +%X): u %d..%d v %d..%d, first bytes %02X%02X %02X%02X %02X%02X %02X%02X\n",
+                                 d.data, d.width, d.height, d.levels, l, LevelOffset(d, l), umin, umax, vmin, vmax,
                                  guest[0], guest[1], guest[2], guest[3], guest[4], guest[5], guest[6], guest[7]);
                 }
             }
@@ -1802,16 +1813,8 @@ VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info)
         ci.anisotropyEnable = VK_TRUE;
         ci.maxAnisotropy = smooth ? float(aniso_level_) : 8.0f;
     }
-    // The console's D3D turns the bias into the GPU's signed 5.8 fixed-point field: x87 float to int, the
-    // low 13 bits. A value out of range -- the Chapter 2 pond's ripple map has FFFFFFFF, a NaN -- is the
-    // x87's integer indefinite, 80000000, so a bias of 0. Given to Vulkan as a NaN it is undefined: AMD
-    // took 0, Nvidia picked other levels, and the water came out banded (#16).
     {
-        double b = double(Bits(t[kTssMipLodBias])) * 256.0;
-        int32_t fx = (b >= -2147483648.0 && b < 2147483648.0) ? int32_t(b) : INT32_MIN;
-        fx &= 0x1FFF;
-        if (fx & 0x1000) fx -= 0x2000;
-        ci.mipLodBias = std::clamp(float(fx) / 256.0f, -lod_bias_max_, lod_bias_max_);
+        ci.mipLodBias = std::clamp(LodBias(t[kTssMipLodBias]), -lod_bias_max_, lod_bias_max_);
         static const bool biaslog = std::getenv("NGB_D3D_BIASLOG") != nullptr;   // debugging: the biases used, once each
         static std::set<uint32_t> told;
         if (biaslog && told.size() < 64 && told.insert(t[kTssMipLodBias]).second)
@@ -2389,6 +2392,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         c.fog[1] = Bits(s.rs[kRsFogEnd]);
         c.fog[2] = Bits(s.rs[kRsFogDensity]);
         c.fog[3] = float(s.rs[kRsFogTableMode]);
+        if (s.rs[kRsFogTableMode] == 0 && prog) c.fog[3] = 4;   // the vertex program's oFog.x is the factor (fogfactor)
     }
     Color(s.rs[kRsFogColor], c.fog_color);
     c.misc[0] = float(SimpleState(s, kMAlphaRef) & 0xFF);
@@ -2427,6 +2431,10 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         c.bump[i][3] = Bits(t[kTssBumpEnvMat11]);
         c.bumpl[i][0] = Bits(t[kTssBumpEnvLScale]);
         c.bumpl[i][1] = Bits(t[kTssBumpEnvLOffset]);
+        // for a bump map decoded in the shader (bumpduv): the level of detail the sampler would use, its
+        // bias and most detailed level
+        c.bumpl[i][2] = LodBias(t[kTssMipLodBias]);
+        c.bumpl[i][3] = float(t[kTssMaxMipLevel]);
     }
     // The 2D (screen-space draws into the back buffer) on a wider screen. The game's 2D screens -- menus,
     // the title, chapter cards (src/pc_menu.c says which) -- in its 16:9 look, stretched no wider than 16:9,

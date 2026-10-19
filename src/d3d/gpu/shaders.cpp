@@ -11,13 +11,17 @@ namespace gpu {
 
 namespace {
 
+// printf into a string of whatever length it takes (a fixed buffer cut the bump helpers short, silently)
 std::string F(const char* fmt, ...) {
-    char buf[1024];
-    va_list ap;
+    va_list ap, ap2;
     va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_copy(ap2, ap);
+    int n = vsnprintf(nullptr, 0, fmt, ap);
     va_end(ap);
-    return buf;
+    std::string out(n > 0 ? size_t(n) : 0, '\0');
+    if (n > 0) vsnprintf(out.data(), size_t(n) + 1, fmt, ap2);
+    va_end(ap2);
+    return out;
 }
 
 const char* kCommonHead = R"(
@@ -93,7 +97,11 @@ float4 ilu_lit(float4 s) {
     float spec = exp2(clamp(s.w, -cap, cap) * log2(max(s.y, 0)));
     return float4(1, diffuse, diffuse > 0 ? spec : 0, 1);
 }
+// fogp.w: D3DRS_FOGTABLEMODE (0 none, 1 exp, 2 exp2, 3 linear), 4 a vertex program's own factor (fog on and
+// table mode none: its oFog.x is the factor itself, as xemu's register model shows -- linear with parameters
+// 1 and 1 -- the chapter 7 pool's blue haze, #16), 0 no fog
 float fogfactor(float d) {
+    if (fogp.w == 4) return d;
     if (fogp.w == 3) return (fogp.y - d) / (fogp.y - fogp.x);
     if (fogp.w == 1) return exp(-d * fogp.z);
     if (fogp.w == 2) return exp(-(d * fogp.z) * (d * fogp.z));
@@ -846,6 +854,12 @@ std::string PixelHlsl(const PixelKey& k) {
     }
     for (int i = 0; i < 4; i++) {
         if (!(k.tex[i].flags & kTexSigned) || k.tex[i].kind != kTex2D) continue;
+        // NGB_D3D_BUMPLEVEL=n (debugging): the ripple texture read at level n everywhere, to see each level's texels
+        static const char* force = std::getenv("NGB_D3D_BUMPLEVEL");
+        // the level the console's sampler would read: the computed one plus the stage's bias, from its most
+        // detailed level on (bumplum[].zw; the pond's -16 keeps it on the top level, the only one it fills)
+        std::string lod = force ? std::string(force)
+                                : F("max(tex%d.CalculateLevelOfDetailUnclamped(smp%d, uv) + bumplum[%d].z, bumplum[%d].w)", i, i, i, i);
         // A bump map's du dv (V8U8: two signed bytes a texel). The texels are read whole and each decoded
         // before the filtering: filtered as the unsigned bytes they are stored as, two texels either side
         // of zero blend through the wrong range. Bilinear within the level the sampler would pick, linear
@@ -869,12 +883,12 @@ std::string PixelHlsl(const PixelKey& k) {
                "float2 bumpduv%d(float2 uv) {\n"
                "    uint w, h, n;\n"
                "    tex%d.GetDimensions(0, w, h, n);\n"
-               "    float lod = clamp(tex%d.CalculateLevelOfDetail(smp%d, uv), 0, float(n) - 1);\n"
+               "    float lod = clamp(%s, 0, float(n) - 1);\n"
                "    int l0 = int(floor(lod));\n"
                "    float2 r = bumplevel%d(uv, l0);\n"
                "    if (lod > l0) r = lerp(r, bumplevel%d(uv, min(l0 + 1, int(n) - 1)), lod - l0);\n"
                "    return r;\n"
-               "}\n", i, i, i, i, i, i, i, i, i, i, i, i, i, i);
+               "}\n", i, i, i, i, i, i, i, i, i, i, lod.c_str(), i, i);
     }
     s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
     s += "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
