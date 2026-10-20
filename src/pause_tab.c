@@ -896,7 +896,7 @@ static void draw_page(int focused, int cat, int row)
 /* While the main menu's RECOMP SETTINGS has the Options menu (src/pc_menu.c)
  * its pictures say so: the header ("OPTIONS", sprite 0x23D) reads SETTINGS
  * and the category words (sprites 0x248-0x24D, slices of one texture) are
- * Graphics, Display and Startup Settings, Cheats and Exit. Each is a texture of
+ * Graphics, Display and Startup Settings, Gameplay, Cheats and Controls. Each is a texture of
  * ours put in the game's texture's place, the words drawn in the game's
  * pictures' style -- the size, the condensing and the colour of each row of
  * the letters measured from them, the shadow under them -- Liberation Serif
@@ -910,7 +910,7 @@ static uint32_t sprite_def(uint32_t id);
 #define RP_LABELS 6
 #define RP_WORDS 6
 static const char *const s_rp_word[RP_WORDS] = { "GRAPHICS SETTINGS", "DISPLAY SETTINGS", "STARTUP SETTINGS",
-                                                 "CHEATS", "CONTROLS", "EXIT" };
+                                                 "GAMEPLAY", "CHEATS", "CONTROLS" };
 
 static struct {
     GuestTex t;
