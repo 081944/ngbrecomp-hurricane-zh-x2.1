@@ -173,11 +173,8 @@ How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNIC
 
 ### Contributors
 
-- [akirahayabusa](https://github.com/akirahayabusa): the freeze in scenes with the sun (#40), folders with
-  non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42)
-- [ManemanFTW](https://github.com/ManemanFTW): the Windows start-up hang (#9) and the audio crackling on
-  Windows (#34)
-- [HammerD72](https://github.com/HammerD72): the audio timing fix (#32)
+Everyone who has contributed code, testing, saves or traces is listed in
+[CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 *Ninja Gaiden* is a trademark of Koei Tecmo. This project is not affiliated with or endorsed by Koei
 Tecmo or Team Ninja.
