@@ -1303,6 +1303,7 @@ void VulkanBackend::GammaCopy(Image& src, Image& dst, float bars, float bars_y) 
     if (!pipe || !fill_sampler_) return;
     Barrier(src, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Barrier(gamma_lut_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Barrier(fill ? edge_ : null2d_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);   // before the pass: no layout change in it
     Barrier(dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     ca.imageView = dst.view;
@@ -1336,8 +1337,6 @@ void VulkanBackend::GammaCopy(Image& src, Image& dst, float bars, float bars_y) 
     w[3].dstBinding = 7; w[3].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER; w[3].pImageInfo = &sm;
     w[4].dstBinding = 4; w[4].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; w[4].pImageInfo = &im2;
     w[5].dstBinding = 8; w[5].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER; w[5].pImageInfo = &sm2;
-    if (fill) Barrier(edge_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    else Barrier(null2d_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     d_.vkCmdPushDescriptorSetKHR(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe_layout_, 0, 6, w);
     d_.vkCmdDraw(cmd_, 3, 1, 0, 0);
     d_.vkCmdEndRendering(cmd_);
