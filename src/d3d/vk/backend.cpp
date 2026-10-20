@@ -18,6 +18,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <sstream>
+#include <iomanip>
 #include <memory>
 #include <set>
 #include <string>
@@ -225,6 +227,8 @@ int g_step_frame = -1;
 // ~/ngb-trace-<n>/, for a glitch that has to be caught in play
 extern "C" { volatile int ngb_trace_request; }   // NGB_D3D_STEP's frame; also the next one after dump_dir/step.now appears
 
+#include "glow_options.h"
+
 // an image of ours: a render target or a texture
 struct Image {
     VkImage image = VK_NULL_HANDLE;
@@ -338,6 +342,20 @@ private:
     bool FinishDevice();
     bool shared_ = false;
     void QueueSubmit(const VkSubmitInfo& si, VkFence fence);
+    struct ContinuousRecord { uint32_t data=0,frame=~0u; };
+    ContinuousRecord continuous_record_[3];
+    Image continuous_glow_[3];
+    uint32_t continuous_hits_[3]{};
+    void InvalidateContinuousGlow(uint32_t data);
+    int ContinuousGlowStage(const State& s,const Assembled& a,uint32_t count);
+    bool ContinuousGlowPass(Image& input,Image& output,uint32_t w,uint32_t h,int stage,const float* threshold);
+    void ApplyContinuousGlow(const State& s,const Assembled& a,uint32_t count,Target& rt,const DrawConstants& c);
+    Image glow_soft_[2];
+    VkSampler glow_soft_sampler_=VK_NULL_HANDLE;
+    bool SoftenGlow(Image& source);
+    std::set<uint32_t> glow_targets_;
+    void ClassifyGlowTarget(const State& s,const Assembled& a,uint32_t count);
+
     Image display_[3];   // copies of the front buffer for the presenter, in turn
     // the title's gamma ramp (D3DDevice_SetGammaRamp: its Screen Adjustment -- gamma, brightness,
     // contrast), applied as the front buffer is copied for the presenter; identity: a plain copy
@@ -842,6 +860,11 @@ VulkanBackend::~VulkanBackend() {
     } else if (dev_) {
         d_.vkDeviceWaitIdle(dev_);
     }
+    if (dev_) {
+        for (auto& image:continuous_glow_) DestroyImage(image);
+        for (auto& image:glow_soft_) DestroyImage(image);
+        if (glow_soft_sampler_) d_.vkDestroySampler(dev_,glow_soft_sampler_,nullptr);
+    }
 }
 
 void VulkanBackend::Begin() {
@@ -1020,6 +1043,8 @@ Target* VulkanBackend::EnsureTarget(const Surface& s, bool depth) {
     uint32_t scale = big ? uint32_t(scale_)
                    : effect ? std::max(1u, std::min(uint32_t(scale_), 8192u / std::max(w, h)))
                    : (depth && w <= 512 && h <= 512) ? uint32_t(shadow_) : 1;
+    if (!depth && w==128 && h==128 && ContinuousGlowEnabled() && glow_targets_.count(s.data))
+        scale=GlowTargetScale(uint32_t(scale_));
     uint32_t iw = w * scale, ih = h * scale;
     uint64_t key = uint64_t(s.data) << 1 | (depth ? 1 : 0);
     auto it = targets_.find(key);
@@ -1169,6 +1194,17 @@ void VulkanBackend::VisResults(int slot) {
     vis_end_[slot].clear();
     if (vis_sum_.size() > 256) vis_sum_.clear();   // tests begun and never ended
 }
+
+
+// Recognize the complete current-frame chain before enlarging its final
+// colour target. A shadow, simulation or unrelated 128x128 target keeps
+// its original allocation. The classification persists through its clear.
+void VulkanBackend::ClassifyGlowTarget(const State& s,const Assembled& a,uint32_t count) {
+    if (!ContinuousGlowEnabled() || ContinuousGlowStage(s,a,count)!=2) return;
+    glow_targets_.insert(s.rt.data);
+}
+
+#include "glow_filter.h"
 
 void VulkanBackend::SetGamma(const uint8_t* ramp) {
     if (!ramp) return;
@@ -1462,6 +1498,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
 
 void VulkanBackend::Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color,
                           float z, uint32_t stencil) {
+    if (ContinuousGlowEnabled() && (flags & kClearTarget)) InvalidateContinuousGlow(s.rt.data);
     Target* rt = (flags & kClearTarget) ? EnsureTarget(s.rt, false) : nullptr;
     Target* ds = (flags & (kClearZ | kClearStencil)) ? EnsureTarget(s.zs, true) : nullptr;
     if (!rt && !ds) return;
@@ -2128,11 +2165,13 @@ void Transpose(const float* m, float* o) {
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
     st_.draws++;
     if (!Assemble(s, prim, start, count, indices, asm_)) { st_.noasm++; return; }
+    ClassifyGlowTarget(s,asm_,count);
     Target* rt = EnsureTarget(s.rt, false);
     Target* ds = s.zs.header && s.rs[kRsZEnable] | s.rs[kRsStencilEnable] ? EnsureTarget(s.zs, true) : nullptr;
     if (rt && ds && (rt->img.w != ds->img.w || rt->img.h != ds->img.h || rt->samples != ds->samples))
         ds = nullptr;                                  // as BeginRendering has it
     if (!rt && !ds) { st_.notarget++; return; }
+    if (ContinuousGlowEnabled()) InvalidateContinuousGlow(s.rt.data);
     SparkEndpoint spark_ends[2]{};
     SparkQuadVertex spark_vertices[6]{};
     Assembled spark_assembled;
@@ -2389,12 +2428,49 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     if (flat) { k.blend = 0; k.zen = 0; k.sten = 0; k.wmask = 0xF; k.cull = 0; }
     static int dbg_shadow = psdbg && !std::strcmp(psdbg, "shadow");
     if (dbg_shadow && pk.tex[0].shadow) { k.blend = 0; k.wmask = 0xF; }
+    TextureDesc glow_desc{};
+    bool glow_pass = ContinuousGlowEnabled() && rt && rt->gw >= 640 && rt->gh >= 448 && a.pretransformed && !prog && !s.ps && count == 4 &&
+        from_target[0] && !info[0].shadow && k.blend && k.src == 1 && k.dst == 1 && k.op == 0x8006 &&
+        !k.zen && k.wmask == 15 && s.tss[0][kTssColorOp] == 5 && s.tss[0][kTssColorArg1] == 2 &&
+        s.tss[0][kTssColorArg2] == 3 && s.tss[1][kTssColorOp] == 1 &&
+        Describe(s.textures[0],glow_desc) && glow_desc.width == 128 && glow_desc.height == 128;
+    if (glow_pass) {
+        const auto& element = a.elements[0];
+        glow_pass = element.buffer < a.buffer_count;
+        if (glow_pass) {
+            const auto& buffer = a.buffers[element.buffer];
+            glow_pass = buffer.src && buffer.stride && size_t(element.offset) + size_t(buffer.stride)*3 + 8 <= buffer.bytes;
+            if (glow_pass) {
+                float x0=1e10f,y0=1e10f,x1=-1e10f,y1=-1e10f;
+                for (int i=0;i<4;++i) {
+                    float xy[2]; std::memcpy(xy,buffer.src+size_t(i)*buffer.stride+element.offset,8);
+                    x0=std::min(x0,xy[0]); y0=std::min(y0,xy[1]); x1=std::max(x1,xy[0]); y1=std::max(y1,xy[1]);
+                }
+                glow_pass = std::abs(x0) <= 0.5f && std::abs(y0) <= 0.5f &&
+                    std::abs(x1-float(rt->gw)) <= 0.5f && std::abs(y1-float(rt->gh)) <= 0.5f;
+            }
+        }
+    }
+    bool continuous_composite=glow_pass &&
+        continuous_record_[2].frame==presents_ && continuous_record_[2].data==(glow_desc.data&0x7FFFFFFFu);
+    glow_pass=continuous_composite;
+    if (glow_pass && GlowStrength()<1.0f) {
+        async_now_=false;
+        pkey^=0x674C4F5753540001ull;k.ps=pkey;
+        pmod=Module(pkey,[&] {return GlowStrengthHlsl(PixelHlsl(pk));},false);
+    }
     VkPipeline pipe = vmod && pmod ? Pipeline(k) : VK_NULL_HANDLE;
     async_now_ = false;
     if (!pipe) {
         st_.nopipe++;
         if (async_) skipped_++;
         return;
+    }
+    if (glow_pass && GlowSoftenMode()) {
+        auto source=targets_.find(uint64_t(glow_desc.data&0x7FFFFFFFu)<<1);
+        if (source==targets_.end() || !SoftenGlow(source->second.img))
+            ngb_renderer_fatal("Could not create the glow softening pass.");
+        views[0]=glow_soft_[1].view;
     }
     st_.drawn++;
 
@@ -2455,6 +2531,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         c.bumpl[i][2] = LodBias(t[kTssMipLodBias]);
         c.bumpl[i][3] = float(t[kTssMaxMipLevel]);
     }
+    if (glow_pass) c.bump[3][2]=GlowStrength(); // unused by this single-texture draw
     // The 2D (screen-space draws into the back buffer) on a wider screen. The game's 2D screens -- menus,
     // the title, chapter cards (src/pc_menu.c says which) -- in its 16:9 look, stretched no wider than 16:9,
     // or with Menus 4:3 the console's 4:3 picture in the middle. In play its HUD and words in their own
@@ -2742,7 +2819,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         img[i] = {VK_NULL_HANDLE, v,
                   info[i].shadow ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         if (!views[i]) img[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        smp[i] = {Sampler(s, i, info[i]), VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
+        VkSampler sampler=glow_pass && i==0 ? glow_soft_sampler_ : Sampler(s,i,info[i]);
+        smp[i] = {sampler, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
     }
     VkWriteDescriptorSet w[10] = {};
     for (int i = 0; i < 10; i++) {
@@ -2835,6 +2913,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         d_.vkCmdDraw(cmd_, a.draw_count, 1, 0, 0);
     }
     if (visq != ~0u) d_.vkCmdEndQuery(cmd_, vis_pool_[slot_], visq);
+    if (rt && ContinuousGlowEnabled()) ApplyContinuousGlow(s,a,count,*rt,c);
     // NGB_D3D_STEP=frame,every: the target after every so many draws of that frame
     static int step_every = -1;
     if (step_every == -1) {
@@ -2973,6 +3052,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
 }
 
 void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects, uint32_t dst_points) {
+    if (ContinuousGlowEnabled()) InvalidateContinuousGlow(dst.data);
     Target* a = EnsureTarget(src, false);
     Target* b = EnsureTarget(dst, false);
     if (!a || !b || a == b) return;
