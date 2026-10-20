@@ -227,7 +227,7 @@ Tecmo or Team Ninja.
 ## License
 
 This project's code is free software: you can redistribute it and/or modify it under the terms of
-the GNU General Public License as published by the Free Software Foundation, either version 2 of the
-License, or (at your option) any later version (`GPL-2.0-or-later`; the text of version 2 is in
-[LICENSE](LICENSE)). It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
+the GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version (`GPL-3.0-or-later`; the text is in [LICENSE](LICENSE)).
+Up to 0.9.24 it was GPL-2.0-or-later. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
 The parts it is built from keep their own licenses: see [THIRD_PARTY.md](THIRD_PARTY.md).

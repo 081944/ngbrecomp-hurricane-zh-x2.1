@@ -55,5 +55,5 @@ Pull requests are welcome. A zip with a patch, attached to an issue, works too.
 - Commit messages start with the area (`Renderer:`, `Controls:`, `Linux:`, ...) and name the issue,
   for example `Renderer: impact sparks keep their 16:9 thickness at 21:9 (#65)`.
 
-The project is licensed GPL-2.0-or-later, and contributions are accepted under the same license.
+The project is licensed GPL-3.0-or-later, and contributions are accepted under the same license.
 Contributors are credited in the [README](README.md#contributors) and in the release notes.
