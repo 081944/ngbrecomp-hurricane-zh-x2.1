@@ -135,7 +135,7 @@ static const char *const s_ctl_toggle_help[5] = {
     "Turns the third-person camera the other way left and right (play only).",
     "Turns the third-person camera the other way up and down (play only).",
     "Turns the first-person view the other way left and right (play only).",
-    "Turns the first-person view the other way up and down: the game's 1st Person Camera Control too.",
+    "Turns the first-person view the other way up and down (play only).",
     "After loading, the right stick turns the camera instead of looking in first person.",
 };
 static int ctl_toggle_get(int r)
