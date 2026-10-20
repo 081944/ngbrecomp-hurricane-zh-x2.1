@@ -432,6 +432,7 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
             nv2a_vk_sample_threads();
 #endif
         xbox_PeekSample("sample");
+        compat_suspend_dump();   /* the threads' last suspensions and resumes: a lost wake-up shows there */
         {   /* NGB_DUMP_RAM=path: the guest's low 64 MB, then the 128 MB
              * contiguous window, to path.N */
             const char *path = getenv("NGB_DUMP_RAM");
