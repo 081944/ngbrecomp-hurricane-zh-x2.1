@@ -32,6 +32,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 #include "platform/win32_compat.h"
@@ -1004,8 +1005,13 @@ static void portable_init(void)
 int main(int argc, char **argv)
 {
     portable_init();   /* before anything picks a folder (the log's, first) */
-#ifdef __APPLE__
-    if (!getenv("NGB_TEST_HIDDEN") && !isatty(STDOUT_FILENO)) {
+#if !defined(_WIN32)
+    /* No terminal and no file of the player's own (the Mac's Finder, Steam on Linux -- a Steam Deck in Game
+     * Mode): the output to log.txt in the save folder, as on Windows, or a start that fails there leaves
+     * nothing to look at (#11). Sent to a file already (`> log 2>&1`), it stays there. */
+    struct stat out_st;
+    bool to_file = fstat(STDOUT_FILENO, &out_st) == 0 && S_ISREG(out_st.st_mode);
+    if (!getenv("NGB_TEST_HIDDEN") && !isatty(STDOUT_FILENO) && !to_file) {
         char log[4200];
         save_dir_path(log, sizeof log - 16);
         ngb_mkdir(log);
