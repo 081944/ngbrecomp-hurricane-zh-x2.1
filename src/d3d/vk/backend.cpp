@@ -2376,12 +2376,11 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             // function first pass) and land a hair behind the surface here and there, z-fighting. The
             // console's 24-bit depth rounded that away; float depth, MSAA's 8 samples a pixel and a high
             // render scale show it as flicker (#53). A small pull toward the camera keeps such passes on
-            // their surface.
-            // NGB_D3D_OVERLAY_BIAS=n: n units (the slope n/4), 0 none; to find what a scene needs
-            static const int overlay_bias = std::getenv("NGB_D3D_OVERLAY_BIAS") ? std::atoi(std::getenv("NGB_D3D_OVERLAY_BIAS")) : 4;
-            if (overlay_bias > 0) {
-                k.zbias = -overlay_bias;
-                k.zslope = -overlay_bias / 4.0f;
+            // their surface. NGB_D3D_OVERLAY_BIAS=0: none, to compare.
+            static const bool overlay_bias = !(std::getenv("NGB_D3D_OVERLAY_BIAS") && !std::strcmp(std::getenv("NGB_D3D_OVERLAY_BIAS"), "0"));
+            if (overlay_bias) {
+                k.zbias = -4;
+                k.zslope = -1.0f;
             }
         }
     }
