@@ -224,6 +224,24 @@ To report a bug, test a build or send a change, see [CONTRIBUTING.md](CONTRIBUTI
 *Ninja Gaiden* is a trademark of Koei Tecmo. This project is not affiliated with or endorsed by Koei
 Tecmo or Team Ninja.
 
+## Quick Menu 0.13
+
+This source variant includes [Quick Menu 0.13](docs/quick-menu.md): a D-pad
+menu for melee weapons, projectiles, Ninpo and restorative items. When
+closed, Up opens Melee Weapons and Down opens Consumables. While open,
+Up/Down changes category, Left/Right selects, A/Enter confirms and B/Escape cancels.
+Left/Right only browses an open menu; it cannot open one.
+It opens during actions; changing category, equipping, item use and optional
+pause wait for Black's native inventory gate. Controls and Quick Menu Pause
+are in the recomp's Controls settings. Artwork and sounds come from the
+player's Black files. A cross layout uses native silver cards and grey
+arrows. Card interiors use 44.89% of the original brightness, with native
+borders and artwork drawn afterward. The background blurs/dims only after
+Quick Menu Pause takes effect.
+Display's Quick Menu Scale offers 100% down to Off in 10% steps. Off disables
+the menu and its controls.
+This variant does not include the separate camera mod.
+
 ## License
 
 This project's code is free software: you can redistribute it and/or modify it under the terms of

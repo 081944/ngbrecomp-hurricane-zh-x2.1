@@ -134,7 +134,7 @@ void xbox_InputInit(void)
     }
 }
 
-DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
+static DWORD input_get_state(DWORD dwPort, XBOX_INPUT_STATE *pState, int raw)
 {
     XINPUT_STATE xi_state;
     DWORD result;
@@ -145,7 +145,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     result = XInputGetState(dwPort, &xi_state);
     if (result != ERROR_SUCCESS) {
         g_controller_connected[dwPort] = FALSE;
-        if (dwPort == 0 && keyboard_enabled()) {
+        if (!raw && dwPort == 0 && keyboard_enabled()) {
             keyboard_state(pState);
             return ERROR_SUCCESS;
         }
@@ -191,7 +191,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
      * Merging is also the better rule. A real pad keeps working -- its
      * buttons are already in pState and the keyboard only adds to them --
      * and there is no special case left to get wrong. */
-    if (dwPort == 0 && keyboard_enabled()) {
+    if (!raw && dwPort == 0 && keyboard_enabled()) {
         XBOX_INPUT_STATE kb;
         int i;
         keyboard_state(&kb);
@@ -298,6 +298,8 @@ static void open_controllers(void)
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
         SDL_JoystickID id;
         int s, have = 0;
+        if (getenv("NGB_TEST_HIDDEN") && getenv("NGB_TEST_INPUT") && !SDL_JoystickIsVirtual(i))
+            continue;
         if (!SDL_IsGameController(i))
             continue;
         id = SDL_JoystickGetDeviceInstanceID(i);
@@ -523,7 +525,7 @@ __attribute__((weak)) void xbox_pad_remap(XBOX_INPUT_STATE *st)
     (void)st;
 }
 
-DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
+static DWORD input_get_state(DWORD dwPort, XBOX_INPUT_STATE *pState, int raw)
 {
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pState)
         return ERROR_DEVICE_NOT_CONNECTED;
@@ -531,14 +533,14 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     SDL_GameController *c = g_pad_lock ? g_pads[dwPort] : NULL;
     if (!c || !SDL_GameControllerGetAttached(c)) {
         g_controller_connected[dwPort] = FALSE;
-        if (dwPort == 0 && keyboard_mode() && g_pad_lock) {
+        if (!raw && dwPort == 0 && keyboard_mode() && g_pad_lock) {
             keyboard_state(pState);
             return ERROR_SUCCESS;
         }
         return ERROR_DEVICE_NOT_CONNECTED;
     }
     g_controller_connected[dwPort] = TRUE;
-    if (dwPort == 0 && keyboard_mode() == 2 && g_pad_lock && xbox_InputKeyboardActive()) {
+    if (!raw && dwPort == 0 && keyboard_mode() == 2 && g_pad_lock && xbox_InputKeyboardActive()) {
         keyboard_state(pState);                     /* the keyboard and mouse are in use */
         return ERROR_SUCCESS;
     }
@@ -593,10 +595,10 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     pState->Gamepad.sThumbRY =
         (SHORT)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
     SDL_UnlockMutex(g_pad_lock);
-    xbox_pad_remap(pState);   /* the title's button bindings, if it has any */
+    if (!raw) xbox_pad_remap(pState);   /* the title's button bindings, if it has any */
 
     /* RECOMP_KEYBOARD=1: the keyboard drives port 0 alongside the pad. */
-    if (dwPort == 0 && keyboard_mode() == 1) {
+    if (!raw && dwPort == 0 && keyboard_mode() == 1) {
         XBOX_INPUT_STATE kb;
         if (keyboard_state(&kb)) {
             pState->Gamepad.wButtons |= kb.Gamepad.wButtons;
@@ -660,3 +662,12 @@ DWORD xbox_InputGetCapabilities(DWORD dwPort, DWORD dwFlags, XBOX_INPUT_CAPABILI
 }
 
 #endif /* _WIN32 */
+
+DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *state)
+{
+    return input_get_state(port, state, 0);
+}
+DWORD xbox_InputGetStateRaw(DWORD port, XBOX_INPUT_STATE *state)
+{
+    return input_get_state(port, state, 1);
+}

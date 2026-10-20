@@ -21,10 +21,12 @@
 #include "port.h"
 #include "input/xinput_xbox.h"
 
+int ngb_quick_controls_active(void);
+int ngb_quick_frozen(void);
 int ngb_menu_up(void);   /* src/menu_mouse.c */
 
 /* What an action presses on the game's pad. */
-enum { T_BTN, T_AN, T_AN2, T_AXIS };
+enum { T_BTN, T_AN, T_AN2, T_AXIS, T_HOST };
 typedef struct {
     const char *name, *ini, *help;
     int key0, key1, pad;
@@ -78,6 +80,13 @@ static const Action s_act[A_COUNT] = {
       XBOX_GAMEPAD_DPAD_LEFT, 0 },
     { "D-Pad Right", "dpad_right", "The controller's directional pad.", SDL_SCANCODE_RIGHT, 0, P(P_DR), T_BTN,
       XBOX_GAMEPAD_DPAD_RIGHT, 0 },
+    /* Keep the four original setting names and IDs for existing profiles. */
+    { "Quick Menu: Category Up", "quick_weapons", "Opens Melee Weapons; while open, selects the previous category.", SDL_SCANCODE_UP, SDL_SCANCODE_1, P(P_DU), T_HOST, 1, 0 },
+    { "Quick Menu: Category Down", "quick_items", "Opens Consumables; while open, selects the next category.", SDL_SCANCODE_DOWN, SDL_SCANCODE_2, P(P_DD), T_HOST, 2, 0 },
+    { "Quick Menu: Previous", "quick_left", "Selects the previous entry while the quick menu is open.", SDL_SCANCODE_LEFT, 0, P(P_DL), T_HOST, 4, 0 },
+    { "Quick Menu: Next", "quick_right", "Selects the next entry while the quick menu is open.", SDL_SCANCODE_RIGHT, 0, P(P_DR), T_HOST, 8, 0 },
+    { "Quick Menu: Confirm", "quick_confirm", "Equips the selected weapon or Ninpo, or uses the selected item.", SDL_SCANCODE_RETURN, 0, P(P_A), T_HOST, 16, 0 },
+    { "Quick Menu: Cancel", "quick_cancel", "Closes the quick menu without applying the selection.", SDL_SCANCODE_ESCAPE, SDL_SCANCODE_BACKSPACE, P(P_B), T_HOST, 32, 0 },
 };
 
 static int s_bind[A_COUNT][3];
@@ -310,7 +319,8 @@ void ngb_bind_set(int a, int slot, int in)
     if (in) {
         for (int o = 0; o < A_COUNT; o++)
             for (int s = 0; s < 3; s++) {
-                if (s_bind[o][s] != in || (o == a && s == slot))
+                if ((a >= A_QUICK_WEAPONS) != (o >= A_QUICK_WEAPONS) ||
+                    s_bind[o][s] != in || (o == a && s == slot))
                     continue;
                 if (slot == 2)
                     s_bind[o][s] = s_bind[a][2];       /* a controller button: swapped */
@@ -346,6 +356,17 @@ static int input_down(int in, const Uint8 *k, Uint32 mouse)
     if (in & BIND_MOUSE)
         return (mouse & SDL_BUTTON(in & 0xFF)) != 0;
     return in < SDL_NUM_SCANCODES && k[in];
+}
+
+/* Quick-menu bindings share physical buttons with combat without stealing
+ * their saved assignments. Consume those inputs only while choosing. */
+static int quick_input(int input)
+{
+    if (!input) return 0;
+    for (int a = A_QUICK_WEAPONS; a < A_COUNT; a++)
+        for (int slot = 0; slot < 3; slot++)
+            if (s_bind[a][slot] == input) return 1;
+    return 0;
 }
 
 static void press(XBOX_INPUT_STATE *st, const Action *t, int v, int axes[4])
@@ -421,11 +442,17 @@ static void apply_invert(XBOX_INPUT_STATE *st)
 void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y)
 {
     ensure();
+    if (ngb_quick_frozen()) {
+        memset(&st->Gamepad, 0, sizeof st->Gamepad);
+        return;
+    }
     int axes[4] = { 0, 0, look_x, look_y };
     st->Gamepad.wButtons = 0;
     memset(st->Gamepad.bAnalogButtons, 0, sizeof st->Gamepad.bAnalogButtons);
-    for (int a = 0; a < A_COUNT; a++)
-        if (input_down(s_bind[a][0], k, mouse) || input_down(s_bind[a][1], k, mouse))
+    int quick = ngb_quick_controls_active();
+    for (int a = 0; a < A_QUICK_WEAPONS; a++)
+        if (((!quick || !quick_input(s_bind[a][0])) && input_down(s_bind[a][0], k, mouse)) ||
+            ((!quick || !quick_input(s_bind[a][1])) && input_down(s_bind[a][1], k, mouse)))
             press(st, &s_act[a], 255, axes);
     st->Gamepad.sThumbLX = clamp_axis(axes[0]);
     st->Gamepad.sThumbLY = clamp_axis(axes[1]);
@@ -451,18 +478,42 @@ static void pad_inputs(const XBOX_INPUT_STATE *st, int v[P_COUNT])
         v[bm[i].p] = b & bm[i].bit ? 255 : 0;
 }
 
+unsigned ngb_bind_quick_state(const Uint8 *keys, unsigned mouse, const XBOX_INPUT_STATE *pad)
+{
+    ensure();
+    int v[P_COUNT] = {0};
+    if (pad)
+        pad_inputs(pad, v);
+    unsigned bits = 0;
+    for (int a = A_QUICK_WEAPONS; a < A_COUNT; a++) {
+        int p = s_bind[a][2];
+        if (input_down(s_bind[a][0], keys, mouse) || input_down(s_bind[a][1], keys, mouse) ||
+            ((p & BIND_PAD) && (p & 255) < P_COUNT && v[p & 255] > 40))
+            bits |= s_act[a].a;
+    }
+    return bits;
+}
+
 /* xboxrecomp's input, each controller read (weak there): in play the
  * controller's buttons go to the actions they are bound to. */
 void xbox_pad_remap(XBOX_INPUT_STATE *st)
 {
+    if (ngb_quick_frozen()) {
+        memset(&st->Gamepad, 0, sizeof st->Gamepad);
+        return;
+    }
     ensure();
     if (ngb_menu_up())
         return;
     apply_invert(st);
-    if (s_pad_identity || getenv("NGB_NO_PAD_REMAP"))
+    int quick = ngb_quick_controls_active();
+    if (!quick && (s_pad_identity || getenv("NGB_NO_PAD_REMAP")))
         return;
     int v[P_COUNT], axes[4] = { 0 };
     pad_inputs(st, v);
+    if (quick)
+        for (int p = 0; p < P_COUNT; p++)
+            if (quick_input(BIND_PAD | p)) v[p] = 0;
     st->Gamepad.wButtons = 0;
     memset(st->Gamepad.bAnalogButtons, 0, sizeof st->Gamepad.bAnalogButtons);
     for (int a = 0; a < A_COUNT; a++) {
@@ -488,7 +539,7 @@ void ngb_bind_capture_begin(int a, int slot)
     s_cap_since = SDL_GetTicks64();
     XBOX_INPUT_STATE st;
     memset(s_cap_prev, 0, sizeof s_cap_prev);
-    if (xbox_InputGetState(0, &st) == 0)
+    if (xbox_InputGetStateRaw(0, &st) == 0)
         pad_inputs(&st, s_cap_prev);
     __atomic_store_n(&s_cap_action, a, __ATOMIC_RELEASE);
 }
@@ -507,7 +558,7 @@ int ngb_bind_capture_tick(void)
     if (!r && s_cap_slot == 2) {                   /* the controller: its next button down */
         XBOX_INPUT_STATE st;
         int v[P_COUNT] = { 0 };
-        if (!xbox_InputKeyboardActive() && xbox_InputGetState(0, &st) == 0) {
+        if (xbox_InputGetStateRaw(0, &st) == 0) {
             pad_inputs(&st, v);
             for (int p = 0; p < P_COUNT && !r; p++)
                 if (v[p] > 120 && s_cap_prev[p] <= 120)

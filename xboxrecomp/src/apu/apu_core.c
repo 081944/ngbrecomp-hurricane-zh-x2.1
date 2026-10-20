@@ -427,6 +427,43 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
     }
 
 #if APU_SDL_OUT
+    /* Silent regression runs can measure PCM before any host output. */
+    if (getenv("NGB_APU_PROBE")) {
+        extern volatile int apu_host_paused;
+        const char *audio = getenv("NGB_AUDIO");
+        bool silent = audio && *audio == '0';
+        if (silent && !g_audio_muted)
+            mixer_render(d->monitor.frame_buf, MIXER_FRAME_SAMPLES);
+        static int64_t last;
+        static unsigned blocks, nonzero, hash = 2166136261u;
+        static FILE *pcm;
+        if (!pcm && getenv("NGB_APU_CAPTURE"))
+            pcm = fopen(getenv("NGB_APU_CAPTURE"), "wb");
+        if (pcm) fwrite(d->monitor.frame_buf, sizeof(d->monitor.frame_buf), 1, pcm);
+        int peak = 0;
+        for (int i = 0; i < MIXER_FRAME_SAMPLES; i++) {
+            int a = abs(d->monitor.frame_buf[i][0]);
+            if (a > peak) peak = a;
+            hash = (hash ^ (uint16_t)d->monitor.frame_buf[i][0]) * 16777619u;
+        }
+        blocks++;
+        nonzero += peak != 0;
+        int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        if (now - last >= 5000) {
+            fprintf(stderr, "[APU PROBE] ms=%lld blocks=%u nonzero=%u hash=%08X host_pause=%d\n",
+                    (long long)now, blocks, nonzero, hash, apu_host_paused);
+            last = now;
+            blocks = nonzero = 0;
+            hash = 2166136261u;
+        }
+        /* In silent tests drain and clear exactly once per block, as the
+         * real SDL output does. Otherwise samples accumulate in frame_buf
+         * and PCM hashes cannot establish that a stream is advancing. */
+        if (silent) {
+            memset(d->monitor.frame_buf, 0, sizeof(d->monitor.frame_buf));
+            return;
+        }
+    }
     /* SDL (POSIX): what xemu's monitor does -- the 256 samples the voice
      * processor and DSP stage left in frame_buf over the last eight frames,
      * plus the software mixer on top, then a clean buffer for the next

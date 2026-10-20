@@ -53,6 +53,7 @@
 extern void xbox_InputInit(void);
 #if defined(NGB_NV2A_VK)
 #include "launcher.h"
+#include "quick_select.h"
 
 /* Skip intro movie: see src/movie_skip.c. The kernel's open hook tells it
  * which movie the title is about to play. */
@@ -1030,7 +1031,7 @@ int main(int argc, char **argv)
     timeBeginPeriod(1);
     /* A GUI program, so no console window opens; started from one, its
      * output goes there, else to log.txt in the save folder. */
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+    if (!getenv("NGB_LOG_TO_FILE") && AttachConsole(ATTACH_PARENT_PROCESS)) {
         freopen("CONOUT$", "w", stdout);
         freopen("CONOUT$", "w", stderr);
     } else {
@@ -1091,6 +1092,7 @@ int main(int argc, char **argv)
 
     printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
     printf("Game directory: %s\n", s_game_dir);
+    { extern void ngb_quick_set_game_dir(const char *); ngb_quick_set_game_dir(s_game_dir); }
 
 #if defined(_WIN32)
     SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
@@ -1285,8 +1287,10 @@ int main(int argc, char **argv)
 
 #if defined(NGB_NV2A_VK)
     if (s_use_gpu && !s_headless) {
-        while (nv2a_window_pump())
+        while (nv2a_window_pump()) {
+            ngb_quick_poll();
             usleep(2000);
+        }
         printf("Window closed.\n");
         _exit(0);
     }

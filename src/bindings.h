@@ -16,6 +16,8 @@ enum {
     A_MOVE_UP, A_MOVE_DOWN, A_MOVE_LEFT, A_MOVE_RIGHT,
     A_CAM_UP, A_CAM_DOWN, A_CAM_LEFT, A_CAM_RIGHT,
     A_DPAD_UP, A_DPAD_DOWN, A_DPAD_LEFT, A_DPAD_RIGHT,
+    A_QUICK_WEAPONS, A_QUICK_ITEMS, A_QUICK_LEFT, A_QUICK_RIGHT,
+    A_QUICK_CONFIRM, A_QUICK_CANCEL,
     A_COUNT
 };
 
@@ -55,6 +57,9 @@ void ngb_bind_input_short(int input, char *out, int n);
  * in play's prompts; 0 none. */
 int ngb_bind_prompt(int analog_button);
 unsigned ngb_bind_generation(void);           /* changes when the bindings do */
+/* Quick-menu actions from physical inputs, before gameplay remapping. */
+struct XBOX_INPUT_STATE;
+unsigned ngb_bind_quick_state(const unsigned char *keys, unsigned mouse, const struct XBOX_INPUT_STATE *pad);
 
 /* Waiting for an input for a slot: the next key or mouse button (slots 0-1,
  * from the window's events) or controller button (slot 2, polled). */

@@ -77,14 +77,15 @@ void ngb_pc_set_setting(int which, int value);
 /* The settings, numbered as ngb_pc_setting has them. */
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
-       S_GLOW, S_COUNT };
+       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_COUNT };
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
     "Display", "V-Sync", "FPS Counter", "Window Size", "Aspect Ratio",
     "Skip Intros", "Settings at Startup", "Anti-Aliasing (MSAA)",
     "Infinite Health", "Infinite Ninpo", "Infinite Essence", "All Difficulties",
-    "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow",
+    "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
+    "Quick Menu Scale",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -106,11 +107,13 @@ static const char *const s_help[S_COUNT] = {
     "Every costume at the Costume Selection, and three it never offers.",
     "Costumes in the game it never offers. From the next area.",
     "A softer, fainter glow on bright lights. Off: the console's.",
+    "Pauses after the current action ends. Music continues.",
+    "Resizes the whole quick menu. Off disables it and its controls.",
 };
 
 /* The categories: the strip's words, their rows. */
 #define CATS 5
-#define CAT_ROWS 5
+#define CAT_ROWS 7
 #define CAT_CTL 4                 /* Controls: the bindings' list (src/bindings.c), not settings */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
@@ -182,6 +185,7 @@ static void value_text(int row, char *out, size_t n)
         break;
     }
     case S_ASPECT:  snprintf(out, n, "%s", v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
+    case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_SKIP:
     case S_ALLDIFF:
     case S_ALLCOST:
@@ -227,6 +231,9 @@ static void change(int row, int step)
         break;
     case S_VSYNC:
         ngb_pc_set_setting(row, ngb_vsync_step(v, step));
+        break;
+    case S_QUICKSCALE:
+        ngb_pc_set_setting(row, ngb_quick_scale_step(v, step));
         break;
     case S_ASPECT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 3)) % 4);

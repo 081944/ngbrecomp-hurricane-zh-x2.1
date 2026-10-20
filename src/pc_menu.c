@@ -60,7 +60,7 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
-       ROW_GLOW,
+       ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -72,7 +72,7 @@ static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OU
 static const uint8_t s_rows_ws[] = { ROW_SCREEN, ROW_MOVIE, ROW_DEFAULT, ROW_EXIT };
 static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
 static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_BACK };
-static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_BACK };
+static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_QUICKSCALE, ROW_BACK };
 static const uint8_t s_rows_start[] = { ROW_SKIP, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
@@ -87,6 +87,11 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define N_STD (int)sizeof s_rows_std
 
 /* New text, category 2 (the Options menu's). */
+#define T_QUICKFREEZE 0x201B7
+#define D_QUICKFREEZE 0x201B8
+#define T_QUICKSCALE  0x201C0
+#define D_QUICKSCALE  0x201C1
+#define T_QUICKSCALE0 0x201C2        /* + 0..10: 100%, 90%, ... 10%, Off */
 #define T_PC       0x20100
 #define T_RENDER   0x20101
 #define T_TEXTURE  0x20102
@@ -153,6 +158,16 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" */
 
 static const struct { uint32_t id; const char *text; } s_text[] = {
+    { T_QUICKFREEZE, "Quick Menu Pause" },
+    { T_QUICKSCALE, "Quick Menu Scale" },
+    { D_QUICKSCALE, "Resizes the whole quick menu. Off disables it and its controls." },
+    { T_QUICKSCALE0 + 0, "100%" }, { T_QUICKSCALE0 + 1, "90%" },
+    { T_QUICKSCALE0 + 2, "80%" }, { T_QUICKSCALE0 + 3, "70%" },
+    { T_QUICKSCALE0 + 4, "60%" }, { T_QUICKSCALE0 + 5, "50%" },
+    { T_QUICKSCALE0 + 6, "40%" }, { T_QUICKSCALE0 + 7, "30%" },
+    { T_QUICKSCALE0 + 8, "20%" }, { T_QUICKSCALE0 + 9, "10%" },
+    { T_QUICKSCALE0 + 10, "Off" },
+    { D_QUICKFREEZE, "Pauses gameplay while choosing a weapon or healing item with the D-pad." },
     { T_PC,      "PC Settings" },
     { T_RENDER,  "Render Resolution" },
     { T_TEXTURE, "Anisotropic Filtering" },
@@ -259,6 +274,7 @@ static uint32_t make_rows(const uint8_t *kinds, int n)
         case ROW_WINDOW:  src = 0x429984; max = 6; break;
         case ROW_ASPECT:  src = 0x429984; max = 3; break;
         case ROW_EXTRACOST: src = 0x429984; max = 3; break;
+        case ROW_QUICKSCALE: src = 0x429984; max = 10; break;
         default:          src = 0x429984; break;          /* a value, 0-1 */
         }
         memcpy((void *)XBOX_PTR(e), (void *)XBOX_PTR(src), 0x1C);
@@ -277,7 +293,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_RENDER, T_TEXTURE, T_SHADOW, T_DISPLAY, T_VSYNC,
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
-                                   T_GLOW };
+                                   T_GLOW, T_QUICKFREEZE, T_QUICKSCALE };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -447,6 +463,7 @@ void ngb_movie_playing(int playing)
     if (playing)
         s_boot = 0;
 }
+int ngb_movie_active(void) { return s_movie_ms && now_ms() - s_movie_ms < 200; }
 void ngb_boot_over(void) { s_boot = 0; }   /* the title is up */
 
 /* NGB_MENUS_43=1: on a wide screen the 2D screens in the game's 4:3 mode too, the console's 4:3 picture
@@ -644,6 +661,8 @@ static int row_kind(int row)
 static uint32_t pc_value_id(int row, uint32_t movie_id)
 {
     switch (row_kind(row)) {
+    case ROW_QUICKFREEZE: return ngb_pc_setting(19) ? T_ON : T_OFF;
+    case ROW_QUICKSCALE: return T_QUICKSCALE0 + (uint32_t)((100 - ngb_pc_setting(20)) / 10);
     case ROW_MOVIE:   return movie_id;
     case ROW_RENDER:  return T_SCALE0 + (uint32_t)(ngb_pc_setting(0) - 1);
     case ROW_TEXTURE: {
@@ -685,11 +704,13 @@ static int pc_value_change(int row, int delta)
 {
     int kind = row_kind(row);
     int step = delta > 0 ? 1 : -1;
-    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_GLOW))
+    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_QUICKSCALE))
         return 0;
     if (!delta)
         return 1;
     switch (kind) {
+    case ROW_QUICKFREEZE: ngb_pc_set_setting(19, !ngb_pc_setting(19)); break;
+    case ROW_QUICKSCALE: ngb_pc_set_setting(20, ngb_quick_scale_step(ngb_pc_setting(20), step)); break;
     case ROW_RENDER: {
         int v = ngb_pc_setting(0) + step;
         ngb_pc_set_setting(0, v < 1 ? 10 : v > 10 ? 1 : v);
@@ -1805,7 +1826,8 @@ void sub_00220870(void)
                                            D_SKIP & 0xFFFF, D_LAUNCHER & 0xFFFF, D_MSAA & 0xFFFF,
                                            D_HEALTH & 0xFFFF, D_NINPO & 0xFFFF, D_ESSENCE & 0xFFFF,
                                            D_ALLDIFF & 0xFFFF, D_SCARABS & 0xFFFF, D_ALLCOST & 0xFFFF,
-                                           D_EXTRACOST & 0xFFFF, D_GLOW & 0xFFFF };
+                                           D_EXTRACOST & 0xFFFF, D_GLOW & 0xFFFF,
+                                           D_QUICKFREEZE & 0xFFFF, D_QUICKSCALE & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);

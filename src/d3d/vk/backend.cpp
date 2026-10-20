@@ -41,6 +41,10 @@
 #include "kernel/kernel.h"
 #include "vk/spirv.h"
 #include "nv2a_vk_share.h"   // the NV2A renderer's device and presenter (NGB_RENDERER=d3d)
+extern "C" {
+#include "quick_select.h"
+int ngb_pc_setting(int which);
+}
 
 extern "C" volatile int ngb_nv2a_logdraws;   // xemu pgraph/vk/draw.c
 
@@ -357,6 +361,11 @@ private:
     void ClassifyGlowTarget(const State& s,const Assembled& a,uint32_t count);
 
     Image display_[3];   // copies of the front buffer for the presenter, in turn
+    Image quick_layer_;
+    Image quick_background_;
+    VkSampler quick_sampler_ = VK_NULL_HANDLE;
+    void QuickMenu(Image& dst);
+    void QuickMenuBackground(Image& dst);
     // the title's gamma ramp (D3DDevice_SetGammaRamp: its Screen Adjustment -- gamma, brightness,
     // contrast), applied as the front buffer is copied for the presenter; identity: a plain copy
     uint8_t gamma_[768] = {};
@@ -1341,6 +1350,8 @@ void VulkanBackend::GammaCopy(Image& src, Image& dst, float bars, float bars_y) 
     d_.vkCmdDraw(cmd_, 3, 1, 0, 0);
     d_.vkCmdEndRendering(cmd_);
 }
+
+#include "quick_menu.inc"
 
 // Into edge_ (16 x 4: bands of the left, right, top and bottom edge), the picture's colours just inside
 // its 16:9 part, each band an average of 32 points, blended in at 4% a frame: the fill follows a new
@@ -3501,6 +3512,7 @@ void VulkanBackend::Present(const Surface& front) {
             }
         }
     }
+    if (show) QuickMenu(*show);
     hud_menu_ = hud_cover_ >= 0.5f && threed_ < 30;
     for (int g = 0; g < 4; g++) {
         gauge_prev_[g][0] = g < gauges_now_ ? gauge_x_[g][0] : 1e30f;

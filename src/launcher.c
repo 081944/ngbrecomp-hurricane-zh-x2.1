@@ -94,6 +94,20 @@ static void snap_size(NgbSettings *s)
 
 void ngb_settings_snap_size(NgbSettings *s) { snap_size(s); }
 
+int ngb_quick_scale_value(int v)
+{
+    /* Preserve the nearest size from the earlier 25-percent choices. */
+    if (v == 25) return 30;
+    if (v == 75) return 80;
+    return v >= 0 && v <= 100 && v % 10 == 0 ? v : 100;
+}
+
+int ngb_quick_scale_step(int v, int dir)
+{
+    int i = (100 - ngb_quick_scale_value(v)) / 10;
+    return 100 - ((i + (dir < 0 ? 10 : 1)) % 11) * 10;
+}
+
 void ngb_settings_load(NgbSettings *s)
 {
     char path[1100], line[256];
@@ -110,6 +124,8 @@ void ngb_settings_load(NgbSettings *s)
     s->anisotropy = 16;
     s->msaa = 1;
     s->shadow_scale = 4;
+    s->quick_menu_freeze = 1;
+    s->quick_menu_scale = 100;
     s->skip_intro = 0;
     s->show_launcher = 1;
 
@@ -161,6 +177,10 @@ void ngb_settings_load(NgbSettings *s)
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
             s->show_fps = atoi(val) != 0;
+        } else if (!strcmp(key, "quick_menu_freeze")) {
+            s->quick_menu_freeze = atoi(val) != 0;
+        } else if (!strcmp(key, "quick_menu_scale")) {
+            s->quick_menu_scale = ngb_quick_scale_value(atoi(val));
         } else if (!strcmp(key, "skip_intro")) {
             s->skip_intro = atoi(val) != 0;
         } else if (!strcmp(key, "show_settings_at_startup")) {
@@ -196,6 +216,8 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
     fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
+    fprintf(f, "quick_menu_freeze = %d\n", s->quick_menu_freeze);
+    fprintf(f, "quick_menu_scale = %d\n", ngb_quick_scale_value(s->quick_menu_scale));
     fprintf(f, "skip_intro = %d\n", s->skip_intro);
     fprintf(f, "show_settings_at_startup = %d\n", s->show_launcher);
     fclose(f);
