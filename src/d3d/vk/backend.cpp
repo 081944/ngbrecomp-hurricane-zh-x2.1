@@ -209,6 +209,7 @@ void DecodeBC(Host h, const uint8_t* src, uint32_t w, uint32_t h_, std::vector<u
 }
 constexpr VkDeviceSize kRingSize = 64u << 20;   // vertices, indices and constants of one frame
 constexpr uint32_t kQuadVertices = 6;
+extern "C" int ngb_pc_setting(int which);
 extern "C" float ngb_hud_shape(void);   // src/pc_menu.c: the menus' and HUD's narrowing
 extern "C" int ngb_2d_stretched(void);
 extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
@@ -2122,15 +2123,28 @@ void Transpose(const float* m, float* o) {
         for (int c = 0; c < 4; c++) o[c * 4 + r] = m[r * 4 + c];
 }
 
+#include "spark_aspect.h"
+
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
-    Assembled& a = asm_;
     st_.draws++;
-    if (!Assemble(s, prim, start, count, indices, a)) { st_.noasm++; return; }
+    if (!Assemble(s, prim, start, count, indices, asm_)) { st_.noasm++; return; }
     Target* rt = EnsureTarget(s.rt, false);
     Target* ds = s.zs.header && s.rs[kRsZEnable] | s.rs[kRsStencilEnable] ? EnsureTarget(s.zs, true) : nullptr;
     if (rt && ds && (rt->img.w != ds->img.w || rt->img.h != ds->img.h || rt->samples != ds->samples))
         ds = nullptr;                                  // as BeginRendering has it
     if (!rt && !ds) { st_.notarget++; return; }
+    SparkEndpoint spark_ends[2]{};
+    SparkQuadVertex spark_vertices[6]{};
+    Assembled spark_assembled;
+    bool spark_quad=false;
+    if (rt && rt->gw>=640 && rt->gh>=448 && SparkFixEnabled() && SparkAspect()>16.0/9.0 &&
+        SparkEndpoints(s,prim,count,asm_,spark_ends)) {
+        // Match the original hardware line-width clamp at this actual target scale.
+        float scale=float(rt->img.w)/float(rt->gw);
+        float width=wide_lines_?std::clamp(Bits(s.rs[kRsLineWidth])*scale,1.0f,line_max_)/scale:1.0f/scale;
+        spark_quad=ExpandSpark(s,spark_ends,float(SparkAspect()/(16.0/9.0)),width,spark_vertices,spark_assembled);
+    }
+    Assembled& a=spark_quad?spark_assembled:asm_;
     rt_draws_[s.rt.data]++;
 
     // vertex shader: the title's program, or fixed function for its declaration
@@ -2153,6 +2167,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     bool points = a.topology == Topology::Points;
     bool sprite = points && s.rs[kRsPointSpriteEnable];
     if (points) vkey ^= 0x9D7E0000;
+    if (spark_quad) vkey ^= 0x53A4B197E42D061Bull;
     static const bool spritelog = std::getenv("NGB_D3D_SPRITELOG") != nullptr;
     if (sprite && spritelog) {   // NGB_D3D_SPRITELOG: each point sprite setup once, every stage (#51)
         static std::set<uint64_t> told;
@@ -2176,7 +2191,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::lock_guard<std::recursive_mutex> g(cache_mu_);
         vnew = !modules_.count(vkey);
     }
-    if (vnew && !points) {   // how it is made, for the cache (ShaderCache)
+    if (vnew && !points && !spark_quad) {   // how it is made, for the cache (ShaderCache)
         std::vector<uint8_t> r;
         if (prog) {
             CurrentVertexProgramRecipe(s.vs->program, a.regs, a.decode, quad, r);
@@ -2194,6 +2209,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     VkShaderModule vmod = Module(vkey, [&] {
         std::string src = prog ? VertexProgramHlsl(s.vs->program, a.regs, a.decode)
                                : FixedVertexHlsl(a.regs, a.pretransformed, a.decode, fk);
+        if (spark_quad) src = SparkStrokeHlsl(std::move(src));
         if (quad) src = QuadHlsl(std::move(src));
         if (points) src = PointHlsl(std::move(src), prog ? 0 : a.pretransformed ? 2 : 1);
         static const char* dump = std::getenv("NGB_D3D_SHADERDUMP");
@@ -2376,6 +2392,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     k.ccw = front == 0x901;              // front faces counter clockwise (in Direct3D's y-down screen)
     k.cullfront = k.cull && cull == front;
     k.fill = s.rs[kRsFillMode];
+    if (spark_quad) { k.cull=0;k.fill=0x1B02;k.zbias=0;k.zslope=0; }
     static bool nocull = std::getenv("NGB_D3D_NOCULL") != nullptr;    // debugging
     static bool nodepth = std::getenv("NGB_D3D_NODEPTH") != nullptr;  // debugging
     static bool cullinv = std::getenv("NGB_D3D_CULLINV") != nullptr;  // debugging: the other side
