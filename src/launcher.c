@@ -99,7 +99,7 @@ int ngb_quick_scale_value(int v)
     /* Preserve the nearest size from the earlier 25-percent choices. */
     if (v == 25) return 30;
     if (v == 75) return 80;
-    return v >= 0 && v <= 100 && v % 10 == 0 ? v : 100;
+    return v >= 0 && v <= 100 && v % 10 == 0 ? v : 0;
 }
 
 int ngb_quick_scale_step(int v, int dir)
@@ -125,7 +125,7 @@ void ngb_settings_load(NgbSettings *s)
     s->msaa = 1;
     s->shadow_scale = 4;
     s->quick_menu_freeze = 1;
-    s->quick_menu_scale = 100;
+    s->quick_menu_scale = 0;    /* the quick menu off unless chosen (Gameplay) */
     s->skip_intro = 0;
     s->show_launcher = 1;
 

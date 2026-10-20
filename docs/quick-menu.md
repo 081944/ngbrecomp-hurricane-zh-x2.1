@@ -42,15 +42,14 @@ brightness (two successive 33% reductions), preserving its alpha. Frames,
 icons, arrows and quantities are drawn afterward with their own colours.
 The runtime tint changes no game asset file.
 
-Display's **Quick Menu Scale** offers 100%, 90%, 80%, 70%, 60%, 50%, 40%,
-30%, 20%, 10% and Off, in that order,
-at both settings entry points. It defaults to 100%, including old profiles,
-and saves as `quick_menu_scale` in settings.ini (percentage, not an index).
-Missing or invalid integer values use 100%. The old 75% and 25% choices
-migrate to 80% and 30%. Off saves as 0 and disables opening, rendering,
-pause and modal input capture. Pending commands/open requests are discarded
-and an owned pause reference is released, including when disabled while
-open. Re-enabling does not turn an already held direction into an opener.
+RECOMP SETTINGS -> Gameplay -> **Quick Menu** offers Off, 100%, 90% ... 10%:
+off by default, and otherwise the menu's size. It saves as `quick_menu_scale`
+in settings.ini (a percentage, 0 for Off; missing or invalid values are Off;
+the old 75% and 25% choices migrate to 80% and 30%). Off disables opening,
+rendering, pause and modal input capture. Pending commands/open requests are
+discarded and an owned pause reference is released, including when disabled
+while open. Re-enabling does not turn an already held direction into an
+opener. **Quick Menu Pause** is beside it (`quick_menu_freeze`, on by default).
 The presenter scales the entire layer
 uniformly around its lower-left anchor, including cards, icons, arrows and
 quantities. The background effect still covers the game picture. Changing
@@ -62,12 +61,6 @@ The menu is drawn afterward and stays sharp. The pass downsamples the
 current display copy into a fixed 640 x 360 scratch image, then applies a
 nine-tap filter and 0.70 brightness. It never reads the frame back to the
 CPU, holds a screenshot, or waits for the whole GPU to idle.
-
-The binary is a separate build of ngbrecomp, rather than a runtime plugin.
-Its upstream revision and game contract are recorded in
-`quick-menu-compatibility.json`. A future recomp executable cannot load this
-mod automatically. Carry its source forward and rebuild before claiming
-compatibility with that release.
 
 ## Integration points
 
@@ -90,11 +83,11 @@ compatibility with that release.
   only the physical controls assigned to quick actions while the menu owns
   them. Existing combat bindings are retained when quick actions are rebound.
 - `launcher.c/h` stores the percentage and shares its stepping/validation
-  between both Display pages. `ingame_menu.c` appends setting 19 after the
-  existing pause setting 18. Preserve these identifiers when porting.
+  between both settings menus. In `ingame_menu.c`'s `ngb_pc_setting`, 19 is
+  Quick Menu Pause and 20 the Quick Menu size (18 is Smoother Glow).
 - `main.c`: polls the host input; `ingame_menu.c` forwards SDL events. `cheats.c` invokes
   the guest state guard at frame end. `pc_menu.c`, `pause_tab.c`,
-  `launcher.c/h`, and `ingame_menu.c` expose the Controls setting.
+  `launcher.c/h`, and `ingame_menu.c` expose the settings (the Gameplay page).
 - `manual_functions.json` and CMake register the replacement and sources.
 
 The saved pause key remains `quick_menu_freeze` for existing profiles; its
@@ -138,43 +131,23 @@ The opacity-based picture bounds determine size and alignment only. Draw
 the complete decoded texture: the faint glow around bottles extends beyond
 those bounds and would otherwise end at a visible rectangular crop.
 
-## Updating to a future upstream revision
+## Regression checks
 
-1. Keep the existing working build and use a clean checkout of the desired
-   upstream revision. Use `git apply --3way --check quick-menu.patch` first.
-   Resolve conflicts by reviewing the integration points above, then apply
-   the patch. Never replace a newer host EXE with this package and describe
-   it as an update to that newer version.
-2. Run `python tools/check_quick_menu.py`. It checks source integration and
-   persistent identifiers, not runtime compatibility. Regenerate lifted code
-   from the same validated retail XBE, then compile. The manual hook must
-   have exactly one definition and remain on the indirect-call map.
-3. Use copied saves, hidden windows, `SDL_AUDIODRIVER=dummy` and `NGB_AUDIO=0`.
-   Verify both pause modes before/during/after selection: 60 Hz frame service,
-   gameplay task flags, actor positions/animation, held attacks/jump/projectile
-   and movement, and no simulation catch-up. Check PCM stream advancement in
-   silent probes, then arrange a user's listening test.
-4. Open during jumps, attacks and dashes: ensure the action finishes before
-   category changes, equip/use and optional pause unlock. Early confirmation
-   must not fire later. Check both pause modes, within-category browsing and
-   cancellation while waiting. Equip available melee/projectile weapons and
-   Ninpo repeatedly. Verify the model is visible and collision stays intact.
-   Check health/ninpo use, native sound dispatch and exactly one inventory
-   debit. Exercise title/loading/cutscene/native-menu guards and rebinding.
-5. Inspect the GPU composition at 4:3, 16:9, 16:10 and 21:9, low and high
-   render scales. Verify blur/dimming starts only after the action finishes
-   with Pause On, stays absent while waiting and with Pause Off, and leaves
-   the menu sharp. Check frame pacing and immediate restoration on close.
-   Exercise every Quick Menu Scale percentage and Off from both Display
-   pages, saved-value reload, proportions, lower-left placement and
-   quantities. Off must not leave a hidden pause, draw, consume gameplay
-   controls, or execute a pending confirmation. Check old 75%/25% migration
-   and release/repress after re-enabling with a direction held.
-   Then update the manifest and validation notes to the actual tested
-   revision. A successful patch application alone is insufficient.
+When the quick menu or the code around it changes:
 
-The optional `NGB_TEST_HIDDEN` + `NGB_TEST_INPUT` seam creates an in-process
-SDL virtual controller. `NGB_QUICK_PROBE` logs native state and frame counts.
-`NGB_APU_PROBE` drains PCM in silent tests, and `NGB_APU_CAPTURE` can record
-raw stereo S16LE at 48 kHz without opening an audio device. These are disabled
-in the normal launcher. Keep their output outside the user's profile.
+1. Use copied saves, a headless window, `SDL_AUDIODRIVER=dummy` and `NGB_AUDIO=0`
+   (AGENTS.md). The menu reads the physical controller and the keyboard, so drive it
+   with keys on the test display (Up/1, Down/2, Left/Right, Enter, Escape), not
+   `RECOMP_PAD_LIVE`.
+2. Verify both pause modes before/during/after selection: 60 Hz frame service,
+   gameplay, held attacks/jump/projectile and movement, and no simulation catch-up.
+3. Open during jumps, attacks and dashes: the action finishes before category
+   changes, equip/use and optional pause unlock, and an early confirmation does not
+   fire later. Equip melee/projectile weapons and Ninpo repeatedly; the model is
+   visible and collision intact. Health/ninpo use plays the native sound and takes
+   exactly one item. Check the title/loading/cutscene/native-menu guards and rebinding.
+4. Inspect the composition at 4:3, 16:9, 16:10 and 21:9, low and high render scales:
+   blur/dimming only once the action ends with Pause On, never while waiting or with
+   Pause Off, the menu sharp. Every Quick Menu size and Off, saved and reloaded. Off
+   must not leave a hidden pause, draw, consume gameplay controls or run a pending
+   confirmation.

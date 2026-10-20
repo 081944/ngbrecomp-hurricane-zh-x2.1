@@ -83,6 +83,8 @@ of the pause menu. Changes apply at once and are saved.
 - **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
+- **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
+  and items, and whether the game pauses while it is open
 - **Cheats** (for the session only): infinite health, ninpo, essence; golden scarabs
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
   inversion; start in third person
@@ -111,6 +113,10 @@ SETTINGS → Controls) the stick turns the third-person camera after every load.
 flips the stick and mouse for the third-person camera, **Invert First-Person X** first-person left and
 right; first-person up and down is the game's own Options → Controller Settings → 1st Person Camera
 Control.
+
+With the **Quick Menu** on (RECOMP SETTINGS → Gameplay), Up and Down on the d-pad (or the Up / Down
+arrows, 1 / 2) open it on the melee weapons or the items; Up and Down then change category, Left and
+Right choose, A / Enter equips or uses, B / Escape closes. Its keys are in Controls.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
 Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
@@ -223,24 +229,6 @@ To report a bug, test a build or send a change, see [CONTRIBUTING.md](CONTRIBUTI
 
 *Ninja Gaiden* is a trademark of Koei Tecmo. This project is not affiliated with or endorsed by Koei
 Tecmo or Team Ninja.
-
-## Quick Menu 0.13
-
-This source variant includes [Quick Menu 0.13](docs/quick-menu.md): a D-pad
-menu for melee weapons, projectiles, Ninpo and restorative items. When
-closed, Up opens Melee Weapons and Down opens Consumables. While open,
-Up/Down changes category, Left/Right selects, A/Enter confirms and B/Escape cancels.
-Left/Right only browses an open menu; it cannot open one.
-It opens during actions; changing category, equipping, item use and optional
-pause wait for Black's native inventory gate. Controls and Quick Menu Pause
-are in the recomp's Controls settings. Artwork and sounds come from the
-player's Black files. A cross layout uses native silver cards and grey
-arrows. Card interiors use 44.89% of the original brightness, with native
-borders and artwork drawn afterward. The background blurs/dims only after
-Quick Menu Pause takes effect.
-Display's Quick Menu Scale offers 100% down to Off in 10% steps. Off disables
-the menu and its controls.
-This variant does not include the separate camera mod.
 
 ## License
 

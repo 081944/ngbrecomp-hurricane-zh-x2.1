@@ -1031,7 +1031,7 @@ int main(int argc, char **argv)
     timeBeginPeriod(1);
     /* A GUI program, so no console window opens; started from one, its
      * output goes there, else to log.txt in the save folder. */
-    if (!getenv("NGB_LOG_TO_FILE") && AttachConsole(ATTACH_PARENT_PROCESS)) {
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
         freopen("CONOUT$", "w", stdout);
         freopen("CONOUT$", "w", stderr);
     } else {

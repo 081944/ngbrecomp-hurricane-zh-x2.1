@@ -298,8 +298,6 @@ static void open_controllers(void)
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
         SDL_JoystickID id;
         int s, have = 0;
-        if (getenv("NGB_TEST_HIDDEN") && getenv("NGB_TEST_INPUT") && !SDL_JoystickIsVirtual(i))
-            continue;
         if (!SDL_IsGameController(i))
             continue;
         id = SDL_JoystickGetDeviceInstanceID(i);

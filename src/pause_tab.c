@@ -85,7 +85,7 @@ static const char *const s_label[S_COUNT] = {
     "Skip Intros", "Settings at Startup", "Anti-Aliasing (MSAA)",
     "Infinite Health", "Infinite Ninpo", "Infinite Essence", "All Difficulties",
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
-    "Quick Menu Scale",
+    "Quick Menu",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -107,19 +107,21 @@ static const char *const s_help[S_COUNT] = {
     "Every costume at the Costume Selection, and three it never offers.",
     "Costumes in the game it never offers. From the next area.",
     "A softer, fainter glow on bright lights. Off: the console's.",
-    "Pauses after the current action ends. Music continues.",
-    "Resizes the whole quick menu. Off disables it and its controls.",
+    "The game pauses while the quick menu is open (once Ryu's action ends).",
+    "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
 };
 
 /* The categories: the strip's words, their rows. */
-#define CATS 5
-#define CAT_ROWS 7
-#define CAT_CTL 4                 /* Controls: the bindings' list (src/bindings.c), not settings */
-static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Cheats", "Controls" };
+#define CATS 6
+#define CAT_ROWS 5
+#define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
+/* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
+static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW },
     { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS },
     { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, -1 },
     { -1 },
 };
@@ -841,7 +843,11 @@ static void draw_page(int focused, int cat, int row)
      * the right, the chosen word light violet, the others grey. */
     page_fill(px, 4, STRIP_Y, 442, STRIP_H, 0x14141C, 0.8f, 0.8f);   /* one colour behind all the words */
     page_fill(px, 4, STRIP_Y + STRIP_H - 1.5f, 442, 1.5f, 0xB4B9D2, 0.6f, 0.6f);
-    float x = STRIP_X0;
+    float x = STRIP_X0, words = 0, gap = STRIP_GAP;
+    for (int c = 0; c < CATS; c++)
+        words += text_width(&s_font_body, s_cat_name[c], 17 * k, 1.0f) / k;
+    if (STRIP_X0 + words + gap * (CATS - 1) > 440 - STRIP_X0)   /* six words: closer, all on the strip */
+        gap = (440 - 2 * STRIP_X0 - words) / (CATS - 1);
     for (int c = 0; c < CATS; c++) {
         float w = text_width(&s_font_body, s_cat_name[c], 17 * k, 1.0f) / k;
         int on = c == cat, sel = focused && row < 0 && on;
@@ -851,7 +857,7 @@ static void draw_page(int focused, int cat, int row)
                   sel ? 0xFFFFFF : on ? 0xC8C4FF : 0x8C8C96, 0);
         s_cat_x[c][0] = x - 6;
         s_cat_x[c][1] = x + w + 6;
-        x += w + STRIP_GAP;
+        x += w + gap;
     }
 
     if (cat == CAT_CTL) {
