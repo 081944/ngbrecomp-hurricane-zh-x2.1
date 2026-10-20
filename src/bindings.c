@@ -105,7 +105,8 @@ static void identity_check(void)
 }
 
 /* The right stick's X and Y, inverted in play, for the third-person camera ([0]) and the first-person view
- * ([1]); and the view the stick starts in after a load (controls.ini; src/camera.c, #33 #63 #23) */
+ * ([1]; its Y is the game's own option, src/camera.c); and the view the stick starts in after a load
+ * (controls.ini; #33 #63 #23) */
 static int s_invert[2][2];
 static int s_third_start;
 
@@ -229,7 +230,7 @@ static void save(void)
         fprintf(f, "%s = %s, %s, %s\n", s_act[a].ini, k0, k1, p);
     }
     fprintf(f, "invert_camera_x = %d\ninvert_camera_y = %d\n", s_invert[0][0], s_invert[0][1]);
-    fprintf(f, "invert_first_person_x = %d\ninvert_first_person_y = %d\n", s_invert[1][0], s_invert[1][1]);
+    fprintf(f, "invert_first_person_x = %d\n", s_invert[1][0]);
     fprintf(f, "third_person_on_load = %d\n", s_third_start);
     fclose(f);
 }
@@ -252,8 +253,8 @@ void ngb_bind_load(void)
             s_invert[0][key[14] == 'y'] = atoi(val) != 0;
             continue;
         }
-        if (!strcmp(key, "invert_first_person_x") || !strcmp(key, "invert_first_person_y")) {
-            s_invert[1][key[20] == 'y'] = atoi(val) != 0;
+        if (!strcmp(key, "invert_first_person_x")) {
+            s_invert[1][0] = atoi(val) != 0;
             first_set = 1;
             continue;
         }
@@ -281,7 +282,8 @@ void ngb_bind_load(void)
     }
     fclose(f);
     if (!first_set)
-        memcpy(s_invert[1], s_invert[0], sizeof s_invert[1]);
+        s_invert[1][0] = s_invert[0][0];
+    s_invert[1][1] = 0;   /* the game's own option (ngb_camera_fp_reverse) */
     identity_check();
     s_gen++;
 }
@@ -376,7 +378,10 @@ static SHORT clamp_axis(int v)
 
 int ngb_bind_invert(int view, int axis)
 {
+    extern int ngb_camera_fp_reverse(void);   /* src/camera.c */
     ensure();
+    if (view == 1 && axis == 1)
+        return ngb_camera_fp_reverse();
     return view >= 0 && view < 2 && axis >= 0 && axis < 2 && s_invert[view][axis];
 }
 
@@ -385,6 +390,12 @@ void ngb_bind_set_invert(int view, int axis, int on)
     ensure();
     if (view < 0 || view > 1 || axis < 0 || axis > 1)
         return;
+    if (view == 1 && axis == 1) {   /* the game's own option: set there, saved by the game */
+        extern void ngb_camera_set_fp_reverse(int on);
+        ngb_camera_set_fp_reverse(on);
+        s_gen++;
+        return;
+    }
     s_invert[view][axis] = on != 0;
     s_gen++;
     save();

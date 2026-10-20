@@ -135,7 +135,7 @@ static const char *const s_ctl_toggle_help[5] = {
     "Turns the third-person camera the other way left and right (play only).",
     "Turns the third-person camera the other way up and down (play only).",
     "Turns the first-person view the other way left and right (play only).",
-    "Turns the first-person view the other way up and down (play only).",
+    "Turns the first-person view the other way up and down: the game's 1st Person Camera Control too.",
     "After loading, the right stick turns the camera instead of looking in first person.",
 };
 static int ctl_toggle_get(int r)
@@ -816,12 +816,8 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : "A: change   X / Delete: clear   (play only; the menus keep theirs)";
-    int two = focused && !capturing && row == CTL_INVX + 3;   /* the game's own option flips it too */
     if (focused && help)
-        page_text_fit(px, m, help, 445, CTL_Y0 + CTL_SHOWN * ROW_H + (two ? 12 : 16), two ? 13 : 14, 0xFFFFFF, 2, 440);
-    if (two)
-        page_text_fit(px, m, "The game's Options > 1st Person Camera Control turns it the other way too.",
-                      445, CTL_Y0 + CTL_SHOWN * ROW_H + 26, 12, 0xC8C8D0, 2, 440);
+        page_text_fit(px, m, help, 445, CTL_Y0 + CTL_SHOWN * ROW_H + 16, 14, 0xFFFFFF, 2, 440);
 }
 
 static void draw_page(int focused, int cat, int row)
