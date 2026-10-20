@@ -78,12 +78,14 @@ Everything is in the game's own menus: **RECOMP SETTINGS** on the main menu, and
 of the pause menu. Changes apply at once and are saved.
 
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
-  anisotropic), anti-aliasing (MSAA), shadow resolution
+  anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
+  bright lights; off is the console's look)
 - **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
 - **Cheats** (for the session only): infinite health, ninpo, essence; golden scarabs
-- **Controls**: rebind every action (two keys or mouse buttons and a controller button each)
+- **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
+  inversion; start in third person
 
 The game's own Options (sound, movie aspect, controller vibration and so on) are where they always
 were.
@@ -104,9 +106,11 @@ whichever was touched last, and its button prompts change to match.
 | Pause | Esc, Enter | | First-person view | Z |
 
 After loading, the right stick (or the mouse) looks around in first person, as on the Xbox; click the
-right stick (V) to turn the third-person camera instead. **Invert Camera X / Y** (RECOMP SETTINGS →
-Controls) flips the stick and mouse for both; the game's own Options → Controller Settings → 1st Person
-Camera Control can flip first-person look back.
+right stick (V) to turn the third-person camera instead. With **Start in Third Person** (RECOMP
+SETTINGS → Controls) the stick turns the third-person camera after every load. **Invert Camera X / Y**
+flips the stick and mouse for the third-person camera, **Invert First-Person X** first-person left and
+right; first-person up and down is the game's own Options → Controller Settings → 1st Person Camera
+Control.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
 Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
@@ -120,6 +124,8 @@ Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
   to, and only Ninja Gaiden Black itself is recompiled. Save before trying it.
 - At **21:9**, objects at the far left and right of the screen can appear a moment late (the game
   decides what to draw for a narrower view).
+- At **10x render resolution with 8x anti-aliasing**, where the frame rate drops below 60, characters'
+  shadows can flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 
