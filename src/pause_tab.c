@@ -122,34 +122,36 @@ static const signed char s_cat_rows[CATS][CAT_ROWS] = {
 
 #include "bindings.h"
 /* the actions; then On/Off rows: Invert Camera X and Y (the third-person camera, #26), Invert First-Person X
- * and Y (#33, #63), Start in Third Person (#23); then Default Controls */
+ * (#33, #63; its up/down is the game's own 1st Person Camera Control), Start in Third Person (#23); then
+ * Default Controls */
 #define CTL_INVX A_COUNT
-#define CTL_START (A_COUNT + 4)
-#define CTL_DEF  (A_COUNT + 5)
-#define CTL_ROWS (A_COUNT + 6)
+#define CTL_START (A_COUNT + 3)
+#define CTL_DEF  (A_COUNT + 4)
+#define CTL_ROWS (A_COUNT + 5)
 #define CTL_TOGGLE(r) ((r) >= CTL_INVX && (r) <= CTL_START)
-static const char *const s_ctl_toggle_name[5] = {
-    "Invert Camera X", "Invert Camera Y", "Invert First-Person X", "Invert First-Person Y", "Start in Third Person",
+static const char *const s_ctl_toggle_name[4] = {
+    "Invert Camera X", "Invert Camera Y", "Invert First-Person X", "Start in Third Person",
 };
-static const char *const s_ctl_toggle_help[5] = {
+static const char *const s_ctl_toggle_help[4] = {
     "Turns the third-person camera the other way left and right (play only).",
     "Turns the third-person camera the other way up and down (play only).",
     "Turns the first-person view the other way left and right (play only).",
-    "Turns the first-person view the other way up and down (play only).",
     "After loading, the right stick turns the camera instead of looking in first person.",
 };
 static int ctl_toggle_get(int r)
 {
     int k = r - CTL_INVX;
-    return k == 4 ? ngb_bind_third_person_start() : ngb_bind_invert(k / 2, k % 2);
+    return k == 3 ? ngb_bind_third_person_start() : k == 2 ? ngb_bind_invert(1, 0) : ngb_bind_invert(0, k);
 }
 static void ctl_toggle_flip(int r)
 {
     int k = r - CTL_INVX;
-    if (k == 4)
+    if (k == 3)
         ngb_bind_set_third_person_start(!ngb_bind_third_person_start());
+    else if (k == 2)
+        ngb_bind_set_invert(1, 0, !ngb_bind_invert(1, 0));
     else
-        ngb_bind_set_invert(k / 2, k % 2, !ngb_bind_invert(k / 2, k % 2));
+        ngb_bind_set_invert(0, k, !ngb_bind_invert(0, k));
 }
 
 static int cat_count(int c)

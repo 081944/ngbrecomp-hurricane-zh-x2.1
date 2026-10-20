@@ -283,7 +283,7 @@ void ngb_bind_load(void)
     fclose(f);
     if (!first_set)
         s_invert[1][0] = s_invert[0][0];
-    s_invert[1][1] = 0;   /* the game's own option (ngb_camera_fp_reverse) */
+    s_invert[1][1] = 0;   /* first-person up/down: the game's own Options > 1st Person Camera Control */
     identity_check();
     s_gen++;
 }
@@ -378,10 +378,7 @@ static SHORT clamp_axis(int v)
 
 int ngb_bind_invert(int view, int axis)
 {
-    extern int ngb_camera_fp_reverse(void);   /* src/camera.c */
     ensure();
-    if (view == 1 && axis == 1)
-        return ngb_camera_fp_reverse();
     return view >= 0 && view < 2 && axis >= 0 && axis < 2 && s_invert[view][axis];
 }
 
@@ -390,12 +387,6 @@ void ngb_bind_set_invert(int view, int axis, int on)
     ensure();
     if (view < 0 || view > 1 || axis < 0 || axis > 1)
         return;
-    if (view == 1 && axis == 1) {   /* the game's own option: set there, saved by the game */
-        extern void ngb_camera_set_fp_reverse(int on);
-        ngb_camera_set_fp_reverse(on);
-        s_gen++;
-        return;
-    }
     s_invert[view][axis] = on != 0;
     s_gen++;
     save();

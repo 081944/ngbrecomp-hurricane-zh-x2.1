@@ -23,12 +23,6 @@ int ngb_camera_first_person(void)
     return MEM8(0xDB9ACC) == 0 || s_frame - s_fp_seen <= 1;
 }
 
-/* First-person up/down: the game's own Options > 1st Person Camera Control (0xDB940B: 0 Normal, else
- * Reverse; read by the first-person routine below), which the Controls page's Invert First-Person Y shows
- * and sets, so the two menus are one setting. The game sets it from the save at a load. */
-int ngb_camera_fp_reverse(void) { return MEM8(0xDB940B) != 0; }
-void ngb_camera_set_fp_reverse(int on) { MEM8(0xDB940B) = on ? 1 : 0; }
-
 /* Each frame (src/cheats.c). NGB_CAMERA_LOG=1: the stick's mode and the view, as they change. */
 void ngb_camera_frame(void)
 {
