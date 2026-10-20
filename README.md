@@ -66,7 +66,7 @@ packages are signed ad hoc, without Developer ID signing or notarization.
 | Installed game, saves | `~/.local/share/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/saves` |
 | Settings (`settings.ini`, `controls.ini`) | `~/.config/NinjaGaidenBlack` | `%APPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/config` |
 | Shader cache | `~/.cache/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack\shaders` | `~/Library/Application Support/NinjaGaidenBlack/cache/NinjaGaidenBlack/shaders` |
-| Log | the terminal | `log.txt` beside the saves (or the console it was started from) | `log.txt` beside the saves |
+| Log | the terminal, or `log.txt` beside the saves when started without one | `log.txt` beside the saves (or the console it was started from) | `log.txt` beside the saves |
 
 **Portable mode:** with a file named `portable.txt` next to `NinjaGaidenBlack.exe` (or the AppImage or Mac app),
 all of these go into a `userdata` folder next to it instead. The first-run setup offers this as a
@@ -167,7 +167,8 @@ build; runtime libraries, including MoltenVK, are bundled. `NGB_MAC_PREFIX` over
 dependency prefix (default: `brew --prefix`).
 
 How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNICAL.md) and
-[docs/renderer.md](docs/renderer.md). For contributors and coding agents: [AGENTS.md](AGENTS.md).
+[docs/renderer.md](docs/renderer.md). How to contribute: [CONTRIBUTING.md](CONTRIBUTING.md); the layout, tools
+and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
 
 ## Credits
 
@@ -184,8 +185,41 @@ How it works, and the details of every feature: [docs/TECHNICAL.md](docs/TECHNIC
 
 ### Contributors
 
-Everyone who has contributed code, testing, saves or traces is listed in
-[CONTRIBUTORS.md](CONTRIBUTORS.md).
+Code:
+
+- [akirahayabusa](https://github.com/akirahayabusa): the freeze in scenes with the sun (#40), folders
+  with non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42)
+- [ManemanFTW](https://github.com/ManemanFTW) (Manuel Flores): the Windows start-up hang (#9) and the
+  audio crackling on Windows (#34)
+- [HammerD72](https://github.com/HammerD72): the audio timing fix (#32); the two spots where the game
+  picks the camera view at a load, for Start in Third Person (#23); impact sparks at 21:9 (#65); Smoother
+  Glow (#64)
+- [retro-meister](https://github.com/retro-meister): the macOS port (#49), and the community macOS builds
+
+Testing, saves and traces:
+
+- [Radarzo](https://github.com/Radarzo), [hj-0](https://github.com/hj-0),
+  [hyperspeedgx](https://github.com/hyperspeedgx), [serguntchik](https://github.com/serguntchik),
+  [PaulAndrewClift](https://github.com/PaulAndrewClift) and
+  [phantuannghia95-rgb](https://github.com/phantuannghia95-rgb): seven test builds, screenshots and logs
+  on Nvidia cards that tracked down the banded water (#16)
+- [HammerD72](https://github.com/HammerD72): testing on Nvidia across many issues (shadows #53, water
+  #16, menus and controls)
+- [DAVID106-debug](https://github.com/DAVID106-debug): the missing particles and the Xbox comparison
+  (#51), the high-resolution shadow flicker (#53)
+- [hyperspeedgx](https://github.com/hyperspeedgx): saves across chapters 1 to 9, traces for the torch
+  embers (#51) and the Chapter 5 roof (#29)
+- [hj-0](https://github.com/hj-0): saves for chapters 11 to 13 and a guide to moving saves from xemu
+  (#61)
+- [yoyooo941-sys](https://github.com/yoyooo941-sys): the save that made the volcano strip reproducible
+  (#55)
+- [firepro1211](https://github.com/firepro1211) and
+  [huokunlongCHAIN](https://github.com/huokunlongCHAIN): the Chapter 5 roof, including a comparison on
+  the Xbox One (#29)
+- [matitone71](https://github.com/matitone71): the Steam Deck Game Mode log that found the launch
+  problem (#11)
+
+To report a bug, test a build or send a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 *Ninja Gaiden* is a trademark of Koei Tecmo. This project is not affiliated with or endorsed by Koei
 Tecmo or Team Ninja.
