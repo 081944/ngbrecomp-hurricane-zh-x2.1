@@ -3571,6 +3571,18 @@ static std::vector<uint8_t> ReadFile(const std::string& path) {
     return v;
 }
 
+// SPIR-V as it was made: its magic, and instructions that end exactly at its end
+static bool SpirvWhole(const std::vector<uint32_t>& w) {
+    if (w.size() < 5 || w[0] != 0x07230203u) return false;
+    size_t p = 5;
+    while (p < w.size()) {
+        uint32_t words = w[p] >> 16;
+        if (!words) return false;
+        p += words;
+    }
+    return p == w.size();
+}
+
 static FILE* OpenAppend(const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "ab");
     // At the end first: Windows' ftell says 0 for a file just opened to append, and the header went in
@@ -3606,8 +3618,26 @@ void VulkanBackend::CacheOpen() {
                 if (o + 12 + size_t(n) * 4 > sp.size()) break;
                 std::vector<uint32_t> w(n);
                 std::memcpy(w.data(), &sp[o + 12], size_t(n) * 4);
+                if (!SpirvWhole(w)) break;
                 spirv_by_src_[h] = std::move(w);
                 o += 12 + size_t(n) * 4;
+            }
+            // A record cut short -- the disk full, the game killed while writing -- and the ones appended
+            // after it were read as one: another record's bytes as a shader's SPIR-V, and the driver
+            // crashed making it at the next start. The file is kept up to the last whole record.
+            if (o < sp.size()) {
+                std::fprintf(stderr, "[D3D] shader cache: spirv.bin damaged at %zu of %zu bytes, kept up to there\n",
+                             o, sp.size());
+                std::string tmp = dir + "/spirv.bin.tmp", dst = dir + "/spirv.bin";
+                if (FILE* f = std::fopen(tmp.c_str(), "wb")) {
+                    bool ok = std::fwrite(sp.data(), 1, o, f) == o;
+                    ok = std::fclose(f) == 0 && ok;
+#if defined(_WIN32)
+                    if (ok) std::remove(dst.c_str());
+#endif
+                    if (ok) std::rename(tmp.c_str(), dst.c_str());
+                    else std::remove(dst.c_str());
+                }
             }
         } else if (!sp.empty()) {
             std::remove((dir + "/spirv.bin").c_str());
