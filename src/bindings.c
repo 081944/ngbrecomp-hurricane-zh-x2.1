@@ -104,11 +104,15 @@ static void identity_check(void)
             s_pad_identity = 0;
 }
 
-static int s_invert[2];   /* the right stick's X and Y, inverted in play (controls.ini) */
+/* The right stick's X and Y, inverted in play, for the third-person camera ([0]) and the first-person view
+ * ([1]); and the view the stick starts in after a load (controls.ini; src/camera.c, #33 #63 #23) */
+static int s_invert[2][2];
+static int s_third_start;
 
 void ngb_bind_defaults(void)
 {
-    s_invert[0] = s_invert[1] = 0;
+    memset(s_invert, 0, sizeof s_invert);
+    s_third_start = 0;
     for (int a = 0; a < A_COUNT; a++) {
         s_bind[a][0] = s_act[a].key0;
         s_bind[a][1] = s_act[a].key1;
@@ -224,7 +228,9 @@ static void save(void)
             snprintf(p, sizeof p, "-");
         fprintf(f, "%s = %s, %s, %s\n", s_act[a].ini, k0, k1, p);
     }
-    fprintf(f, "invert_camera_x = %d\ninvert_camera_y = %d\n", s_invert[0], s_invert[1]);
+    fprintf(f, "invert_camera_x = %d\ninvert_camera_y = %d\n", s_invert[0][0], s_invert[0][1]);
+    fprintf(f, "invert_first_person_x = %d\ninvert_first_person_y = %d\n", s_invert[1][0], s_invert[1][1]);
+    fprintf(f, "third_person_on_load = %d\n", s_third_start);
     fclose(f);
 }
 
@@ -237,12 +243,22 @@ void ngb_bind_load(void)
     FILE *f = fopen(path, "r");
     if (!f)
         return;
+    int first_set = 0;   /* a file from before the views were separate: its choice holds for both */
     while (fgets(line, sizeof line, f)) {
         char key[64], val[400];
         if (line[0] == '#' || sscanf(line, " %63[^= ] = %399[^\r\n]", key, val) != 2)
             continue;
         if (!strcmp(key, "invert_camera_x") || !strcmp(key, "invert_camera_y")) {
-            s_invert[key[14] == 'y'] = atoi(val) != 0;
+            s_invert[0][key[14] == 'y'] = atoi(val) != 0;
+            continue;
+        }
+        if (!strcmp(key, "invert_first_person_x") || !strcmp(key, "invert_first_person_y")) {
+            s_invert[1][key[20] == 'y'] = atoi(val) != 0;
+            first_set = 1;
+            continue;
+        }
+        if (!strcmp(key, "third_person_on_load")) {
+            s_third_start = atoi(val) != 0;
             continue;
         }
         for (int a = 0; a < A_COUNT; a++) {
@@ -264,6 +280,8 @@ void ngb_bind_load(void)
         }
     }
     fclose(f);
+    if (!first_set)
+        memcpy(s_invert[1], s_invert[0], sizeof s_invert[1]);
     identity_check();
     s_gen++;
 }
@@ -356,28 +374,44 @@ static SHORT clamp_axis(int v)
     return (SHORT)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
 }
 
-int ngb_bind_invert(int axis)
+int ngb_bind_invert(int view, int axis)
 {
     ensure();
-    return axis >= 0 && axis < 2 && s_invert[axis];
+    return view >= 0 && view < 2 && axis >= 0 && axis < 2 && s_invert[view][axis];
 }
 
-void ngb_bind_set_invert(int axis, int on)
+void ngb_bind_set_invert(int view, int axis, int on)
 {
     ensure();
-    if (axis < 0 || axis > 1)
+    if (view < 0 || view > 1 || axis < 0 || axis > 1)
         return;
-    s_invert[axis] = on != 0;
+    s_invert[view][axis] = on != 0;
     s_gen++;
     save();
 }
 
-/* The right stick as the player wants the camera turned (in play only). */
+int ngb_bind_third_person_start(void)
+{
+    ensure();
+    return s_third_start;
+}
+
+void ngb_bind_set_third_person_start(int on)
+{
+    ensure();
+    s_third_start = on != 0;
+    s_gen++;
+    save();
+}
+
+/* The right stick as the player wants the camera turned (in play only), for the view it turns now. */
 static void apply_invert(XBOX_INPUT_STATE *st)
 {
-    if (s_invert[0])
+    extern int ngb_camera_first_person(void);   /* src/camera.c */
+    const int *inv = s_invert[ngb_camera_first_person() ? 1 : 0];
+    if (inv[0])
         st->Gamepad.sThumbRX = clamp_axis(-(int)st->Gamepad.sThumbRX);
-    if (s_invert[1])
+    if (inv[1])
         st->Gamepad.sThumbRY = clamp_axis(-(int)st->Gamepad.sThumbRY);
 }
 

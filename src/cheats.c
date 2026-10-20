@@ -239,6 +239,7 @@ void ngb_aspect_frame_end(void);   /* src/pc_menu.c */
 
 void ngb_frame_tick(void)
 {
+    { extern void ngb_camera_frame(void); ngb_camera_frame(); }   /* src/camera.c: which view the stick turns */
     pos_tick();
     ngb_aspect_frame_end();
     ngb_aspect_tick();
