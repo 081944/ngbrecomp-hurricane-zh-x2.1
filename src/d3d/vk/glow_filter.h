@@ -23,15 +23,11 @@ bool VulkanBackend::SoftenGlow(Image& source) {
     for (int axis=0;axis<2;++axis) {
         Image& output=glow_soft_[axis];
         auto footprint=GlowFootprint();
-        uint32_t options[]={width,height,uint32_t(GlowSoftenMode()),uint32_t(axis),uint32_t(footprint.mode),
-            footprint.mode?uint32_t(ngb_pc_setting(7)):0u};
+        uint32_t options[]={width,height,uint32_t(GlowSoftenMode()),uint32_t(axis),5u,uint32_t(ngb_pc_setting(7))};
         uint64_t ps=Hash(options,sizeof(options),0x674C4F57534F4650ull);
         if (!Module(ps,[&] {
             double sigma=(GlowSoftenMode()==1?0.6:1.2)*double(axis?height:width)/128.0;
-            if (!axis && footprint.mode) sigma*= (16.0/9.0)/footprint.aspect;
-            if (!axis && footprint.mode>=3) sigma*=0.5;
-            if (!axis && footprint.mode>=4) sigma*=0.5;
-            if (!axis && footprint.mode==5) sigma*=0.5;
+            if (!axis) sigma*= (16.0/9.0)/footprint.aspect/8;
             sigma=std::max(sigma,0.3);
             int radius=int(std::ceil(sigma*3));
             double weight_sum=0;
@@ -154,12 +150,13 @@ bool VulkanBackend::ContinuousGlowPass(Image& input,Image& output,uint32_t w,uin
     if (!Module(vs,[] {return std::string(
         "float4 main(uint id:SV_VertexID):SV_Position { float2 p=float2((id<<1)&2,id&2); return float4(p*2-1,0,1); }\n");},true)) return false;
     auto footprint=GlowFootprint();
-    uint32_t options[]={input.w,input.h,w,h,uint32_t(stage),0,0,0,0,uint32_t(footprint.mode),
-        footprint.mode?uint32_t(ngb_pc_setting(7)):0u};std::memcpy(options+5,threshold,16);
+    uint32_t options[]={input.w,input.h,w,h,uint32_t(stage),5u,uint32_t(ngb_pc_setting(7))};
     uint64_t ps=Hash(options,sizeof(options),0x434F4E54474C5053ull);
     if (!Module(ps,[&] {
         std::ostringstream code;code<<std::setprecision(12);
-        code<<"Texture2D tex0 : register(t0);\n"
+        // the extraction's threshold: the draw's constant, a uniform, so a new value needs no new shader
+        code<<"cbuffer GT : register(b0) { float4 threshold; };\n"
+            <<"Texture2D tex0 : register(t0);\n"
             <<"float4 main(float4 p:SV_Position):SV_Target {\n"
             <<"float2 ratio=float2("<<double(input.w)/w<<","<<double(input.h)/h<<");\n"
             <<"float2 center=p.xy*ratio; float2 size=ratio;\n";
@@ -173,12 +170,13 @@ bool VulkanBackend::ContinuousGlowPass(Image& input,Image& output,uint32_t w,uin
             <<"[loop] for(int x=int(floor(lo.x));x<int(ceil(hi.x));++x) {\n"
             <<"float wx=max(0.0,min(hi.x,float(x+1))-max(lo.x,float(x)));\n"
             <<"float4 value=tex0.Load(int3(clamp(int2(x,y),int2(0,0),int2("<<input.w-1<<","<<input.h-1<<")),0));\n";
-        if (!stage) code<<"value=saturate(2*(value+float4("<<threshold[0]<<","<<threshold[1]<<","<<threshold[2]<<","<<threshold[3]<<"))-1);\n";
+        if (!stage) code<<"value=saturate(2*(value+threshold)-1);\n";
         code<<"sum+=value*wx*wy; }}\nreturn sum/(size.x*size.y)"<<((stage==1 || stage==2)?"*(256.0/255.0)":"")<<"; }\n";
         return code.str();
     },false)) return false;
     PipeKey key{};key.vs=vs;key.ps=ps;key.topo=2;key.wmask=15;key.has_rt=1;key.samples=1;
     VkPipeline pipeline=Pipeline(key);if (!pipeline) return false;
+    VkDeviceSize at=Upload(threshold,16,ringAlign_);   // may submit: before the barriers and the rendering
     Barrier(input,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);Barrier(output,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     color.imageView=output.view;color.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -189,9 +187,12 @@ bool VulkanBackend::ContinuousGlowPass(Image& input,Image& output,uint32_t w,uin
     d_.vkCmdSetViewport(cmd_,0,1,&viewport);d_.vkCmdSetScissor(cmd_,0,1,&scissor);
     d_.vkCmdBindPipeline(cmd_,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
     VkDescriptorImageInfo image{VK_NULL_HANDLE,input.view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};write.dstBinding=2;
-    write.descriptorType=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;write.descriptorCount=1;write.pImageInfo=&image;
-    d_.vkCmdPushDescriptorSetKHR(cmd_,VK_PIPELINE_BIND_POINT_GRAPHICS,pipe_layout_,0,1,&write);
+    VkDescriptorBufferInfo constants{ring_,at,16};
+    VkWriteDescriptorSet writes[2]{};
+    for (auto& w:writes) {w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.descriptorCount=1;}
+    writes[0].dstBinding=0;writes[0].descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;writes[0].pBufferInfo=&constants;
+    writes[1].dstBinding=2;writes[1].descriptorType=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;writes[1].pImageInfo=&image;
+    d_.vkCmdPushDescriptorSetKHR(cmd_,VK_PIPELINE_BIND_POINT_GRAPHICS,pipe_layout_,0,2,writes);
     d_.vkCmdDraw(cmd_,3,1,0,0);d_.vkCmdEndRendering(cmd_);Barrier(output,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     return true;
 }
@@ -207,11 +208,10 @@ void VulkanBackend::ApplyContinuousGlow(const State& s,const Assembled& a,uint32
     // At the narrowest width the final 2:1 horizontal reduction was wider
     // than the requested blur. Keep that axis on the extraction grid so
     // its sampling footprint does not overwhelm the smaller kernel.
-    auto footprint=GlowFootprint();
-    if (stage==2 && footprint.mode>=4) w*=2;
+    if (stage==2) w*=2;
     // A sub-native-texel kernel needs finer input samples too. Refine only
     // the horizontal working grid; all vertical filtering keeps its size.
-    if (footprint.mode==5) w*=2;
+    w*=2;
     if (!ContinuousGlowPass(input,continuous_glow_[stage],w,h,stage,c.pc[0]))
         ngb_renderer_fatal("Could not filter the continuous glow chain.");
     Image& filtered=continuous_glow_[stage];
@@ -226,7 +226,7 @@ void VulkanBackend::ApplyContinuousGlow(const State& s,const Assembled& a,uint32
         std::fprintf(stderr,"[GLOW-CONTINUOUS] frame %u stage %d source %ux%u working %ux%u target %ux%u %s\n",
             presents_,stage,input.w,input.h,w,h,rt.img.w,rt.img.h,stage?"continuous box":"area-filtered bright extraction");
         auto footprint=GlowFootprint();
-        std::fprintf(stderr,"[GLOW-FOOTPRINT] frame %u stage %d mode %d aspect %.9g native span %.9g %.9g\n",
-            presents_,stage,footprint.mode,footprint.aspect,footprint.x,footprint.y);
+        std::fprintf(stderr,"[GLOW-FOOTPRINT] frame %u stage %d aspect %.9g native span %.9g %.9g\n",
+            presents_,stage,footprint.aspect,footprint.x,footprint.y);
     }
 }

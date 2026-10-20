@@ -155,6 +155,8 @@ void ngb_settings_load(NgbSettings *s)
             s->all_difficulties = atoi(val) != 0;
         } else if (!strcmp(key, "unlock_all_costumes")) {
             s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "smoother_glow")) {
+            s->smooth_glow = atoi(val) != 0;
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -193,6 +195,7 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "unlock_all_costumes = %d\n", s->all_costumes);
     fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
     fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
+    fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
     fprintf(f, "skip_intro = %d\n", s->skip_intro);
     fprintf(f, "show_settings_at_startup = %d\n", s->show_launcher);
     fclose(f);

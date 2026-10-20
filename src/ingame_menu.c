@@ -81,7 +81,8 @@ void ngb_menu_set_running(const NgbSettings *s)
  * startup, 10 MSAA samples (1, 2, 4, 8); 1 is the anisotropy (0, 2-16);
  * 11-13 the cheats (src/cheats.c: infinite health, ninpo, essence), 14 every
  * difficulty from the start (src/cheats.c, saved), 15 the golden scarabs
- * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved). A change
+ * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved), 18 Smoother
+ * Glow (src/d3d/vk/glow_options.h). A change
  * applies at once (8 and 9 at the next start) and is saved, the cheats'
  * not. */
 int ngb_cheat(int which);
@@ -117,6 +118,7 @@ int ngb_pc_setting(int which)
     case 8:  return s_running.skip_intro;
     case 9:  return s_running.show_launcher;
     case 10: return s_running.msaa;
+    case 18: return s_running.smooth_glow;
     default: return s_running.show_fps;
     }
 }
@@ -144,6 +146,7 @@ void ngb_pc_set_setting(int which, int value)
     case 5: s_running.show_fps = value; nv2a_present_set_show_fps(value); break;
     case 8: s_running.skip_intro = value; break;        /* both at the next start */
     case 9: s_running.show_launcher = value; break;
+    case 18: s_running.smooth_glow = !!value; break;
     case 6:
         if (value / 8 == s_running.aspect && value % 8 < ngb_settings_size_count(value / 8)) {
             ngb_settings_size_at(value / 8, value % 8, &s_running.width, &s_running.height);

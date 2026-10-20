@@ -1,8 +1,9 @@
-// Optional quality profile, based on the preferred launcher 18 comparison.
-// Defaults are deliberately opt-in; stock rendering is unchanged otherwise.
+// Optional quality profile, based on the preferred launcher 18 comparison: RECOMP SETTINGS ->
+// Graphics -> Smoother Glow (ngb_pc_setting 18), off by default; NGB_GLOW_QUALITY=1 or 0 overrides it.
+// Stock rendering is unchanged otherwise.
 inline bool ContinuousGlowEnabled() {
-    static bool enabled=[] {const char* e=std::getenv("NGB_GLOW_QUALITY");return e && !std::strcmp(e,"1");}();
-    return enabled;
+    static int forced=[] {const char* e=std::getenv("NGB_GLOW_QUALITY");return e && *e ? std::strcmp(e,"0") ? 1 : 0 : -1;}();
+    return forced >= 0 ? forced : ngb_pc_setting(18) != 0;
 }
 inline int GlowSoftenMode() {
     static int mode=[] {const char* e=std::getenv("NGB_GLOW_SOFTEN");return e?std::clamp(std::atoi(e),0,2):0;}();
@@ -22,7 +23,7 @@ inline float GlowStrength() {
 inline std::string GlowStrengthHlsl(std::string src) {
     const std::string needle="return outc;";
     size_t at=src.find(needle);
-    if (at==std::string::npos) return {};
+    if (at==std::string::npos) return src;   // not the expected shader: drawn at full strength
     // Scale the completed glow RGB, after the original combiner clamp and
     // before its additive blend. Alpha, the scene and the blur stay intact.
     src.replace(at,needle.size(),"outc.rgb *= bumpmat[3].z;\n    return outc;");
@@ -52,7 +53,7 @@ inline uint32_t GlowTargetScale(uint32_t ordinary) {
 
 // Native extraction texels. Keep displayed width relative to picture height;
 // the configured picture aspect includes letterboxing and ignores HUD stretch.
-struct GlowFootprintValues { double x=1,y=8,aspect=4.0/3.0;int mode=5; };
+struct GlowFootprintValues { double x=1,y=8,aspect=4.0/3.0; };
 inline GlowFootprintValues GlowFootprint() {
     GlowFootprintValues result;
     switch (ngb_pc_setting(7)) {
