@@ -60,6 +60,7 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
+       ROW_GLOW,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -70,7 +71,7 @@ static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OU
 /* (without the PC Settings row: the PC settings are in RECOMP SETTINGS only) */
 static const uint8_t s_rows_ws[] = { ROW_SCREEN, ROW_MOVIE, ROW_DEFAULT, ROW_EXIT };
 static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
-static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_BACK };
+static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_BACK };
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_BACK };
 static const uint8_t s_rows_start[] = { ROW_SKIP, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_BACK };
@@ -145,6 +146,8 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_EXTRACOST 0x201AE
 #define T_EXTRA0   0x201B0            /* + 0..3: Game's Choice, Extra 1-3 */
 #define D_CONTROLS 0x201B4            /* the category */
+#define T_GLOW     0x201B5            /* Smoother Glow (src/d3d/vk/glow_options.h) */
+#define D_GLOW     0x201B6
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
 #define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" */
@@ -155,6 +158,8 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_TEXTURE, "Anisotropic Filtering" },
     { T_MSAA,    "Anti-Aliasing (MSAA)" },
     { D_MSAA,    "Smooths the edges of the 3D; 2x to 8x samples a pixel." },
+    { T_GLOW,    "Smoother Glow" },
+    { D_GLOW,    "A softer, fainter glow on bright lights. Off: the console's." },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
     { T_MSAA0 + 0, "Off" }, { T_MSAA0 + 1, "2x" }, { T_MSAA0 + 2, "4x" }, { T_MSAA0 + 3, "8x" },
@@ -193,7 +198,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_NO,      "No" },
     { D_SKIP,    "Starts at the title screen, from the next start." },
     { D_LAUNCHER, "Shows the settings screen before the game, from the next start." },
-    { D_CAT0 + 0, "Render resolution, texture filtering and shadow detail." },
+    { D_CAT0 + 0, "Render resolution, texture filtering, anti-aliasing, shadows and the glow." },
     { D_CAT0 + 1, "Aspect ratio, window size, display mode, V-Sync and the FPS counter." },
     { D_CAT0 + 2, "What the game shows when it starts, and the difficulties New Game offers." },
     { D_BACK,    "Returns to the Recomp Settings screen." },
@@ -271,7 +276,8 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
     static const uint32_t id[] = { 0x20011, 0x20015, T_PC, 0x20004, 0x20005,
                                    T_RENDER, T_TEXTURE, T_SHADOW, T_DISPLAY, T_VSYNC,
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
-                                   T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST };
+                                   T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
+                                   T_GLOW };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -668,6 +674,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_ALLDIFF: return ngb_pc_setting(14) ? T_YES : T_NO;
     case ROW_SCARABS: return ngb_pc_setting(15) ? T_ON : T_OFF;
     case ROW_ALLCOST: return ngb_pc_setting(16) ? T_YES : T_NO;
+    case ROW_GLOW:    return ngb_pc_setting(18) ? T_ON : T_OFF;
     default:          return 0;
     }
 }
@@ -678,7 +685,7 @@ static int pc_value_change(int row, int delta)
 {
     int kind = row_kind(row);
     int step = delta > 0 ? 1 : -1;
-    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_EXTRACOST))
+    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_GLOW))
         return 0;
     if (!delta)
         return 1;
@@ -717,6 +724,7 @@ static int pc_value_change(int row, int delta)
     case ROW_ALLDIFF: ngb_pc_set_setting(14, !ngb_pc_setting(14)); break;
     case ROW_SCARABS: ngb_pc_set_setting(15, !ngb_pc_setting(15)); break;
     case ROW_ALLCOST: ngb_pc_set_setting(16, !ngb_pc_setting(16)); break;
+    case ROW_GLOW:    ngb_pc_set_setting(18, !ngb_pc_setting(18)); break;
     case ROW_HEALTH:
     case ROW_NINPO:
     case ROW_ESSENCE: {
@@ -1797,7 +1805,7 @@ void sub_00220870(void)
                                            D_SKIP & 0xFFFF, D_LAUNCHER & 0xFFFF, D_MSAA & 0xFFFF,
                                            D_HEALTH & 0xFFFF, D_NINPO & 0xFFFF, D_ESSENCE & 0xFFFF,
                                            D_ALLDIFF & 0xFFFF, D_SCARABS & 0xFFFF, D_ALLCOST & 0xFFFF,
-                                           D_EXTRACOST & 0xFFFF };
+                                           D_EXTRACOST & 0xFFFF, D_GLOW & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);
