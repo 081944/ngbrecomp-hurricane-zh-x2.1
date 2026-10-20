@@ -38,6 +38,11 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 3. On a Steam Deck, add the AppImage to Steam (Add a Non-Steam Game) to play it in Game Mode, and
    choose 16:10 in the settings.
 
+   If it closes as soon as you press Play in Game Mode, that's a bug in the current stable Steam
+   client with non-Steam games (fixed in the Steam Beta). Until the next stable release, either
+   switch Steam to the Beta, or set the game's Launch Options in Steam to
+   `APPIMAGE_EXTRACT_AND_RUN=1 %command%` (#11).
+
 Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
 
 ### Windows
