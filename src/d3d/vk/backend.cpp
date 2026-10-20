@@ -2354,6 +2354,18 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (a.topology == Topology::Triangles && SimpleState(s, kMSolidOffsetEnable)) {
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
+        } else if (a.topology == Topology::Triangles && k.zen && !k.zwrite && k.zfunc == 0x203) {
+            // A pass over a surface already drawn, testing LESSEQUAL without writing depth (the shadows'
+            // second pass, lights): its vertices come from another transform (a vertex program over a fixed
+            // function first pass) and land a hair behind the surface here and there, z-fighting. The
+            // console's 24-bit depth rounded that away; float depth, MSAA's 8 samples a pixel and a high
+            // render scale show it as flicker (#53). A small pull toward the camera keeps such passes on
+            // their surface. NGB_D3D_OVERLAY_BIAS=0: none, to compare.
+            static const bool overlay_bias = !(std::getenv("NGB_D3D_OVERLAY_BIAS") && !std::strcmp(std::getenv("NGB_D3D_OVERLAY_BIAS"), "0"));
+            if (overlay_bias) {
+                k.zbias = -4;
+                k.zslope = -1.0f;
+            }
         }
     }
     // the console culls the CULLMODE winding (D3DCULL_CW 0x900, CCW 0x901); FRONTFACE says which
