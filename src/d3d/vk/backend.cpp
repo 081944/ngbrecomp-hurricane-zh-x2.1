@@ -361,6 +361,8 @@ private:
     bool anisotropy_ = false;
     bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
     float point_max_ = 1.0f;
+    float view_yaw_ = 0, view_pitch_ = 0;   // NGB_D3D_VIEWLOG
+    bool view_seen_ = false;
     float lod_bias_max_ = 0.0f;   // maxSamplerLodBias    // the largest point (largePoints): the particles are point sprites (#51)
     float line_max_ = 1.0f;
     VkSampleCountFlags ms_counts_ = VK_SAMPLE_COUNT_1_BIT;   // the device's for colour and depth together
@@ -2644,6 +2646,13 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     if (rt && rt->gw >= 640) ngb_frame_draws++;
     if (!a.pretransformed && rt && rt->gw < 640) offscreen3d_++;
     if (!a.pretransformed && rt && rt->gw >= 640) {
+        static const bool viewlog = std::getenv("NGB_D3D_VIEWLOG") != nullptr;   // debugging: the camera's direction
+        if (viewlog) {   // the view matrix's third column: where the camera looks, in the world
+            const float* v = s.transforms[2].data();
+            view_yaw_ = std::atan2(v[2], v[10]) * 57.2958f;
+            view_pitch_ = std::asin(std::clamp(v[6], -1.0f, 1.0f)) * 57.2958f;
+            view_seen_ = true;
+        }
         threed_++;
         ngb_frame_3d_draws++;
         last3d_now_ = st_.drawn;
@@ -3421,6 +3430,10 @@ void VulkanBackend::Present(const Surface& front) {
             trace_ = nullptr;
             std::fprintf(stderr, "[TRACE] done: %s\n", trace_dir_.c_str());
         }
+    }
+    if (view_seen_) {
+        std::fprintf(stderr, "[VIEW] %u yaw %.2f pitch %.2f\n", presents_, view_yaw_, view_pitch_);
+        view_seen_ = false;
     }
     EndFrame();
     // after the frame is on the queue: the presenter's blit, later on the same queue, waits for it
