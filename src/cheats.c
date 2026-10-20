@@ -15,8 +15,9 @@
  * writes in, every flag is set: the checksums are taken anew.
  *
  * NGB_MEMDUMP=<dir>: debugging, for finding the game's values -- while the
- * file <dir>/dump.now exists, the guest's 64 MB go to <dir>/mem_<n>.bin
- * (the file is removed after).
+ * file <dir>/dump.now exists, the guest's 64 MB go to <dir>/mem_<n>.bin and
+ * the contiguous window (0x80000000, 128 MB: the item descriptors, GPU
+ * memory) to <dir>/contig_<n>.bin (the file is removed after).
  */
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
@@ -52,6 +53,11 @@ static void memdump_tick(void)
         fwrite((void *)XBOX_PTR(0), 1, 64u << 20, f);
         fclose(f);
         fprintf(stderr, "[CHEAT] memory dumped to %s\n", path);
+    }
+    snprintf(path, sizeof path, "%s/contig_%d.bin", dir, n - 1);
+    if ((f = fopen(path, "wb"))) {
+        fwrite((void *)XBOX_PTR(0x80000000u), 1, 128u << 20, f);
+        fclose(f);
     }
 }
 
