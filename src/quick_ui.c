@@ -677,8 +677,11 @@ int ngb_quick_layer(uint32_t *pixels)
     }
     if (dir && ((pressed & dir) || (s_repeat == dir && now >= s_repeat_at)))
     {
+        /* A press steps a category and goes round; held, Up goes to the melee weapons and Down to the
+         * items -- where each opens the menu -- and stays */
         int next = (dir == Q_UP || dir == Q_DOWN) && s_menu.ready
-                 ? category_step(s_menu.category, dir == Q_UP ? -1 : 1, (pressed & dir) != 0) : 0;
+                 ? (pressed & dir) ? category_step(s_menu.category, dir == Q_UP ? -1 : 1, 1)
+                                   : dir == Q_UP ? NGB_QUICK_MELEE : NGB_QUICK_ITEMS : 0;
         if (next && next != s_menu.category)
         {
             s_menu.category = next;
