@@ -468,7 +468,10 @@ static void apply(uint16_t item, int category)
     if (!r)
         return;
     if (entry_category(item) != category)
+    {
+        fprintf(stderr, "[QUICK] refused %04X: not in category %d\n", item, category);
         return;
+    }
     if (category != NGB_QUICK_ITEMS)
     {
         unsigned cls = MEM8(r + 0xD);
@@ -478,19 +481,28 @@ static void apply(uint16_t item, int category)
          * required components before passing it to the resource loader. */
         esi = item;
         if (!call(sub_001542C0))
+        {
+            fprintf(stderr, "[QUICK] refused %04X: the game does not count it as owned\n", item);
             return;
+        }
         esp -= 64;
         uint32_t scratch = esp;
         ecx = item;
         eax = scratch;
         unsigned n = call(sub_001550F0);
         if (n > 16)
+        {
+            fprintf(stderr, "[QUICK] refused %04X: %u required parts\n", item, n);
             return;
+        }
         for (unsigned i = 0; i < n; i++)
         {
             esi = MEM16(scratch + i * 2);
             if (!call(sub_001542C0))
+            {
+                fprintf(stderr, "[QUICK] refused %04X: its part %04X is not owned\n", item, (unsigned)MEM16(scratch + i * 2));
                 return;
+            }
         }
         if (MEM16(0x58A570 + player + (cls - 1) * 2) == item)
         {
