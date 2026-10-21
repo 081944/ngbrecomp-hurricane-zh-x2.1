@@ -1658,7 +1658,9 @@ void ngb_menu_mark(void);            /* src/menu_mouse.c */
     if (v_ == (const char *)1) v_ = getenv(name); v_; }))
 
 
-enum { K_UP = 1, K_DOWN, K_LEFT, K_RIGHT, K_OK, K_BACK, K_CLEAR, K_ROW = 0x100 };
+/* K_ROW | the row the mouse is on (HIT_*: up to HIT_CTL + CTL_ROWS * 4, past a byte since the quick menu's
+ * actions -- read back as a byte, the lower rows of Controls were other rows and categories) */
+enum { K_UP = 1, K_DOWN, K_LEFT, K_RIGHT, K_OK, K_BACK, K_CLEAR, K_ROW = 0x10000 };
 
 /* For the mouse (any thread): the row of the page at (x, y) in the menu's
  * 720x480, or -1; *zone -1 on the "<" half of its value, 1 on the ">"
@@ -1786,7 +1788,7 @@ static void pt_draw(void)
             play_sound(6);
     }
     if (key & K_ROW) {                                /* the mouse on a row or a category */
-        int r = key & 0xFF;
+        int r = key & 0xFFFF;
         if (r >= HIT_CTL && s_cat == CAT_CTL) {      /* a cell of Controls' list */
             ctl_mouse(r, &s_row);
         } else if (r >= HIT_CAT && r < HIT_CAT + CATS) {
@@ -1838,12 +1840,17 @@ static void pt_draw(void)
         play_sound(s_focus ? 6 : 3);                  /* in, as a tab's page; back */
     for (int i = 0; i < S_COUNT; i++)
         vals[i] = ngb_pc_setting(i);
-    int shown = s_cat * 4096 + (s_row + 1) * 64 + s_ctl_col * 16 + (s_cat == CAT_CTL ? s_ctl_top : 0);
+    /* what is drawn, each part in bits of its own (the list's top, past 15 since the quick menu's actions,
+     * ran into the column's: a scroll could leave the page as it was) */
+    int shown = (s_cat & 7) << 28 | ((s_row + 1) & 0xFF) << 20 | (s_ctl_col & 3) << 18 |
+                (s_cat == CAT_CTL ? s_ctl_top & 0x3F : 0) << 12;
     if (s_cat == CAT_CTL)                             /* and the bindings, and waiting for one */
-        shown ^= (int)(ngb_bind_generation() << 20) ^ ngb_bind_capturing() << 30;
+        shown ^= (int)(ngb_bind_generation() & 0x7FF) << 1 ^ ngb_bind_capturing();
     if (s_drawn.page != 0 || s_focus != s_drawn.focused || shown != s_drawn.row ||
         memcmp(vals, s_drawn.vals, sizeof vals)) {
         draw_page(s_focus, s_cat, s_row);
+        if (s_cat == CAT_CTL && getenv("NGB_CTL_LOG"))   /* NGB_CTL_LOG=1: the Controls list as drawn */
+            fprintf(stderr, "[CTL] row %d col %d top %d\n", s_row, s_ctl_col, s_ctl_top);
         s_drawn.page = 0;
         s_drawn.focused = s_focus;
         s_drawn.row = shown;
@@ -1992,8 +1999,8 @@ static int ngb_confirm_tick(void)
     int key = ngb_pause_tab_key(&s_dlg_focus), r = -1;
     s_dlg_back = key == K_BACK;
     if (key & K_ROW) {                                 /* the mouse */
-        if ((key & 0xFF) < 2 && (key & 0xFF) != s_dlg_sel) {
-            s_dlg_sel = key & 0xFF;
+        if ((key & 0xFFFF) < 2 && (key & 0xFFFF) != s_dlg_sel) {
+            s_dlg_sel = key & 0xFFFF;
             play_sound(1);
         }
         key = 0;
@@ -2126,7 +2133,7 @@ void ngb_controls_panel_tick(int want)
             play_sound(6);
     }
     if (key & K_ROW) {
-        int r = key & 0xFF;
+        int r = key & 0xFFFF;
         if (r >= HIT_CTL)
             ctl_mouse(r, &s_ov_row);
         key = 0;
@@ -2143,8 +2150,8 @@ void ngb_controls_panel_tick(int want)
         play_sound(3);
         return;
     }
-    int shown = (s_ov_row + 1) * 64 + s_ctl_col * 16 + s_ctl_top;
-    shown ^= (int)(ngb_bind_generation() << 20) ^ ngb_bind_capturing() << 30;
+    int shown = ((s_ov_row + 1) & 0xFF) << 20 | (s_ctl_col & 3) << 18 | (s_ctl_top & 0x3F) << 12;   /* as the tab's */
+    shown ^= (int)(ngb_bind_generation() & 0x7FF) << 1 ^ ngb_bind_capturing();
     if (shown != s_ov_drawn) {
         ov_draw();
         s_ov_drawn = shown;
@@ -2381,7 +2388,7 @@ static void pt_exit_draw(void)
     int was = s_focus;
     int key = ngb_pause_tab_key(&s_focus);
     if (key & K_ROW) {                                /* the mouse on a row */
-        int r = key & 0xFF;
+        int r = key & 0xFFFF;
         if (r < EXIT_ROWS && r != s_exit_row) {
             s_exit_row = r;
             s_exit_armed = -1;

@@ -652,7 +652,7 @@ static int tab_hit(float x, float y, int *zone)
     default: return ngb_pause_tab_hit(x, y, zone);
     }
 }
-#define TAB_ROW 0x100
+#define TAB_ROW 0x10000   /* | the row (src/pause_tab.c's K_ROW): past a byte */
 
 /* Presses for the game's pad, played out a frame at a time (render
  * thread) so that each is seen: held 90 ms, then 60 ms let go. Low byte
