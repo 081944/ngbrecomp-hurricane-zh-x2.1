@@ -633,14 +633,19 @@ static void category_arrow(int cx, int cy, int down, unsigned alpha)
     art(down ? source : &up, (float)cx, (float)cy, 20, alpha);
 }
 
-static int category_step(int category, int direction)
+/* The category above or below; wrap 0: held, it stops at the top or the bottom (the same one back) */
+static int category_step(int category, int direction, int wrap)
 {
     /* Visual order is independent of the native inventory class numbers. */
     static const int order[] = {NGB_QUICK_NINPO, NGB_QUICK_PROJECTILES,
                                 NGB_QUICK_MELEE, NGB_QUICK_ITEMS};
     for (int i = 0; i < NGB_QUICK_CATEGORIES; i++)
-        if (order[i] == category)
-            return order[(i + direction + NGB_QUICK_CATEGORIES) % NGB_QUICK_CATEGORIES];
+        if (order[i] == category) {
+            int j = i + direction;
+            if (!wrap && (j < 0 || j >= NGB_QUICK_CATEGORIES))
+                return category;
+            return order[(j + NGB_QUICK_CATEGORIES) % NGB_QUICK_CATEGORIES];
+        }
     return NGB_QUICK_MELEE;
 }
 
@@ -674,9 +679,11 @@ int ngb_quick_layer(uint32_t *pixels)
     }
     if (dir && ((pressed & dir) || (s_repeat == dir && now >= s_repeat_at)))
     {
-        if ((dir == Q_UP || dir == Q_DOWN) && s_menu.ready)
+        int next = (dir == Q_UP || dir == Q_DOWN) && s_menu.ready
+                 ? category_step(s_menu.category, dir == Q_UP ? -1 : 1, (pressed & dir) != 0) : 0;
+        if (next && next != s_menu.category)
         {
-            s_menu.category = category_step(s_menu.category, dir == Q_UP ? -1 : 1);
+            s_menu.category = next;
             view = &s_menu.views[s_menu.category - 1];
             s_navigation++;
             s_revision++;
@@ -731,8 +738,8 @@ int ngb_quick_layer(uint32_t *pixels)
         }
     }
     NgbQuickView v = *view;
-    int above_category = category_step(s_menu.category, -1);
-    int below_category = category_step(s_menu.category, 1);
+    int above_category = category_step(s_menu.category, -1, 1);
+    int below_category = category_step(s_menu.category, 1, 1);
     const NgbQuickView *above = &s_menu.views[above_category - 1];
     const NgbQuickView *below = &s_menu.views[below_category - 1];
     NgbQuickEntry above_entry = {0}, below_entry = {0};
