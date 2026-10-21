@@ -48,6 +48,9 @@ void ngb_bind_set_invert(int view, int axis, int on);
  * game's own start (0; src/camera.c, #23). */
 int ngb_bind_third_person_start(void);
 void ngb_bind_set_third_person_start(int on);
+/* Camera Sensitivity (Controls): the mouse's camera speed in percent; a step either way */
+int ngb_bind_mouse_sensitivity(void);
+void ngb_bind_step_mouse_sensitivity(int dir);
 void ngb_bind_load(void);
 /* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a
  * short one for a keycap (1-3 characters; "" for a mouse button). */

@@ -134,8 +134,9 @@ static const signed char s_cat_rows[CATS][CAT_ROWS] = {
  * Default Controls */
 #define CTL_INVX A_COUNT
 #define CTL_START (A_COUNT + 3)
-#define CTL_DEF  (A_COUNT + 4)
-#define CTL_ROWS (A_COUNT + 5)
+#define CTL_MOUSE (A_COUNT + 4)   /* Camera Sensitivity (the mouse): a value, Left / Right (#67) */
+#define CTL_DEF  (A_COUNT + 5)
+#define CTL_ROWS (A_COUNT + 6)
 #define CTL_TOGGLE(r) ((r) >= CTL_INVX && (r) <= CTL_START)
 static const char *const s_ctl_toggle_name[4] = {
     "Invert Camera X", "Invert Camera Y", "Invert First-Person X", "Start in Third Person",
@@ -791,6 +792,16 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
                       sel ? 0xFFFFFF : 0xC8C8D0, 1);
             continue;
         }
+        if (r == CTL_MOUSE) {
+            if (sel)
+                page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
+            page_text_fit(px, m, "Camera Sensitivity", CTL_NAME_X + 6, y + 19, 18,
+                          sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0, 260);
+            char pct[16];
+            snprintf(pct, sizeof pct, "%s%d%%%s", sel ? "< " : "", ngb_bind_mouse_sensitivity(), sel ? " >" : "");
+            page_text(px, m, pct, s_ctl_cx[2], y + 18, 15, sel ? 0xFFFFFF : 0xC8C8D0, 1);
+            continue;
+        }
         if (r == CTL_DEF) {                            /* Default Controls */
             if (sel)
                 page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
@@ -827,6 +838,8 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         help = "Every action as it was.";
     else if (focused && CTL_TOGGLE(row))
         help = s_ctl_toggle_help[row - CTL_INVX];
+    else if (focused && row == CTL_MOUSE)
+        help = "How fast the mouse turns the camera (play only).";
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : "A: change   X / Delete: clear   (play only; the menus keep theirs)";
@@ -1712,6 +1725,11 @@ static int ctl_keys(int key, int *row, int strip)
         break;
     case K_LEFT:
     case K_RIGHT: {
+        if (*row == CTL_MOUSE) {
+            ngb_bind_step_mouse_sensitivity(key == K_LEFT ? -1 : 1);
+            play_sound(1);
+            break;
+        }
         int c = s_ctl_col + (key == K_LEFT ? -1 : 1);
         if (c >= 0 && c <= 2 && !(c == 2 && *row < A_COUNT && ngb_bind_pad_fixed(*row))) {
             s_ctl_col = c;
@@ -1722,6 +1740,9 @@ static int ctl_keys(int key, int *row, int strip)
     case K_OK:
         if (CTL_TOGGLE(*row)) {
             ctl_toggle_flip(*row);
+            play_sound(6);
+        } else if (*row == CTL_MOUSE) {
+            ngb_bind_step_mouse_sensitivity(1);
             play_sound(6);
         } else if (*row == CTL_DEF) {
             ngb_bind_defaults();

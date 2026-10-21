@@ -35,6 +35,7 @@ static SHORT axis(const Uint8 *k, int neg, int pos)
 }
 
 void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y);
+int ngb_bind_mouse_sensitivity(void);   /* src/bindings.c: Camera Sensitivity, percent */
 
 /* A button that skips a movie or cutscene: Start, A or B on the pad (or the keys bound to them),
  * from the first pad's state as the title reads it. */
@@ -47,13 +48,19 @@ int ngb_skip_button(void)
            st.Gamepad.bAnalogButtons[1] > 0x40;
 }
 
+/* The mouse's speed for a full stick: 900 pixels a second at Camera Sensitivity 100% (Controls, #67) */
+static float mouse_full(void)
+{
+    return 900.0f * 100.0f / (float)ngb_bind_mouse_sensitivity();
+}
+
 int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
 {
     int menu = ngb_menu_up();
     if (!menu && !getenv("NGB_FIXED_KEYS")) {   /* in play: as bound (src/bindings.c, the Controls page) */
         SHORT mx = 0, my = 0;
         if (SDL_GetRelativeMouseMode())
-            xbox_InputMouseStick(900.0f, &mx, &my);
+            xbox_InputMouseStick(mouse_full(), &mx, &my);
         ngb_bind_play_state(k, mouse, st, mx, my);
         return 1;
     }
@@ -94,7 +101,7 @@ int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
     st->Gamepad.sThumbLY = axis(k, SDL_SCANCODE_S, SDL_SCANCODE_W);
     SHORT mx = 0, my = 0;
     if (!menu && SDL_GetRelativeMouseMode())
-        xbox_InputMouseStick(900.0f, &mx, &my);
+        xbox_InputMouseStick(mouse_full(), &mx, &my);
     int rx = axis(k, SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_6) + mx;
     int ry = axis(k, SDL_SCANCODE_KP_5, SDL_SCANCODE_KP_8) + my;
     st->Gamepad.sThumbRX = (SHORT)(rx > 32767 ? 32767 : rx < -32767 ? -32767 : rx);

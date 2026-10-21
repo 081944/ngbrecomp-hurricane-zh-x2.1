@@ -118,11 +118,13 @@ static void identity_check(void)
  * (controls.ini; #33 #63 #23) */
 static int s_invert[2][2];
 static int s_third_start;
+static int s_mouse_pct = 100;   /* the mouse's camera speed, percent (#67) */
 
 void ngb_bind_defaults(void)
 {
     memset(s_invert, 0, sizeof s_invert);
     s_third_start = 0;
+    s_mouse_pct = 100;
     for (int a = 0; a < A_COUNT; a++) {
         s_bind[a][0] = s_act[a].key0;
         s_bind[a][1] = s_act[a].key1;
@@ -241,6 +243,7 @@ static void save(void)
     fprintf(f, "invert_camera_x = %d\ninvert_camera_y = %d\n", s_invert[0][0], s_invert[0][1]);
     fprintf(f, "invert_first_person_x = %d\n", s_invert[1][0]);
     fprintf(f, "third_person_on_load = %d\n", s_third_start);
+    fprintf(f, "mouse_sensitivity = %d\n", s_mouse_pct);
     fclose(f);
 }
 
@@ -269,6 +272,11 @@ void ngb_bind_load(void)
         }
         if (!strcmp(key, "third_person_on_load")) {
             s_third_start = atoi(val) != 0;
+            continue;
+        }
+        if (!strcmp(key, "mouse_sensitivity")) {
+            int v = atoi(val);
+            s_mouse_pct = v < 25 ? 25 : v > 400 ? 400 : v;
             continue;
         }
         for (int a = 0; a < A_COUNT; a++) {
@@ -423,6 +431,26 @@ void ngb_bind_set_third_person_start(int on)
 {
     ensure();
     s_third_start = on != 0;
+    s_gen++;
+    save();
+}
+
+/* Camera Sensitivity (the mouse): 50 to 400 percent; a step up or down (round) */
+int ngb_bind_mouse_sensitivity(void)
+{
+    ensure();
+    return s_mouse_pct;
+}
+
+void ngb_bind_step_mouse_sensitivity(int dir)
+{
+    static const int steps[] = { 50, 75, 100, 125, 150, 200, 250, 300, 400 };
+    const int n = (int)(sizeof steps / sizeof steps[0]);
+    ensure();
+    int i = 0;
+    while (i < n - 1 && steps[i] < s_mouse_pct)
+        i++;
+    s_mouse_pct = steps[(i + (dir < 0 ? n - 1 : 1)) % n];
     s_gen++;
     save();
 }
