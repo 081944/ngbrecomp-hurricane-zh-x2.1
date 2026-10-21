@@ -85,9 +85,9 @@ of the pause menu. Changes apply at once and are saved.
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open
-- **Cheats** (for the session only): infinite health, ninpo, essence; golden scarabs
+- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
-  inversion; start in third person
+  inversion; start in third person; Camera Sensitivity
 
 The game's own Options (sound, movie aspect, controller vibration and so on) are where they always
 were.
@@ -112,7 +112,9 @@ right stick (V) to turn the third-person camera instead. With **Start in Third P
 SETTINGS → Controls) the stick turns the third-person camera after every load. **Invert Camera X / Y**
 flips the stick and mouse for the third-person camera, **Invert First-Person X** first-person left and
 right; first-person up and down is the game's own Options → Controller Settings → 1st Person Camera
-Control.
+Control. **Camera Sensitivity** (25%–300%) sets how fast the mouse, the right stick and the camera keys
+turn it; over 100% the camera turns faster than the game's own top speed (the third-person camera's
+left and right; its up and down stays the game's).
 
 With the **Quick Menu** on (RECOMP SETTINGS → Gameplay), Up and Down on the d-pad (or the Up / Down
 arrows, 1 / 2) open it on the melee weapons or the items, and Left and Right on the previous or next
