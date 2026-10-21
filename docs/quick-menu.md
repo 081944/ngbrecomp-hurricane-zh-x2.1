@@ -10,8 +10,9 @@ Consumables, regardless of the last category used. The same applies to the
 actions' keyboard bindings (Up/1 and Down/2 by default). Only those two
 actions can open the menu. Left/Right (including rebound Previous/Next
 actions) selects entries only while the menu is open. Once open, Up/Down changes
-category; Left/Right changes selection; A confirms and B
-cancels. Keyboard defaults are Up/Down (also 1/2), Left/Right, Enter and
+category; Left/Right changes selection (held about half a second, it goes to
+the first card); A confirms and B cancels. Each category opens on the card it
+was last left on, else on the equipped weapon or the last item used. Keyboard defaults are Up/Down (also 1/2), Left/Right, Enter and
 Escape/Backspace. The six actions are rebindable in Controls. Existing
 profiles keep their original four bindings; new confirm/cancel actions get
 their defaults. The old `quick_weapons` / `quick_items` keys now mean
@@ -57,10 +58,12 @@ scale does not resize render targets or alter the game's render resolution.
 
 Only when Quick Menu Pause has unlocked does a GPU pass lightly blur and
 dim the background. Waiting for an action and Pause Off bypass that pass.
-The menu is drawn afterward and stays sharp. The pass downsamples the
-current display copy into a fixed 640 x 360 scratch image, then applies a
-nine-tap filter and 0.70 brightness. It never reads the frame back to the
-CPU, holds a screenshot, or waits for the whole GPU to idle.
+The menu is drawn afterward and stays sharp. The pass blits the current
+display copy to at most 1920 wide, averages it into a 640 x 360 image (each
+small pixel the whole area it covers, so nothing shimmers), blurs that with a
+Gaussian across and down (sigma 4 small pixels) and draws it back at 0.80
+brightness. It never reads the frame back to the CPU, holds a screenshot,
+or waits for the whole GPU to idle.
 
 ## Integration points
 

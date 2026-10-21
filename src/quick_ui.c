@@ -26,6 +26,10 @@ static unsigned s_held, s_edges, s_request;
 static int s_confirm_ready;
 static Uint64 s_request_at;
 static uint64_t s_repeat_at;
+/* The card last on in each category, where the menu opens next (0xFFFF none yet); Left / Right held
+ * this long goes to the first card */
+static uint16_t s_remember[NGB_QUICK_CATEGORIES] = { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
+#define Q_HOLD_FIRST_MS 500
 static uint32_t s_repeat;
 static char s_game_dir[4096];
 static char s_message[64];
@@ -193,6 +197,12 @@ void ngb_quick_open(const NgbQuickMenu *menu)
     s_revision++;
     s_open = 1;
     s_block = 1;
+    for (int c = 0; c < NGB_QUICK_CATEGORIES; c++) {   /* each category on the card it was left on */
+        NgbQuickView *v = &s_menu.views[c];
+        for (int i = 0; i < v->count; i++)
+            if (v->entries[i].id == s_remember[c])
+                v->index = i;
+    }
     int category = s_menu.category;
     SDL_AtomicUnlock(&s_lock);
     const NgbQuickView *view = &menu->views[category - 1];
@@ -675,14 +685,22 @@ int ngb_quick_layer(uint32_t *pixels)
         }
         else if ((dir == Q_LEFT || dir == Q_RIGHT) && view->count > 1)
         {
-            view->index = (view->index + (dir == Q_LEFT ? -1 : 1) + view->count) % view->count;
+            /* A press steps; held, it goes to the first card once (no repeat) */
+            int first = !(pressed & dir);
+            view->index = first ? 0 : (view->index + (dir == Q_LEFT ? -1 : 1) + view->count) % view->count;
+            s_remember[view->category - 1] = view->entries[view->index].id;
             s_navigation++;
             s_revision++;
             s_message[0] = 0;
-            fprintf(stderr, "[QUICK] selected category=%d item=%04X\n", view->category,
-                    view->entries[view->index].id);
+            fprintf(stderr, "[QUICK] selected category=%d item=%04X%s\n", view->category,
+                    view->entries[view->index].id, first ? " (the first, held)" : "");
         }
-        if (s_menu.ready || dir == Q_LEFT || dir == Q_RIGHT)
+        if (dir == Q_LEFT || dir == Q_RIGHT)
+        {
+            s_repeat_at = (pressed & dir) ? now + Q_HOLD_FIRST_MS : UINT64_MAX;
+            s_repeat = dir;
+        }
+        else if (s_menu.ready)
         {
             s_repeat_at = now + (s_repeat == dir ? 110 : 380);
             s_repeat = dir;
