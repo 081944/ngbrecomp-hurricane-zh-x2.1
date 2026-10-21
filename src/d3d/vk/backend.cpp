@@ -2838,18 +2838,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         // its edges, clamped there: the last column repeated, a streaky band down the right of the screen,
         // the console's too (#55). Mirrored, the read past the edge is the picture just inside it.
         // NGB_D3D_HAZE_CLAMP=1: as the console.
-        // NGB_D3D_HAZE_CLAMP_FILE=<file>: as the console while the file exists (a comparison in one run)
-        static const bool haze_clamp_env = std::getenv("NGB_D3D_HAZE_CLAMP") != nullptr;
-        static const char* haze_file = std::getenv("NGB_D3D_HAZE_CLAMP_FILE");
-        static uint32_t haze_checked = ~0u;
-        static bool haze_clamp_now;
-        if (haze_file && haze_checked != presents_) {   // once a frame
-            haze_checked = presents_;
-            FILE* hf = std::fopen(haze_file, "r");
-            haze_clamp_now = hf != nullptr;
-            if (hf) std::fclose(hf);
-        }
-        bool haze_clamp = haze_clamp_env || haze_clamp_now;
+        static const bool haze_clamp = std::getenv("NGB_D3D_HAZE_CLAMP") != nullptr;
         bool haze = !haze_clamp && i == 2 && from_target[2] && s.rs[kRsPsTextureModes] == 0x2621 &&
                     s.tss[2][kTssAddressU] == 3 && s.tss[2][kTssAddressV] == 3;
         if (haze) {
