@@ -50,6 +50,7 @@ int ngb_bind_third_person_start(void);
 void ngb_bind_set_third_person_start(int on);
 /* Camera Sensitivity (Controls): the camera's camera speed in percent; a step either way */
 int ngb_bind_mouse_sensitivity(void);
+float ngb_bind_camera_boost(void);   /* the cameras' turn: Camera Sensitivity over 100% (src/camera.c) */
 void ngb_bind_step_mouse_sensitivity(int dir);
 void ngb_bind_load(void);
 /* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a

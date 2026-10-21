@@ -459,13 +459,20 @@ void ngb_bind_step_mouse_sensitivity(int dir)
 /* Camera Sensitivity on one axis of the right stick: the part past where the game's camera starts to
  * turn, scaled. Measured (0.6 s, in play): 14078 turns 0 degrees, 20308 20, 26537 85, 32767 113 -- the
  * camera starts at about 18400, below it nothing. Below that the stick is left alone (a controller's
- * stick at rest is not quite 0); full deflection is still the game's fastest turn. */
+ * stick at rest is not quite 0). */
 #define CAMERA_START 18000
 int ngb_bind_camera_start(void) { return CAMERA_START; }   /* src/keyboard.c: where the mouse starts */
+float ngb_bind_camera_boost(void)
+{
+    ensure();
+    return s_mouse_pct > 100 ? s_mouse_pct / 100.0f : 1.0f;
+}
+/* Up to 100%: the stick past where the camera starts, scaled down. Over 100%: the stick as it is, and the
+ * cameras' turn multiplied (src/camera.c): a full stick is already the game's top speed. */
 static int camera_scale(int v)
 {
     int m = v < 0 ? -v : v;
-    if (s_mouse_pct == 100 || m <= CAMERA_START)
+    if (s_mouse_pct >= 100 || m <= CAMERA_START)
         return v;
     m = CAMERA_START + (m - CAMERA_START) * s_mouse_pct / 100;
     return v < 0 ? -m : m;
