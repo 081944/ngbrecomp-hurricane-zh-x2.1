@@ -100,7 +100,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_INFAMMO  0x201BD
 #define T_QUICKSCALE  0x201C0
 #define D_QUICKSCALE  0x201C1
-#define T_QUICKSCALE0 0x201C2        /* + (100 - size) / 10: 100% ... 50%, 25% (+7), Off (+10) */
+#define T_QUICKSCALE0 0x201C2        /* + (100 - size) / 25: 100%, 75%, 50%, 25%, Off (+4) */
 #define T_PC       0x20100
 #define T_RENDER   0x20101
 #define T_TEXTURE  0x20102
@@ -175,12 +175,9 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_INFAMMO,  "Infinite Projectiles" },
     { D_INFITEMS, "Elixirs, rations and the Talisman of Rebirth are not used up. For this session only." },
     { D_INFAMMO,  "Shuriken, smoke bombs, arrows and spears are not used up. For this session only." },
-    { T_QUICKSCALE0 + 0, "100%" }, { T_QUICKSCALE0 + 1, "90%" },
-    { T_QUICKSCALE0 + 2, "80%" }, { T_QUICKSCALE0 + 3, "70%" },
-    { T_QUICKSCALE0 + 4, "60%" }, { T_QUICKSCALE0 + 5, "50%" },
-    { T_QUICKSCALE0 + 6, "40%" }, { T_QUICKSCALE0 + 7, "25%" },   /* 25 / 10: the 25% choice */
-    { T_QUICKSCALE0 + 8, "20%" }, { T_QUICKSCALE0 + 9, "10%" },
-    { T_QUICKSCALE0 + 10, "Off" },
+    { T_QUICKSCALE0 + 0, "100%" }, { T_QUICKSCALE0 + 1, "75%" },
+    { T_QUICKSCALE0 + 2, "50%" }, { T_QUICKSCALE0 + 3, "25%" },
+    { T_QUICKSCALE0 + 4, "Off" },
     { D_QUICKFREEZE, "The game pauses while the quick menu is open (once Ryu's action ends)." },
     { T_PC,      "PC Settings" },
     { T_RENDER,  "Render Resolution" },
@@ -676,7 +673,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
 {
     switch (row_kind(row)) {
     case ROW_QUICKFREEZE: return ngb_pc_setting(19) ? T_ON : T_OFF;
-    case ROW_QUICKSCALE: return T_QUICKSCALE0 + (uint32_t)((100 - ngb_pc_setting(20)) / 10);
+    case ROW_QUICKSCALE: return T_QUICKSCALE0 + (uint32_t)((100 - ngb_pc_setting(20)) / 25);
     case ROW_MOVIE:   return movie_id;
     case ROW_RENDER:  return T_SCALE0 + (uint32_t)(ngb_pc_setting(0) - 1);
     case ROW_TEXTURE: {

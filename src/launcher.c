@@ -94,19 +94,20 @@ static void snap_size(NgbSettings *s)
 
 void ngb_settings_snap_size(NgbSettings *s) { snap_size(s); }
 
-/* The quick menu's size: 100, 90 ... 50 percent, 25, or 0 (Off). A size saved between 25 and 50 is the
- * nearer of the two; the earlier 75 is 80. */
+/* The quick menu's size: 25, 50, 75 or 100 percent, or 0 (Off). A size saved before (in tens) is the
+ * nearest quarter. */
 int ngb_quick_scale_value(int v)
 {
-    if (v == 75) return 80;
-    if (v > 0 && v < 50) return v < 38 ? 25 : 50;
-    return v >= 0 && v <= 100 && v % 10 == 0 ? v : 0;
+    if (v <= 0 || v > 100)
+        return 0;
+    int q = (v + 12) / 25 * 25;
+    return q < 25 ? 25 : q;
 }
 
 int ngb_quick_scale_step(int v, int dir)
 {
     /* the choices in order, and round */
-    static const int order[] = { 100, 90, 80, 70, 60, 50, 25, 0 };
+    static const int order[] = { 100, 75, 50, 25, 0 };
     const int n = (int)(sizeof order / sizeof order[0]);
     int i = 0;
     v = ngb_quick_scale_value(v);
