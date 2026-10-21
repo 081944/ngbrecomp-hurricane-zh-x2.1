@@ -10,8 +10,8 @@ Consumables, regardless of the last category used. The same applies to the
 actions' keyboard bindings (Up/1 and Down/2 by default). Only those two
 actions can open the menu. Left/Right (including rebound Previous/Next
 actions) selects entries only while the menu is open. Once open, Up/Down changes
-category; Left/Right changes selection (held about half a second, it goes to
-the first card); A confirms and B cancels. Each category opens on the card it
+category; Left/Right changes selection; a press goes round, held they step on to
+the first or last category or card and stop there; A confirms and B cancels. Each category opens on the card it
 was last left on, else on the equipped weapon or the last item used. Keyboard defaults are Up/Down (also 1/2), Left/Right, Enter and
 Escape/Backspace. The six actions are rebindable in Controls. Existing
 profiles keep their original four bindings; new confirm/cancel actions get

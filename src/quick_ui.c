@@ -26,10 +26,8 @@ static unsigned s_held, s_edges, s_request;
 static int s_confirm_ready;
 static Uint64 s_request_at;
 static uint64_t s_repeat_at;
-/* The card last on in each category, where the menu opens next (0xFFFF none yet); Left / Right held
- * this long goes to the first card */
+/* The card last on in each category, where the menu opens next (0xFFFF none yet) */
 static uint16_t s_remember[NGB_QUICK_CATEGORIES] = { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
-#define Q_HOLD_FIRST_MS 500
 static uint32_t s_repeat;
 static char s_game_dir[4096];
 static char s_message[64];
@@ -692,22 +690,23 @@ int ngb_quick_layer(uint32_t *pixels)
         }
         else if ((dir == Q_LEFT || dir == Q_RIGHT) && view->count > 1)
         {
-            /* A press steps; held, it goes to the first card once (no repeat) */
-            int first = !(pressed & dir);
-            view->index = first ? 0 : (view->index + (dir == Q_LEFT ? -1 : 1) + view->count) % view->count;
-            s_remember[view->category - 1] = view->entries[view->index].id;
-            s_navigation++;
-            s_revision++;
-            s_message[0] = 0;
-            fprintf(stderr, "[QUICK] selected category=%d item=%04X%s\n", view->category,
-                    view->entries[view->index].id, first ? " (the first, held)" : "");
+            /* A press steps and goes round; held, it steps on to the first or the last card and
+             * stops there, as Up / Down do with the categories */
+            int i = view->index + (dir == Q_LEFT ? -1 : 1);
+            if (pressed & dir)
+                i = (i + view->count) % view->count;
+            if (i >= 0 && i < view->count && i != view->index)
+            {
+                view->index = i;
+                s_remember[view->category - 1] = view->entries[view->index].id;
+                s_navigation++;
+                s_revision++;
+                s_message[0] = 0;
+                fprintf(stderr, "[QUICK] selected category=%d item=%04X\n", view->category,
+                        view->entries[view->index].id);
+            }
         }
-        if (dir == Q_LEFT || dir == Q_RIGHT)
-        {
-            s_repeat_at = (pressed & dir) ? now + Q_HOLD_FIRST_MS : UINT64_MAX;
-            s_repeat = dir;
-        }
-        else if (s_menu.ready)
+        if (s_menu.ready || dir == Q_LEFT || dir == Q_RIGHT)
         {
             s_repeat_at = now + (s_repeat == dir ? 110 : 380);
             s_repeat = dir;
