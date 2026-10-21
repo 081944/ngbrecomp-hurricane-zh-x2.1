@@ -45,7 +45,7 @@ brightness (two successive 33% reductions), preserving its alpha. Frames,
 icons, arrows and quantities are drawn afterward with their own colours.
 The runtime tint changes no game asset file.
 
-RECOMP SETTINGS -> Gameplay -> **Quick Menu** offers Off, 25%, 50%, 75%, 100%:
+RECOMP SETTINGS -> Gameplay -> **Quick Menu** offers Off, 25%, 50%, 75%, 100%, 125%, 150%:
 off by default, and otherwise the menu's size. It saves as `quick_menu_scale`
 in settings.ini (a percentage, 0 for Off; missing or invalid values are Off;
 a size saved before, in tens, is the nearest quarter). Off disables opening,
