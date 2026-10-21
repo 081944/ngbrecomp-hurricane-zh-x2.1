@@ -845,17 +845,25 @@ static void draw_page(int focused, int cat, int row)
      * the right, the chosen word light violet, the others grey. */
     page_fill(px, 4, STRIP_Y, 442, STRIP_H, 0x14141C, 0.8f, 0.8f);   /* one colour behind all the words */
     page_fill(px, 4, STRIP_Y + STRIP_H - 1.5f, 442, 1.5f, 0xB4B9D2, 0.6f, 0.6f);
-    float x = STRIP_X0, words = 0, gap = STRIP_GAP;
-    for (int c = 0; c < CATS; c++)
-        words += text_width(&s_font_body, s_cat_name[c], 17 * k, 1.0f) / k;
-    if (STRIP_X0 + words + gap * (CATS - 1) > 440 - STRIP_X0)   /* six words: closer, all on the strip */
+    /* The words at 17, or smaller until they fit with a fair gap between them (six do not at 17). */
+    float x = STRIP_X0, words = 0, gap = STRIP_GAP, fs = 17;
+    for (;;) {
+        words = 0;
+        for (int c = 0; c < CATS; c++)
+            words += text_width(&s_font_body, s_cat_name[c], fs * k, 1.0f) / k;
         gap = (440 - 2 * STRIP_X0 - words) / (CATS - 1);
+        if (gap >= 16 || fs <= 13)
+            break;
+        fs -= 1;
+    }
+    if (gap > STRIP_GAP)
+        gap = STRIP_GAP;
     for (int c = 0; c < CATS; c++) {
-        float w = text_width(&s_font_body, s_cat_name[c], 17 * k, 1.0f) / k;
+        float w = text_width(&s_font_body, s_cat_name[c], fs * k, 1.0f) / k;
         int on = c == cat, sel = focused && row < 0 && on;
         if (sel)
             page_fill(px, x - 6, STRIP_Y + 3, w + 12, STRIP_H - 6, 0x6E64DC, 0.75f, 0.75f);
-        page_text(px, m, s_cat_name[c], x, STRIP_Y + 19, 17,
+        page_text(px, m, s_cat_name[c], x, STRIP_Y + 19, fs,
                   sel ? 0xFFFFFF : on ? 0xC8C4FF : 0x8C8C96, 0);
         s_cat_x[c][0] = x - 6;
         s_cat_x[c][1] = x + w + 6;
