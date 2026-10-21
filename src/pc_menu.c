@@ -100,7 +100,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_INFAMMO  0x201BD
 #define T_QUICKSCALE  0x201C0
 #define D_QUICKSCALE  0x201C1
-#define T_QUICKSCALE0 0x201C2        /* + 0..10: 100%, 90%, ... 10%, Off */
+#define T_QUICKSCALE0 0x201C2        /* + (100 - size) / 10: 100% ... 50%, 25% (+7), Off (+10) */
 #define T_PC       0x20100
 #define T_RENDER   0x20101
 #define T_TEXTURE  0x20102
@@ -178,7 +178,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKSCALE0 + 0, "100%" }, { T_QUICKSCALE0 + 1, "90%" },
     { T_QUICKSCALE0 + 2, "80%" }, { T_QUICKSCALE0 + 3, "70%" },
     { T_QUICKSCALE0 + 4, "60%" }, { T_QUICKSCALE0 + 5, "50%" },
-    { T_QUICKSCALE0 + 6, "40%" }, { T_QUICKSCALE0 + 7, "30%" },
+    { T_QUICKSCALE0 + 6, "40%" }, { T_QUICKSCALE0 + 7, "25%" },   /* 25 / 10: the 25% choice */
     { T_QUICKSCALE0 + 8, "20%" }, { T_QUICKSCALE0 + 9, "10%" },
     { T_QUICKSCALE0 + 10, "Off" },
     { D_QUICKFREEZE, "The game pauses while the quick menu is open (once Ryu's action ends)." },
