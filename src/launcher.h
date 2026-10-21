@@ -47,7 +47,7 @@ void ngb_settings_row_text(const NgbSettings *s, int item, const char **label,
 const char *ngb_vsync_name(int v);
 int ngb_vsync_step(int v, int dir);
 
-/* Display's quick-menu percentages, 100 down to 0 (Off), in tens. */
+/* The quick menu's size (Gameplay): 100 down to 50 percent in tens, or 0 (Off). */
 int ngb_quick_scale_value(int v);
 int ngb_quick_scale_step(int v, int dir);
 
