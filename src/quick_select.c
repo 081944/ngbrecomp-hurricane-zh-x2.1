@@ -287,7 +287,7 @@ static void picture(NgbQuickEntry *e)
     case 0xCC:
     case 0x182:
     case 0x183:
-        art = lv >= 2 ? "yoto2" : "yoto";
+        art = "yoto";                 /* every level: the game's yoto2.spr is its "No Data" picture */
         name = "Kitetsu";
         break;
     case 0xCD:
