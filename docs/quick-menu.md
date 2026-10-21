@@ -7,9 +7,10 @@ and sounds come from Black; the camera fixes are a separate modification.
 
 With the menu closed, Up always opens Melee Weapons and Down always opens
 Consumables, regardless of the last category used. The same applies to the
-actions' keyboard bindings (Up/1 and Down/2 by default). Only those two
-actions can open the menu. Left/Right (including rebound Previous/Next
-actions) selects entries only while the menu is open. Once open, Up/Down changes
+actions' keyboard bindings (Up/1 and Down/2 by default). Left/Right (including
+rebound Previous/Next actions) open Melee Weapons on the card before or the next
+one at once (held, they keep stepping, as inside the menu); in play the game
+does nothing with the d-pad. Once open, Up/Down changes
 category and Left/Right the card, a press going round; held, Up goes to Melee
 Weapons and Down to Consumables, and Left/Right step on to the first or last card
 and stop there; A confirms and B cancels. Each category opens on the card it

@@ -25,6 +25,7 @@ static unsigned s_mouse;
 static unsigned s_held, s_edges, s_request;
 static int s_confirm_ready;
 static Uint64 s_request_at;
+static int s_request_step;      /* opened by Left / Right: a card that way at once (-1, 1) */
 static uint64_t s_repeat_at;
 /* The card last on in each category, where the menu opens next (0xFFFF none yet) */
 static uint16_t s_remember[NGB_QUICK_CATEGORIES] = { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
@@ -116,9 +117,11 @@ void ngb_quick_poll(void)
         if (!(bits & (Q_CONFIRM | Q_CANCEL)))
             s_confirm_ready = 1;
     }
-    else if (!s_block && (edge & (Q_UP | Q_DOWN)))
+    else if (!s_block && (edge & (Q_UP | Q_DOWN | Q_LEFT | Q_RIGHT)))
     {
+        /* Up the melee weapons, Down the items; Left / Right the melee weapons, a card that way */
         s_request = edge & Q_DOWN ? NGB_QUICK_ITEMS : NGB_QUICK_MELEE;
+        s_request_step = edge & (Q_UP | Q_DOWN) ? 0 : edge & Q_LEFT ? -1 : 1;
         s_request_at = SDL_GetTicks64();
     }
     s_held = bits;
@@ -132,6 +135,8 @@ int ngb_quick_take_open(void)
     SDL_AtomicLock(&s_lock);
     unsigned category = SDL_GetTicks64() - s_request_at < 250 ? s_request : 0;
     s_request = 0;
+    if (!category)
+        s_request_step = 0;                        /* a stale Left / Right does not move a later opening */
     SDL_AtomicUnlock(&s_lock);
     return category;
 }
@@ -201,11 +206,21 @@ void ngb_quick_open(const NgbQuickMenu *menu)
             if (v->entries[i].id == s_remember[c])
                 v->index = i;
     }
+    int step = s_request_step;
+    s_request_step = 0;
+    NgbQuickView *opened = &s_menu.views[s_menu.category - 1];
+    if (step && opened->count > 1) {                  /* opened by Left / Right: that card at once, */
+        opened->index = (opened->index + step + opened->count) % opened->count;
+        s_remember[s_menu.category - 1] = opened->entries[opened->index].id;
+        s_navigation++;                                /* its sound, */
+        s_repeat = step < 0 ? Q_LEFT : Q_RIGHT;        /* and held, on as inside the menu */
+        s_repeat_at = SDL_GetTicks64() + 380;
+    }
     int category = s_menu.category;
     SDL_AtomicUnlock(&s_lock);
     const NgbQuickView *view = &menu->views[category - 1];
-    fprintf(stderr, "[QUICK] menu open category=%d count=%d pause=%d ready=%d\n", view->category,
-            view->count, view->freeze, menu->ready);
+    fprintf(stderr, "[QUICK] menu open category=%d count=%d pause=%d ready=%d%s\n", view->category,
+            view->count, view->freeze, menu->ready, step ? step < 0 ? " (Left: the card before)" : " (Right: the next card)" : "");
 }
 
 void ngb_quick_close(void)

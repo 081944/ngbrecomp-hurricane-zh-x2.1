@@ -115,8 +115,9 @@ right; first-person up and down is the game's own Options → Controller Setting
 Control.
 
 With the **Quick Menu** on (RECOMP SETTINGS → Gameplay), Up and Down on the d-pad (or the Up / Down
-arrows, 1 / 2) open it on the melee weapons or the items; Up and Down then change category, Left and
-Right choose, A / Enter equips or uses, B / Escape closes. Its keys are in Controls.
+arrows, 1 / 2) open it on the melee weapons or the items, and Left and Right on the previous or next
+melee weapon; Up and Down then change category, Left and Right choose, A / Enter equips or uses, B /
+Escape closes. Its keys are in Controls.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
 Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
