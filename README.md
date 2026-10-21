@@ -199,7 +199,7 @@ Code:
   audio crackling on Windows (#34)
 - [HammerD72](https://github.com/HammerD72): the audio timing fix (#32); the two spots where the game
   picks the camera view at a load, for Start in Third Person (#23); impact sparks at 21:9 (#65); Smoother
-  Glow (#64)
+  Glow (#64); the Quick Menu (#60)
 - [retro-meister](https://github.com/retro-meister): the macOS port (#49), and the community macOS builds
 
 Testing, saves and traces:
