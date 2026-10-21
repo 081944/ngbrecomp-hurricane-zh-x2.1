@@ -118,7 +118,7 @@ static void identity_check(void)
  * (controls.ini; #33 #63 #23) */
 static int s_invert[2][2];
 static int s_third_start;
-static int s_mouse_pct = 100;   /* the mouse's camera speed, percent (#67) */
+static int s_mouse_pct = 100;   /* Camera Sensitivity, percent: the right stick, mouse and keys (#67) */
 
 void ngb_bind_defaults(void)
 {
@@ -276,7 +276,8 @@ void ngb_bind_load(void)
         }
         if (!strcmp(key, "mouse_sensitivity")) {
             int v = atoi(val);
-            s_mouse_pct = v < 25 ? 25 : v > 400 ? 400 : v;
+            v = (v + 12) / 25 * 25;
+            s_mouse_pct = v < 25 ? 25 : v > 300 ? 300 : v;
             continue;
         }
         for (int a = 0; a < A_COUNT; a++) {
@@ -435,7 +436,7 @@ void ngb_bind_set_third_person_start(int on)
     save();
 }
 
-/* Camera Sensitivity (the mouse): 50 to 400 percent; a step up or down (round) */
+/* Camera Sensitivity: 25 to 300 percent in quarters; a step up or down (round) */
 int ngb_bind_mouse_sensitivity(void)
 {
     ensure();
@@ -444,7 +445,7 @@ int ngb_bind_mouse_sensitivity(void)
 
 void ngb_bind_step_mouse_sensitivity(int dir)
 {
-    static const int steps[] = { 50, 75, 100, 125, 150, 200, 250, 300, 400 };
+    static const int steps[] = { 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300 };
     const int n = (int)(sizeof steps / sizeof steps[0]);
     ensure();
     int i = 0;
@@ -455,7 +456,23 @@ void ngb_bind_step_mouse_sensitivity(int dir)
     save();
 }
 
-/* The right stick as the player wants the camera turned (in play only), for the view it turns now. */
+/* Camera Sensitivity on one axis of the right stick: the part past where the game's camera starts to
+ * turn, scaled. Measured (0.6 s, in play): 14078 turns 0 degrees, 20308 20, 26537 85, 32767 113 -- the
+ * camera starts at about 18400, below it nothing. Below that the stick is left alone (a controller's
+ * stick at rest is not quite 0); full deflection is still the game's fastest turn. */
+#define CAMERA_START 18000
+int ngb_bind_camera_start(void) { return CAMERA_START; }   /* src/keyboard.c: where the mouse starts */
+static int camera_scale(int v)
+{
+    int m = v < 0 ? -v : v;
+    if (s_mouse_pct == 100 || m <= CAMERA_START)
+        return v;
+    m = CAMERA_START + (m - CAMERA_START) * s_mouse_pct / 100;
+    return v < 0 ? -m : m;
+}
+
+/* The right stick as the player wants the camera turned (in play only), for the view it turns now:
+ * inverted, and at the Camera Sensitivity -- the controller's, the mouse's and the keys' alike. */
 static void apply_invert(XBOX_INPUT_STATE *st)
 {
     extern int ngb_camera_first_person(void);   /* src/camera.c */
@@ -464,6 +481,16 @@ static void apply_invert(XBOX_INPUT_STATE *st)
         st->Gamepad.sThumbRX = clamp_axis(-(int)st->Gamepad.sThumbRX);
     if (inv[1])
         st->Gamepad.sThumbRY = clamp_axis(-(int)st->Gamepad.sThumbRY);
+    int rx = st->Gamepad.sThumbRX;
+    st->Gamepad.sThumbRX = clamp_axis(camera_scale(st->Gamepad.sThumbRX));
+    st->Gamepad.sThumbRY = clamp_axis(camera_scale(st->Gamepad.sThumbRY));
+    static const char *log = (const char *)1;          /* NGB_CAMERA_SENS_LOG=1: the stick before and after */
+    if (log == (const char *)1) log = getenv("NGB_CAMERA_SENS_LOG");
+    if (log && rx) {
+        static int n;
+        if (n++ % 30 == 0)
+            fprintf(stderr, "[CAMERA] sensitivity %d%%: right stick x %d -> %d\n", s_mouse_pct, rx, st->Gamepad.sThumbRX);
+    }
 }
 
 /* The keyboard and mouse in play (src/keyboard.c): the pad as their bindings press it. */

@@ -134,7 +134,7 @@ static const signed char s_cat_rows[CATS][CAT_ROWS] = {
  * Default Controls */
 #define CTL_INVX A_COUNT
 #define CTL_START (A_COUNT + 3)
-#define CTL_MOUSE (A_COUNT + 4)   /* Camera Sensitivity (the mouse): a value, Left / Right (#67) */
+#define CTL_MOUSE (A_COUNT + 4)   /* Camera Sensitivity: a value, Left / Right (#67) */
 #define CTL_DEF  (A_COUNT + 5)
 #define CTL_ROWS (A_COUNT + 6)
 #define CTL_TOGGLE(r) ((r) >= CTL_INVX && (r) <= CTL_START)
@@ -839,7 +839,7 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
     else if (focused && CTL_TOGGLE(row))
         help = s_ctl_toggle_help[row - CTL_INVX];
     else if (focused && row == CTL_MOUSE)
-        help = "How fast the mouse turns the camera (play only).";
+        help = "How fast the right stick and the mouse turn the camera (play only).";
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : "A: change   X / Delete: clear   (play only; the menus keep theirs)";

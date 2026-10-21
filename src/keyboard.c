@@ -22,6 +22,7 @@
  * stick. The pointer is hidden except in the menus with the keyboard and mouse in use. The button prompts become keys (src/pause_tab.c).
  */
 #include <SDL.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,7 +36,6 @@ static SHORT axis(const Uint8 *k, int neg, int pos)
 }
 
 void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y);
-int ngb_bind_mouse_sensitivity(void);   /* src/bindings.c: Camera Sensitivity, percent */
 
 /* A button that skips a movie or cutscene: Start, A or B on the pad (or the keys bound to them),
  * from the first pad's state as the title reads it. */
@@ -48,19 +48,38 @@ int ngb_skip_button(void)
            st.Gamepad.bAnalogButtons[1] > 0x40;
 }
 
-/* The mouse's speed for a full stick: 900 pixels a second at Camera Sensitivity 100% (Controls, #67) */
-static float mouse_full(void)
+
+/* The mouse's speed as the camera's stick: from where the game's camera starts to turn (src/bindings.c),
+ * not from 0 -- below that the camera does nothing, and a slow movement of the mouse turned nothing (#67) */
+int ngb_bind_camera_start(void);
+static int mouse_look(int v)
 {
-    return 900.0f * 100.0f / (float)ngb_bind_mouse_sensitivity();
+    if (!v)
+        return 0;
+    int start = ngb_bind_camera_start(), m = v < 0 ? -v : v;
+    m = start + (int)((long)m * (32767 - start) / 32767);
+    return v < 0 ? -m : m;
 }
 
 int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
 {
     int menu = ngb_menu_up();
+    {   /* NGB_MENU_UP_LOG=1: when the keys change between the bindings (play) and the menus' layout */
+        static int last = -1;
+        static const char *log = (const char *)1;
+        if (log == (const char *)1) log = getenv("NGB_MENU_UP_LOG");
+        if (log && menu != last) {
+            fprintf(stderr, "[KEYS] %s\n", menu ? "menu layout (a game menu ran)" : "play: the bindings");
+            last = menu;
+        }
+    }
     if (!menu && !getenv("NGB_FIXED_KEYS")) {   /* in play: as bound (src/bindings.c, the Controls page) */
         SHORT mx = 0, my = 0;
-        if (SDL_GetRelativeMouseMode())
-            xbox_InputMouseStick(mouse_full(), &mx, &my);
+        if (SDL_GetRelativeMouseMode()) {
+            xbox_InputMouseStick(900.0f, &mx, &my);
+            mx = (SHORT)mouse_look(mx);
+            my = (SHORT)mouse_look(my);
+        }
         ngb_bind_play_state(k, mouse, st, mx, my);
         return 1;
     }
@@ -101,7 +120,7 @@ int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
     st->Gamepad.sThumbLY = axis(k, SDL_SCANCODE_S, SDL_SCANCODE_W);
     SHORT mx = 0, my = 0;
     if (!menu && SDL_GetRelativeMouseMode())
-        xbox_InputMouseStick(mouse_full(), &mx, &my);
+        xbox_InputMouseStick(900.0f, &mx, &my);
     int rx = axis(k, SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_6) + mx;
     int ry = axis(k, SDL_SCANCODE_KP_5, SDL_SCANCODE_KP_8) + my;
     st->Gamepad.sThumbRX = (SHORT)(rx > 32767 ? 32767 : rx < -32767 ? -32767 : rx);
