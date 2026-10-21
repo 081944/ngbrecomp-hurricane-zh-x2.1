@@ -515,8 +515,12 @@ void ngb_restart_to_menu(void)
     __atomic_store_n(&s_soft_reset_at, mono_ms(), __ATOMIC_RELEASE);
 }
 
+void ngb_keep_game_for_restart(void);   /* src/main.c */
+
+/* Started again without the arguments (the game found as at any start: the folder kept, #59) */
 static void restart_program(void)
 {
+    ngb_keep_game_for_restart();
 #if !defined(_WIN32)
     char self[4096];
     long n = ngb_exe_path(self, sizeof self);
@@ -527,7 +531,8 @@ static void restart_program(void)
         fflush(stderr);
         close_on_exec_all();
         quiet_signals();
-        execv(self, s_argv);
+        char *args[2] = { s_argv[0], NULL };
+        execv(self, args);
         fprintf(stderr, "[MENU] could not start again; exiting\n");
     }
 #else
@@ -542,7 +547,9 @@ static void restart_program(void)
         if (GetModuleFileNameW(NULL, self, MAX_PATH) && SetEnvironmentVariableA("NGB_TO_MAIN_MENU", "1")) {
             fprintf(stderr, "[MENU] Return to Main Menu: starting the program again\n");
             fflush(stderr);
-            if (CreateProcessW(self, GetCommandLineW(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+            static wchar_t line[MAX_PATH + 3];
+            swprintf(line, MAX_PATH + 3, L"\"%ls\"", self);   /* the program alone */
+            if (CreateProcessW(self, line, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
                 CloseHandle(pi.hThread);
                 CloseHandle(pi.hProcess);
                 TerminateProcess(GetCurrentProcess(), 0);

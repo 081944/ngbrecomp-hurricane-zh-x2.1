@@ -172,6 +172,16 @@ extern ptrdiff_t g_xbox_mem_offset;
 static bool s_use_gpu, s_headless;
 static bool s_widescreen;
 static char s_game_dir[4096];
+static char s_save_dir[4096];
+
+/* Before Return to Main Menu starts the program again (src/ingame_menu.c): the game folder in use where
+ * that start finds it -- unless NGB_GAME_DIR gave it, which the new process has too. */
+void ngb_keep_game_for_restart(void)
+{
+    const char *env = getenv("NGB_GAME_DIR");
+    if (s_save_dir[0] && s_game_dir[0] && !(env && *env))
+        ngb_remember_game(s_save_dir, s_game_dir);
+}
 static int s_show_settings;
 #define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
@@ -1088,6 +1098,7 @@ int main(int argc, char **argv)
         if (ngb_find_game(argc > 1 ? argv[1] : NULL, save, base,
                           s_game_dir, sizeof(s_game_dir)) != 0)
             return 1;
+        snprintf(s_save_dir, sizeof s_save_dir, "%s", save);
     }
 
     printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
