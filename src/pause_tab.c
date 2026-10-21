@@ -109,7 +109,7 @@ static const char *const s_help[S_COUNT] = {
     "A softer, fainter glow on bright lights. Off: the console's.",
     "The game pauses while the quick menu is open (once Ryu's action ends).",
     "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
-    "Not used up: healing items, the Talisman of Rebirth, Lives of the Thousand Gods,\nSpirit of the Devils and the Jewel of the Demon Seal. For this session only.",
+    "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only.",
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
 };
 
