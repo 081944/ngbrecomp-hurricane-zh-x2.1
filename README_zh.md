@@ -52,7 +52,7 @@
 ## 版本号
 
 发布版本与所基于的 ngbrecomp 版本一致（`hurricane-v0.9.9` 即基于 ngbrecomp 0.9.9）；在同一版本上我们自己的更新加 `-1`、`-2`……
-窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.22`。
+窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.26`。
 
 ## 与 ngbrecomp 的区别
 
@@ -95,6 +95,6 @@ ninja -C build/x21 ninja_gaiden_black
   详见 [THIRD_PARTY.md](THIRD_PARTY.md) 与发布包中的 `licenses/`。
 - 中文字体：思源黑体 CN Bold 子集（SIL OFL 1.1），已改名 NGB Hanzi（`assets/fonts/OFL-NGBHanzi.txt`）。
   菜单美术字为用鼎猎宋刻体预先绘制的图片，字体本身不包含在内。
-- 与 ngbrecomp 相同，采用 GPL-2.0-or-later（[LICENSE](LICENSE)）。
+- 与 ngbrecomp 相同，采用 GPL-3.0-or-later（ngbrecomp 自 0.9.25 起；[LICENSE](LICENSE)）。
 
 本作品为爱好者非盈利作品，仅供已拥有正版游戏的玩家学习交流，请勿用于商业用途。NINJA GAIDEN © KOEI TECMO GAMES / Team NINJA。

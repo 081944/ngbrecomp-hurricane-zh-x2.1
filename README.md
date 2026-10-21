@@ -58,7 +58,7 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.22`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.26`.
 
 ## Changes from ngbrecomp
 
@@ -110,6 +110,6 @@ localization project's charmap and glyph renderer.
 - Chinese font: a subset of Source Han Sans CN Bold (SIL OFL 1.1), renamed NGB Hanzi
   (`assets/fonts/OFL-NGBHanzi.txt`). The menu art words are pictures drawn with 鼎猎宋刻体; the font
   itself is not included.
-- GPL-2.0-or-later, as ngbrecomp ([LICENSE](LICENSE)).
+- GPL-3.0-or-later, as ngbrecomp since 0.9.25 ([LICENSE](LICENSE)).
 
 A non-commercial fan project for players who own the game. NINJA GAIDEN © KOEI TECMO GAMES / Team NINJA.

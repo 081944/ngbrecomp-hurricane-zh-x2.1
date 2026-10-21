@@ -37,7 +37,7 @@ static const char s_e33[] = { 0x8C, 0xCF, 0 };   /* 是 */
 static const char s_e34[] = { 0x8A, 0xCB, 0 };   /* 否 */
 static const char s_e35[] = { 0x89, 0x95, 0x8C, 0xF4, 0x92, 0xB1, 0x8A, 0xA1, 0x8E, 0xDA, 0x8D, 0xD1, 0x8C, 0x99, 0x9A, 0xCA, 0x8A, 0x81, 0x96, 0x9D, 0x9B, 0xB0, 0x98, 0xB3, 0x8F, 0xB8, 0 };   /* 下次启动起直接进入标题画面 */
 static const char s_e36[] = { 0x89, 0x95, 0x8C, 0xF4, 0x92, 0xB1, 0x8A, 0xA1, 0x8E, 0xDA, 0x8F, 0xD6, 0x8A, 0xE5, 0x97, 0xB1, 0x94, 0xE3, 0x8A, 0x9E, 0x95, 0xE8, 0x98, 0xD4, 0x9A, 0x8C, 0x99, 0xAC, 0x98, 0xB3, 0x8F, 0xB8, 0 };   /* 下次启动起，在游戏前显示设置画面 */
-static const char s_e37[] = { 0x9D, 0xE7, 0x9C, 0xCC, 0x8A, 0x90, 0x9D, 0xE9, 0x98, 0xA6, 0x89, 0x83, 0x99, 0x94, 0x8D, 0xC1, 0x8E, 0xEF, 0x9D, 0xE8, 0x89, 0x97, 0x9D, 0xEB, 0x8B, 0xD5, 0x8D, 0xF3, 0x94, 0x9C, 0 };   /* 渲染分辨率、纹理过滤与阴影精度 */
+static const char s_e37[] = { 0x9D, 0xE7, 0x9C, 0xCC, 0x8A, 0x90, 0x9D, 0xE9, 0x98, 0xA6, 0x89, 0x83, 0x99, 0x94, 0x8D, 0xC1, 0x8E, 0xEF, 0x9D, 0xE8, 0x89, 0x83, 0x95, 0x83, 0x9D, 0xEA, 0x9B, 0xCC, 0x89, 0x83, 0x9D, 0xEB, 0x8B, 0xD5, 0x89, 0x97, 0x96, 0xFA, 0x90, 0xF4, 0 };   /* 渲染分辨率、纹理过滤、抗锯齿、阴影与泛光 */
 static const char s_e38[] = { 0x98, 0xB3, 0x8F, 0xB8, 0x96, 0xDB, 0x90, 0xD1, 0x89, 0x83, 0x9C, 0xF7, 0x92, 0x95, 0x8B, 0x87, 0x8B, 0xA9, 0x89, 0x83, 0x95, 0xE8, 0x98, 0xD4, 0x96, 0xC9, 0x8B, 0xD1, 0x89, 0x83, 0x9D, 0xE3, 0x8D, 0xD1, 0x92, 0xAA, 0x8D, 0x89, 0x89, 0x97, 0x9D, 0xE4, 0x98, 0xA6, 0 };   /* 画面比例、窗口大小、显示模式、垂直同步与帧率 */
 static const char s_e39[] = { 0x92, 0xB1, 0x8A, 0xA1, 0x8C, 0xCA, 0x8D, 0xCD, 0x98, 0xB3, 0x8F, 0xB8, 0x8F, 0xD6, 0x89, 0xDA, 0x92, 0x8B, 0x95, 0xDD, 0x97, 0xB1, 0x94, 0xE3, 0x8A, 0xC1, 0x9A, 0xD2, 0x8D, 0xCD, 0x9B, 0x99, 0x94, 0x9C, 0 };   /* 启动时的画面，以及新游戏可选的难度 */
 static const char s_e40[] = { 0x8E, 0xF2, 0x8A, 0xDE, 0x50, 0x43, 0x8D, 0xB2, 0x9A, 0x8C, 0x99, 0xAC, 0x98, 0xB3, 0x8F, 0xB8, 0 };   /* 返回PC版设置画面 */
@@ -47,7 +47,7 @@ static const char s_e43[] = { 0x8C, 0xBF, 0x9B, 0x92, 0x8D, 0xF3, 0x8F, 0xCA, 0 
 static const char s_e44[] = { 0x8F, 0xD0, 0x8D, 0xCD, 0x89, 0xE9, 0x8A, 0xA0, 0x93, 0xA6, 0x8D, 0xF7, 0x8A, 0x82, 0x97, 0xB8, 0x89, 0x86, 0x90, 0xA0, 0x8C, 0xDF, 0x8C, 0xF4, 0x8C, 0xD8, 0x95, 0xCD, 0 };   /* 龙的体力始终全满。仅本次有效 */
 static const char s_e45[] = { 0x8B, 0xE5, 0x8D, 0x9A, 0x8F, 0xAF, 0x8C, 0xCA, 0x8A, 0xC1, 0x8D, 0xC6, 0x89, 0x86, 0x90, 0xA0, 0x8C, 0xDF, 0x8C, 0xF4, 0x8C, 0xD8, 0x95, 0xCD, 0 };   /* 忍法随时可用。仅本次有效 */
 static const char s_e46[] = { 0x8D, 0xF3, 0x8F, 0xCA, 0x89, 0xEE, 0x8C, 0x91, 0x8A, 0xE5, 0x8C, 0x91, 0x8C, 0xD8, 0x89, 0x94, 0x9B, 0x92, 0x89, 0x86, 0x90, 0xA0, 0x8C, 0xDF, 0x8C, 0xF4, 0x8C, 0xD8, 0x95, 0xCD, 0 };   /* 精魂保持在持有上限。仅本次有效 */
-static const char s_e47[] = { 0x9B, 0x99, 0x8A, 0x85, 0x91, 0xDF, 0x8A, 0xA0, 0x9B, 0xDA, 0x89, 0xE9, 0x8A, 0xA0, 0x89, 0x83, 0x8B, 0xE5, 0x8D, 0x9A, 0x89, 0x97, 0x8D, 0xF3, 0x8F, 0xCA, 0x89, 0x86, 0x89, 0x96, 0x89, 0xE0, 0x89, 0xEE, 0x8B, 0x9A, 0 };   /* 难关助力：体力、忍法与精魂。不会保存 */
+static const char s_e47[] = { 0x9B, 0x99, 0x8A, 0x85, 0x91, 0xDF, 0x8A, 0xA0, 0x9B, 0xDA, 0x89, 0xE9, 0x8A, 0xA0, 0x89, 0x83, 0x8B, 0xE5, 0x8D, 0x9A, 0x89, 0x83, 0x8D, 0xF3, 0x8F, 0xCA, 0x89, 0x83, 0x8F, 0x85, 0x8A, 0x87, 0x89, 0x97, 0x8F, 0xBE, 0x8E, 0xB3, 0x8F, 0x85, 0x8A, 0x87, 0x89, 0x86, 0x89, 0x96, 0x89, 0xE0, 0x89, 0xEE, 0x8B, 0x9A, 0 };   /* 难关助力：体力、忍法、精魂、道具与飞行道具。不会保存 */
 static const char s_e48[] = { 0x8A, 0x82, 0x8F, 0x8B, 0x9B, 0x99, 0x94, 0x9C, 0 };   /* 全部难度 */
 static const char s_e49[] = { 0x95, 0xDD, 0x97, 0xB1, 0x94, 0xE3, 0x8A, 0xC1, 0x9A, 0xD2, 0x8A, 0x82, 0x8F, 0x8B, 0x9B, 0x99, 0x94, 0x9C, 0x8F, 0xD6, 0x89, 0xD1, 0x8B, 0xE5, 0x97, 0xF6, 0x8A, 0x9A, 0x9A, 0xB5, 0x8B, 0xE5, 0 };   /* 新游戏可选全部难度，从忍犬到超忍 */
 static const char s_e50[] = { 0x8F, 0xCE, 0x8F, 0x90, 0x8A, 0xE4, 0x8D, 0xC8, 0x8E, 0xB1, 0 };   /* 黄金圣甲虫 */
@@ -61,6 +61,17 @@ static const char s_e57[] = { 0x8F, 0xB1, 0x8E, 0xB0, 0x31, 0 };   /* 隐藏1 */
 static const char s_e58[] = { 0x8F, 0xB1, 0x8E, 0xB0, 0x32, 0 };   /* 隐藏2 */
 static const char s_e59[] = { 0x8F, 0xB1, 0x8E, 0xB0, 0x33, 0 };   /* 隐藏3 */
 static const char s_e60[] = { 0x97, 0xB1, 0x94, 0xE3, 0x89, 0xA5, 0x89, 0xEC, 0x8D, 0xC6, 0x8D, 0xCD, 0x92, 0xA5, 0x98, 0xE1, 0x8C, 0xA5, 0x90, 0xCF, 0x8C, 0x93, 0x8F, 0x9B, 0 };   /* 游戏中使用的各种操作按键 */
+static const char s_e61[] = { 0x96, 0x99, 0x92, 0xC2, 0x96, 0xFA, 0x90, 0xF4, 0 };   /* 柔和泛光 */
+static const char s_e62[] = { 0x90, 0x9D, 0x90, 0xF4, 0x8D, 0xCD, 0x96, 0xFA, 0x90, 0xF4, 0x8C, 0xD4, 0x96, 0x99, 0x92, 0xC2, 0x89, 0x83, 0x8C, 0xD4, 0x97, 0x9F, 0x89, 0x86, 0x8A, 0x85, 0x9B, 0xDA, 0x8F, 0xFB, 0x96, 0x83, 0x8A, 0xB3, 0x8D, 0xB2, 0 };   /* 亮光的泛光更柔和、更淡。关：主机原版 */
+static const char s_e63[] = { 0x8B, 0xE7, 0x9A, 0xD7, 0x99, 0xE1, 0x91, 0xF1, 0 };   /* 快速菜单 */
+static const char s_e64[] = { 0x8D, 0xC6, 0x8A, 0xA8, 0x8B, 0x99, 0x8F, 0x9B, 0x9A, 0xD2, 0x95, 0x93, 0x8D, 0x8A, 0x8A, 0xDA, 0x89, 0x83, 0x8B, 0xE5, 0x8D, 0x9A, 0x89, 0x97, 0x8F, 0x85, 0x8A, 0x87, 0x8D, 0xCD, 0x99, 0xE1, 0x91, 0xF1, 0x8F, 0xD3, 0x8C, 0x93, 0x89, 0x94, 0x94, 0xE6, 0x89, 0x95, 0x8C, 0x81, 0x8B, 0xCF, 0x8F, 0xD4, 0x8F, 0xD6, 0x89, 0xDA, 0x8D, 0x88, 0x8B, 0x87, 0x8B, 0xA9, 0x95, 0xE8, 0x98, 0xD4, 0 };   /* 用十字键选择武器、忍法与道具的菜单（按上或下打开），以此大小显示 */
+static const char s_e65[] = { 0x8B, 0xE7, 0x9A, 0xD7, 0x99, 0xE1, 0x91, 0xF1, 0x8C, 0xD1, 0x90, 0xEB, 0 };   /* 快速菜单暂停 */
+static const char s_e66[] = { 0x8C, 0x81, 0x8B, 0xCF, 0x8B, 0xE7, 0x9A, 0xD7, 0x99, 0xE1, 0x91, 0xF1, 0x8C, 0xCA, 0x97, 0xB1, 0x94, 0xE3, 0x8C, 0xD1, 0x90, 0xEB, 0x8F, 0xD3, 0x8F, 0xD0, 0x8D, 0xCD, 0x8A, 0xA1, 0x90, 0xCF, 0x99, 0x96, 0x96, 0x8C, 0x8A, 0xC6, 0x8F, 0xD4, 0 };   /* 打开快速菜单时游戏暂停（龙的动作结束后） */
+static const char s_e67[] = { 0x8A, 0xC1, 0x9A, 0xD2, 0x8D, 0xCD, 0x98, 0xA9, 0x8D, 0x9A, 0x95, 0xCB, 0x8A, 0xA1, 0x8F, 0xD6, 0x8C, 0xDE, 0x9A, 0xD2, 0x95, 0x93, 0x8C, 0xCA, 0x92, 0xE4, 0x89, 0xA7, 0x8A, 0x85, 0x8F, 0xA5, 0 };   /* 可选的玩法改动，未选择时均为关闭 */
+static const char s_e68[] = { 0x8C, 0xBF, 0x9B, 0x92, 0x8F, 0x85, 0x8A, 0x87, 0 };   /* 无限道具 */
+static const char s_e69[] = { 0x8C, 0xBF, 0x9B, 0x92, 0x8F, 0xBE, 0x8E, 0xB3, 0x8F, 0x85, 0x8A, 0x87, 0 };   /* 无限飞行道具 */
+static const char s_e70[] = { 0x8E, 0xAA, 0x8A, 0xD2, 0x89, 0x83, 0x9B, 0xB3, 0x92, 0xDB, 0x89, 0x97, 0x8E, 0xF5, 0x8F, 0xCA, 0x95, 0x88, 0x98, 0xF5, 0x89, 0x96, 0x89, 0xE0, 0x97, 0x99, 0x99, 0xB4, 0x89, 0x86, 0x90, 0xA0, 0x8C, 0xDF, 0x8C, 0xF4, 0x8C, 0xD8, 0x95, 0xCD, 0 };   /* 药品、饭团与还魂护符不会消耗。仅本次有效 */
+static const char s_e71[] = { 0x8B, 0xFC, 0x8F, 0x8D, 0x8A, 0x9F, 0x89, 0x83, 0x97, 0xDB, 0x98, 0xA7, 0x89, 0x83, 0x98, 0xFB, 0x89, 0x97, 0x96, 0xE1, 0x89, 0xA5, 0x96, 0x92, 0x8D, 0xCD, 0x9B, 0xC4, 0x92, 0x8A, 0x89, 0x96, 0x89, 0xE0, 0x97, 0x99, 0x99, 0xB4, 0x89, 0x86, 0x90, 0xA0, 0x8C, 0xDF, 0x8C, 0xF4, 0x8C, 0xD8, 0x95, 0xCD, 0 };   /* 手里剑、烟玉、箭与水中枪的鱼叉不会消耗。仅本次有效 */
 
 const NgbZhText ngb_zh_texts[] = {
     { "", "RECOMP SETTINGS", "PC版设置", s_e0, 0 },
@@ -100,7 +111,7 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "No", "否", s_e34, 0 },
     { "", "Starts at the title screen, from the next start.", "下次启动起直接进入标题画面", s_e35, 0 },
     { "", "Shows the settings screen before the game, from the next start.", "下次启动起，在游戏前显示设置画面", s_e36, 0 },
-    { "", "Render resolution, texture filtering and shadow detail.", "渲染分辨率、纹理过滤与阴影精度", s_e37, 1 },
+    { "", "Render resolution, texture filtering, anti-aliasing, shadows and the glow.", "渲染分辨率、纹理过滤、抗锯齿、阴影与泛光", s_e37, 1 },
     { "", "Aspect ratio, window size, display mode, V-Sync and the FPS counter.", "画面比例、窗口大小、显示模式、垂直同步与帧率", s_e38, 1 },
     { "", "What the game shows when it starts, and the difficulties New Game offers.", "启动时的画面，以及新游戏可选的难度", s_e39, 0 },
     { "", "Returns to the Recomp Settings screen.", "返回PC版设置画面", s_e40, 0 },
@@ -110,7 +121,7 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Ryu's health stays full. For this session only.", "龙的体力始终全满。仅本次有效", s_e44, 0 },
     { "", "Ninpo is always ready. For this session only.", "忍法随时可用。仅本次有效", s_e45, 0 },
     { "", "As much essence as can be held. For this session only.", "精魂保持在持有上限。仅本次有效", s_e46, 0 },
-    { "", "Help for a hard spot: health, ninpo and essence. Not saved.", "难关助力：体力、忍法与精魂。不会保存", s_e47, 0 },
+    { "", "Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved.", "难关助力：体力、忍法、精魂、道具与飞行道具。不会保存", s_e47, 0 },
     { "", "All Difficulties", "全部难度", s_e48, 0 },
     { "", "Every difficulty at New Game, Ninja Dog to Master Ninja.", "新游戏可选全部难度，从忍犬到超忍", s_e49, 0 },
     { "", "Golden Scarabs", "黄金圣甲虫", s_e50, 0 },
@@ -124,10 +135,22 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Extra 2", "隐藏2", s_e58, 0 },
     { "", "Extra 3", "隐藏3", s_e59, 0 },
     { "", "The keys, mouse buttons and controller buttons used in play.", "游戏中使用的各种操作按键", s_e60, 0 },
+    { "", "Smoother Glow", "柔和泛光", s_e61, 0 },
+    { "", "A softer, fainter glow on bright lights. Off: the console's.", "亮光的泛光更柔和、更淡。关：主机原版", s_e62, 0 },
+    { "", "Quick Menu", "快速菜单", s_e63, 0 },
+    { "", "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.", "用十字键选择武器、忍法与道具的菜单（按上或下打开），以此大小显示", s_e64, 0 },
+    { "", "Quick Menu Pause", "快速菜单暂停", s_e65, 0 },
+    { "", "The game pauses while the quick menu is open (once Ryu's action ends).", "打开快速菜单时游戏暂停（龙的动作结束后）", s_e66, 0 },
+    { "", "Optional changes to how the game plays, each off unless chosen.", "可选的玩法改动，未选择时均为关闭", s_e67, 0 },
+    { "", "Infinite Items", "无限道具", s_e68, 0 },
+    { "", "Infinite Projectiles", "无限飞行道具", s_e69, 0 },
+    { "", "Elixirs, rations and the Talisman of Rebirth are not used up. For this session only.", "药品、饭团与还魂护符不会消耗。仅本次有效", s_e70, 0 },
+    { "", "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.", "手里剑、烟玉、箭与水中枪的鱼叉不会消耗。仅本次有效", s_e71, 0 },
     { "cat", "Graphics", "图形", NULL, 0 },
     { "cat", "Display", "显示", NULL, 0 },
     { "cat", "Startup", "启动", NULL, 0 },
     { "cat", "Cheats", "作弊", NULL, 0 },
+    { "cat", "Gameplay", "玩法", NULL, 0 },
     { "cat", "Controls", "按键", NULL, 0 },
     { "", "FPS Counter", "帧率显示", NULL, 0 },
     { "", "Draws the game at a multiple of the console's resolution.", "以主机分辨率的整数倍渲染游戏画面", NULL, 0 },
@@ -143,6 +166,9 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Keyboard / Mouse", "键盘 / 鼠标", NULL, 0 },
     { "", "Controller", "控制器", NULL, 0 },
     { "", "Default Controls", "恢复默认按键", NULL, 0 },
+    { "", "Camera Sensitivity", "镜头灵敏度", NULL, 0 },
+    { "", "How fast the right stick and the mouse turn the camera (play only).", "右摇杆与鼠标转动镜头的速度（仅限游戏中）", NULL, 0 },
+    { "", "Already full", "已达上限", NULL, 0 },
     { "", "Press a button", "请按按键", NULL, 0 },
     { "", "Press a key", "请按按键", NULL, 0 },
     { "", "R Stick", "右摇杆", NULL, 0 },
@@ -212,6 +238,18 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Moves Ryu (the left stick).", "移动龙（左摇杆）", NULL, 0 },
     { "", "Turns the camera (the right stick; the mouse too).", "转动镜头（右摇杆，鼠标亦可）", NULL, 0 },
     { "", "The controller's directional pad.", "控制器的十字键", NULL, 0 },
+    { "", "Quick Menu: Category Up", "快速菜单：上一类", NULL, 0 },
+    { "", "Quick Menu: Category Down", "快速菜单：下一类", NULL, 0 },
+    { "", "Quick Menu: Previous", "快速菜单：上一个", NULL, 0 },
+    { "", "Quick Menu: Next", "快速菜单：下一个", NULL, 0 },
+    { "", "Quick Menu: Confirm", "快速菜单：确定", NULL, 0 },
+    { "", "Quick Menu: Cancel", "快速菜单：取消", NULL, 0 },
+    { "", "Opens Melee Weapons; while open, selects the previous category.", "打开武器栏；菜单打开时选择上一类", NULL, 0 },
+    { "", "Opens Consumables; while open, selects the next category.", "打开道具栏；菜单打开时选择下一类", NULL, 0 },
+    { "", "Opens the melee weapons on the card before; while open, selects the previous entry.", "打开上一页的武器；菜单打开时选择上一项", NULL, 0 },
+    { "", "Opens the melee weapons on the next card; while open, selects the next entry.", "打开下一页的武器；菜单打开时选择下一项", NULL, 0 },
+    { "", "Equips the selected weapon or Ninpo, or uses the selected item.", "装备所选的武器或忍法，或使用所选的道具", NULL, 0 },
+    { "", "Closes the quick menu without applying the selection.", "关闭快速菜单，不应用所选项", NULL, 0 },
     { "", "Mouse Left", "鼠标左键", NULL, 0 },
     { "", "Mouse Middle", "鼠标中键", NULL, 0 },
     { "", "Mouse Right", "鼠标右键", NULL, 0 },
@@ -231,7 +269,7 @@ const NgbZhText ngb_zh_texts[] = {
     { "", "Up/Down or mouse: choose    Left/Right or click: change    A / Enter: select    B / Esc / F1: resume", "上/下或鼠标：选择　　左/右或点击：更改　　A / Enter：确定　　B / Esc / F1：继续游戏", NULL, 0 },
     { "", "Changes apply when you resume. Skip intros and the startup screen take effect next start.", "继续游戏时应用更改。跳过片头与启动画面在下次启动时生效。", NULL, 0 },
 };
-const int ngb_zh_text_count = 167;
+const int ngb_zh_text_count = 194;
 
 /* The glyph page B1 (texture 0xBC) as x2.1 has it, and what is added to it. */
 const int ngb_zh_b1_count = 2039;
@@ -739,7 +777,42 @@ static const unsigned char s_art3[2560] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 };
-static const unsigned char s_art4[1344] = {
+static const unsigned char s_art4[1312] = {
+    0,0,3,4,4,4,3,0,0,0,0,0,0,0,0,12,33,0,1,0,0,0,0,0,0,0,0,0,0,2,0,49,198,121,20,1,1,0,0,0,
+    0,0,0,0,0,0,0,0,45,95,11,123,57,62,88,118,205,236,52,0,2,0,0,3,0,95,157,68,0,1,3,0,49,255,255,157,0,4,0,0,
+    0,0,0,0,121,134,133,155,185,251,255,164,228,255,255,255,255,255,255,199,1,1,1,0,3,0,71,255,255,94,0,6,0,25,238,253,106,4,1,2,
+    0,0,0,2,0,146,255,255,255,255,216,185,148,68,140,98,72,58,51,44,29,2,0,0,0,2,6,0,191,255,138,0,6,2,12,233,255,32,0,10,
+    0,0,0,0,0,0,0,39,39,198,252,41,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,64,198,149,143,0,0,8,231,255,78,107,
+    221,130,3,2,0,0,0,0,0,0,190,255,16,0,0,0,0,0,0,6,33,113,161,18,0,4,0,77,137,64,0,0,170,235,208,201,226,255,255,255,
+    255,255,255,77,0,3,0,0,7,9,0,192,254,133,140,200,176,175,181,197,213,253,255,255,216,17,4,0,71,255,255,123,17,241,75,191,210,195,246,254,
+    128,84,72,51,16,2,1,4,0,145,233,200,245,255,255,255,238,247,255,255,248,255,229,186,186,189,35,0,4,0,158,255,178,113,228,0,0,0,0,229,
+    248,0,0,0,7,6,0,0,2,0,49,207,206,238,255,190,155,28,14,228,239,127,253,125,0,0,0,0,0,2,1,38,218,104,217,131,0,0,0,11,
+    239,242,38,43,78,227,209,37,1,0,0,0,0,0,188,255,31,0,0,20,251,223,107,255,128,2,6,3,0,0,0,0,0,5,77,255,152,176,190,203,
+    215,253,255,255,255,255,255,255,197,0,0,0,2,3,3,193,255,36,0,0,49,255,192,91,255,126,0,4,0,0,0,0,1,4,0,203,214,124,255,246,
+    223,229,255,231,126,107,91,80,68,45,0,0,0,2,1,0,187,255,44,102,122,83,254,152,79,255,124,0,4,2,1,0,0,0,0,48,255,146,0,28,
+    14,0,152,255,145,0,0,0,0,0,0,0,0,0,0,6,31,207,252,244,233,55,143,255,90,75,255,122,0,5,0,0,1,0,19,11,161,255,74,0,
+    0,0,24,241,252,45,87,41,0,4,4,2,0,0,27,191,217,243,255,255,172,17,9,235,249,16,86,255,122,3,2,128,42,1,0,104,234,249,244,24,
+    1,10,0,141,255,148,0,142,240,106,0,0,1,0,1,12,227,255,255,215,90,0,0,167,255,131,0,96,255,116,0,13,255,82,0,5,9,201,255,237,
+    21,0,0,60,250,214,21,20,59,244,255,174,9,1,1,3,0,75,222,109,13,0,0,140,255,170,4,1,96,254,174,61,132,250,179,12,5,0,80,255,
+    253,50,9,102,234,251,227,225,255,255,248,250,255,118,0,4,0,0,0,9,0,0,21,176,255,146,3,3,0,62,255,255,255,255,255,255,49,0,0,36,
+    245,253,67,44,255,255,255,255,221,154,87,38,209,251,168,0,3,0,0,1,0,9,99,236,223,84,0,1,1,1,0,82,163,179,172,145,68,2,2,0,
+    7,234,255,56,1,185,205,114,43,0,0,0,0,105,255,93,0,3,0,0,3,1,66,211,103,4,0,2,1,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,93,86,0,1,5,0,0,0,0,4,4,2,13,64,0,0,0,0,0,0,0,7,0,0,0,3,0,0,0,0,0,3,3,3,3,4,3,0,
+    0,0,0,0,0,0,0,0,0,4,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,3,3,0,0,1,1,0,0,0,0,0,0,1,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+};
+static const unsigned char s_art5[1344] = {
     0,0,0,0,1,0,10,173,89,0,0,22,191,102,3,1,0,0,0,0,0,0,0,0,0,0,66,203,136,28,23,0,1,171,135,16,5,4,2,0,
     0,0,0,0,0,0,3,1,59,255,255,134,1,65,255,255,114,1,7,0,2,0,0,1,0,11,126,48,62,255,184,136,232,85,8,244,255,93,0,0,
     0,1,0,0,0,0,0,0,4,0,145,252,254,95,0,142,253,237,48,0,0,0,0,1,0,0,1,0,213,254,150,253,131,207,249,100,52,253,212,23,
@@ -775,7 +848,7 @@ static const unsigned char s_art4[1344] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 };
-static const unsigned char s_art5[2592] = {
+static const unsigned char s_art6[2592] = {
     0,0,0,2,0,136,141,22,1,1,5,0,88,123,27,0,1,3,2,0,0,0,2,0,43,174,47,0,4,2,4,4,2,22,197,144,22,0,4,0,
     0,0,0,0,6,0,0,1,0,23,136,40,0,0,162,145,1,2,0,0,0,0,1,0,12,53,0,0,0,0,0,0,0,3,7,94,182,33,0,2,
     0,0,0,0,3,0,176,255,196,1,0,0,2,123,255,230,40,3,0,0,3,0,0,3,0,77,255,250,44,0,0,0,0,0,11,250,255,60,17,0,
@@ -842,7 +915,7 @@ static const unsigned char s_art5[2592] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 };
-static const unsigned char s_art6[1280] = {
+static const unsigned char s_art7[1280] = {
     0,0,0,0,0,0,0,1,0,0,0,0,0,0,16,179,124,0,2,0,0,0,0,10,27,0,0,0,0,0,0,0,0,0,0,0,57,45,0,1,
     0,0,2,0,134,147,30,0,0,41,47,0,36,113,219,255,255,100,0,3,0,2,0,47,236,116,11,4,10,15,21,28,38,49,62,112,243,237,63,1,
     0,0,3,0,97,255,235,38,0,148,255,221,255,255,255,225,192,101,0,3,0,2,0,36,254,255,242,238,251,255,255,255,255,255,255,255,255,255,185,0,
@@ -881,8 +954,9 @@ const NgbZhArt ngb_zh_arts[] = {
     { "GRAPHICS SETTINGS", "图形设置", 79, 32, s_art1 },
     { "DISPLAY SETTINGS", "显示设置", 80, 32, s_art2 },
     { "STARTUP SETTINGS", "启动设置", 80, 32, s_art3 },
-    { "CHEATS", "作弊", 42, 32, s_art4 },
-    { "CONTROLS", "按键设置", 81, 32, s_art5 },
-    { "EXIT", "返回", 40, 32, s_art6 },
+    { "GAMEPLAY", "玩法", 41, 32, s_art4 },
+    { "CHEATS", "作弊", 42, 32, s_art5 },
+    { "CONTROLS", "按键设置", 81, 32, s_art6 },
+    { "EXIT", "返回", 40, 32, s_art7 },
 };
-const int ngb_zh_art_count = 7;
+const int ngb_zh_art_count = 8;

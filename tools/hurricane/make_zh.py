@@ -160,7 +160,7 @@ def art_category(text):
 
 
 ARTS = [('Settings', None), ('GRAPHICS SETTINGS', '图形设置'), ('DISPLAY SETTINGS', '显示设置'),
-        ('STARTUP SETTINGS', '启动设置'), ('CHEATS', '作弊'), ('CONTROLS', '按键设置'), ('EXIT', '返回')]
+        ('STARTUP SETTINGS', '启动设置'), ('GAMEPLAY', '玩法'), ('CHEATS', '作弊'), ('CONTROLS', '按键设置'), ('EXIT', '返回')]
 
 
 # ------------------------------------------------------------------ the font

@@ -42,7 +42,7 @@ ctx	en	zh	use
 	No	否	E
 	Starts at the title screen, from the next start.	下次启动起直接进入标题画面	E
 	Shows the settings screen before the game, from the next start.	下次启动起，在游戏前显示设置画面	E
-	Render resolution, texture filtering and shadow detail.	渲染分辨率、纹理过滤与阴影精度	E
+	Render resolution, texture filtering, anti-aliasing, shadows and the glow.	渲染分辨率、纹理过滤、抗锯齿、阴影与泛光	E
 	Aspect ratio, window size, display mode, V-Sync and the FPS counter.	画面比例、窗口大小、显示模式、垂直同步与帧率	E
 	What the game shows when it starts, and the difficulties New Game offers.	启动时的画面，以及新游戏可选的难度	E
 	Returns to the Recomp Settings screen.	返回PC版设置画面	E
@@ -52,7 +52,7 @@ ctx	en	zh	use
 	Ryu's health stays full. For this session only.	龙的体力始终全满。仅本次有效	E
 	Ninpo is always ready. For this session only.	忍法随时可用。仅本次有效	E
 	As much essence as can be held. For this session only.	精魂保持在持有上限。仅本次有效	E
-	Help for a hard spot: health, ninpo and essence. Not saved.	难关助力：体力、忍法与精魂。不会保存	E
+	Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved.	难关助力：体力、忍法、精魂、道具与飞行道具。不会保存	E
 	All Difficulties	全部难度	E
 	Every difficulty at New Game, Ninja Dog to Master Ninja.	新游戏可选全部难度，从忍犬到超忍	E
 	Golden Scarabs	黄金圣甲虫	E
@@ -66,11 +66,23 @@ ctx	en	zh	use
 	Extra 2	隐藏2	E
 	Extra 3	隐藏3	E
 	The keys, mouse buttons and controller buttons used in play.	游戏中使用的各种操作按键	E
+	Smoother Glow	柔和泛光	E
+	A softer, fainter glow on bright lights. Off: the console's.	亮光的泛光更柔和、更淡。关：主机原版	E
+	Quick Menu	快速菜单	E
+	A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.	用十字键选择武器、忍法与道具的菜单（按上或下打开），以此大小显示	E
+	Quick Menu Pause	快速菜单暂停	E
+	The game pauses while the quick menu is open (once Ryu's action ends).	打开快速菜单时游戏暂停（龙的动作结束后）	E
+	Optional changes to how the game plays, each off unless chosen.	可选的玩法改动，未选择时均为关闭	E
+	Infinite Items	无限道具	E
+	Infinite Projectiles	无限飞行道具	E
+	Elixirs, rations and the Talisman of Rebirth are not used up. For this session only.	药品、饭团与还魂护符不会消耗。仅本次有效	E
+	Shuriken, smoke bombs, arrows and spears are not used up. For this session only.	手里剑、烟玉、箭与水中枪的鱼叉不会消耗。仅本次有效	E
 # --- the pause menu's Settings tab (src/pause_tab.c)
 cat	Graphics	图形	P
 cat	Display	显示	P
 cat	Startup	启动	P
 cat	Cheats	作弊	P
+cat	Gameplay	玩法	P
 cat	Controls	按键	P
 	FPS Counter	帧率显示	P
 	Draws the game at a multiple of the console's resolution.	以主机分辨率的整数倍渲染游戏画面	P
@@ -86,6 +98,9 @@ cat	Controls	按键	P
 	Keyboard / Mouse	键盘 / 鼠标	P
 	Controller	控制器	P
 	Default Controls	恢复默认按键	P
+	Camera Sensitivity	镜头灵敏度	P
+	How fast the right stick and the mouse turn the camera (play only).	右摇杆与鼠标转动镜头的速度（仅限游戏中）	P
+	Already full	已达上限	P
 	Press a button	请按按键	P
 	Press a key	请按按键	P
 	R Stick	右摇杆	P
@@ -156,6 +171,18 @@ cat	Controls	按键	P
 	Moves Ryu (the left stick).	移动龙（左摇杆）	P
 	Turns the camera (the right stick; the mouse too).	转动镜头（右摇杆，鼠标亦可）	P
 	The controller's directional pad.	控制器的十字键	P
+	Quick Menu: Category Up	快速菜单：上一类	P
+	Quick Menu: Category Down	快速菜单：下一类	P
+	Quick Menu: Previous	快速菜单：上一个	P
+	Quick Menu: Next	快速菜单：下一个	P
+	Quick Menu: Confirm	快速菜单：确定	P
+	Quick Menu: Cancel	快速菜单：取消	P
+	Opens Melee Weapons; while open, selects the previous category.	打开武器栏；菜单打开时选择上一类	P
+	Opens Consumables; while open, selects the next category.	打开道具栏；菜单打开时选择下一类	P
+	Opens the melee weapons on the card before; while open, selects the previous entry.	打开上一页的武器；菜单打开时选择上一项	P
+	Opens the melee weapons on the next card; while open, selects the next entry.	打开下一页的武器；菜单打开时选择下一项	P
+	Equips the selected weapon or Ninpo, or uses the selected item.	装备所选的武器或忍法，或使用所选的道具	P
+	Closes the quick menu without applying the selection.	关闭快速菜单，不应用所选项	P
 	Mouse Left	鼠标左键	P
 	Mouse Middle	鼠标中键	P
 	Mouse Right	鼠标右键	P

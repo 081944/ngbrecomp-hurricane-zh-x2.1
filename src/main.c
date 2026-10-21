@@ -34,6 +34,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 #include "platform/win32_compat.h"
@@ -54,6 +55,7 @@
 extern void xbox_InputInit(void);
 #if defined(NGB_NV2A_VK)
 #include "launcher.h"
+#include "quick_select.h"
 
 /* Skip intro movie: see src/movie_skip.c. The kernel's open hook tells it
  * which movie the title is about to play. */
@@ -172,6 +174,16 @@ extern ptrdiff_t g_xbox_mem_offset;
 static bool s_use_gpu, s_headless;
 static bool s_widescreen;
 static char s_game_dir[4096];
+static char s_save_dir[4096];
+
+/* Before Return to Main Menu starts the program again (src/ingame_menu.c): the game folder in use where
+ * that start finds it -- unless NGB_GAME_DIR gave it, which the new process has too. */
+void ngb_keep_game_for_restart(void)
+{
+    const char *env = getenv("NGB_GAME_DIR");
+    if (s_save_dir[0] && s_game_dir[0] && !(env && *env))
+        ngb_remember_game(s_save_dir, s_game_dir);
+}
 static int s_show_settings;
 #define NGB_D3D_DEVICE_PTR 0x003D83C8u   /* D3D8LTCG global device pointer */
 
@@ -433,6 +445,7 @@ static void sample_on_signal(int sig, siginfo_t *si, void *uc)
             nv2a_vk_sample_threads();
 #endif
         xbox_PeekSample("sample");
+        compat_suspend_dump();   /* the threads' last suspensions and resumes: a lost wake-up shows there */
         {   /* NGB_DUMP_RAM=path: the guest's low 64 MB, then the 128 MB
              * contiguous window, to path.N */
             const char *path = getenv("NGB_DUMP_RAM");
@@ -1010,8 +1023,13 @@ static void portable_init(void)
 int main(int argc, char **argv)
 {
     portable_init();   /* before anything picks a folder (the log's, first) */
-#ifdef __APPLE__
-    if (!getenv("NGB_TEST_HIDDEN") && !isatty(STDOUT_FILENO)) {
+#if !defined(_WIN32)
+    /* No terminal and no file of the player's own (the Mac's Finder, Steam on Linux -- a Steam Deck in Game
+     * Mode): the output to log.txt in the save folder, as on Windows, or a start that fails there leaves
+     * nothing to look at (#11). Sent to a file already (`> log 2>&1`), it stays there. */
+    struct stat out_st;
+    bool to_file = fstat(STDOUT_FILENO, &out_st) == 0 && S_ISREG(out_st.st_mode);
+    if (!getenv("NGB_TEST_HIDDEN") && !isatty(STDOUT_FILENO) && !to_file) {
         char log[4200];
         save_dir_path(log, sizeof log - 16);
         ngb_mkdir(log);
@@ -1086,10 +1104,12 @@ int main(int argc, char **argv)
         if (ngb_find_game(argc > 1 ? argv[1] : NULL, save, base,
                           s_game_dir, sizeof(s_game_dir)) != 0)
             return 1;
+        snprintf(s_save_dir, sizeof s_save_dir, "%s", save);
     }
 
     printf("=== Ninja Gaiden Black - Static Recompilation ===\n");
     printf("Game directory: %s\n", s_game_dir);
+    { extern void ngb_quick_set_game_dir(const char *); ngb_quick_set_game_dir(s_game_dir); }
 
 #if defined(_WIN32)
     SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
@@ -1284,8 +1304,10 @@ int main(int argc, char **argv)
 
 #if defined(NGB_NV2A_VK)
     if (s_use_gpu && !s_headless) {
-        while (nv2a_window_pump())
+        while (nv2a_window_pump()) {
+            ngb_quick_poll();
             usleep(2000);
+        }
         printf("Window closed.\n");
         _exit(0);
     }

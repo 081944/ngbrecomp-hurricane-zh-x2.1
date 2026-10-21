@@ -78,14 +78,15 @@ void ngb_pc_set_setting(int which, int value);
 /* The settings, numbered as ngb_pc_setting has them. */
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
-       S_COUNT };
+       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_COUNT };
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
     "Display", "V-Sync", "FPS Counter", "Window Size", "Aspect Ratio",
     "Skip Intros", "Settings at Startup", "Anti-Aliasing (MSAA)",
     "Infinite Health", "Infinite Ninpo", "Infinite Essence", "All Difficulties",
-    "Golden Scarabs", "All Costumes", "Extra Costume",
+    "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
+    "Quick Menu", "Infinite Items", "Infinite Projectiles",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -106,13 +107,19 @@ static const char *const s_help[S_COUNT] = {
     "All 50: Muramasa gives every reward. For this session only.",
     "Every costume at the Costume Selection, and three it never offers.",
     "Costumes in the game it never offers. From the next area.",
+    "A softer, fainter glow on bright lights. Off: the console's.",
+    "The game pauses while the quick menu is open (once Ryu's action ends).",
+    "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
+    "Elixirs, rations and the Talisman of Rebirth are not used up. For this session only.",
+    "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
 };
 
 /* The categories: the strip's words, their rows. */
-#define CATS 5
-#define CAT_ROWS 5
-#define CAT_CTL 4                 /* Controls: the bindings' list (src/bindings.c), not settings */
-static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Cheats", "Controls" };
+#define CATS 6
+#define CAT_ROWS 6
+#define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
+/* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
+static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Gameplay", "Cheats", "Controls" };
 /* Hurricane x2.1: the strip's word in Chinese when the game's text is */
 static const char *cat_name(int c)
 {
@@ -120,20 +127,29 @@ static const char *cat_name(int c)
     return z ? z : s_cat_name[c];
 }
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
-    { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, -1 },
-    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS },
+    { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
+    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, -1 },
     { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
-    { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, -1 },
+    { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO },
     { -1 },
 };
 
 #include "bindings.h"
-/* Hurricane: no Invert Camera rows -- x2.1 has its own third-person camera option (控制器设置 > 视角设定,
- * localization docs/18), which these would invert again (user 2026-10-17): the actions, then Default Controls */
+/* Hurricane: no Invert Camera / Invert First-Person / Start in Third Person rows -- x2.1 has its own camera option
+ * (控制器设置 > 视角设定, localization docs/18) and starts every load in the third-person camera, which these would
+ * invert or change again (user 2026-10-17, 2026-10-22): the actions, Camera Sensitivity (#67), Default Controls */
 #define CTL_INVX (-2)
 #define CTL_INVY (-3)
-#define CTL_DEF  A_COUNT
-#define CTL_ROWS (A_COUNT + 1)
+#define CTL_START (-5)
+#define CTL_MOUSE A_COUNT         /* Camera Sensitivity: a value, Left / Right (#67) */
+#define CTL_DEF  (A_COUNT + 1)
+#define CTL_ROWS (A_COUNT + 2)
+#define CTL_TOGGLE(r) ((void)(r), 0)
+static const char *const s_ctl_toggle_name[4] = { "", "", "", "" };
+static const char *const s_ctl_toggle_help[4] = { "", "", "", "" };
+static int ctl_toggle_get(int r) { (void)r; return 0; }
+static void ctl_toggle_flip(int r) { (void)r; }
 
 static int cat_count(int c)
 {
@@ -162,6 +178,7 @@ static void value_text(int row, char *out, size_t n)
         break;
     }
     case S_ASPECT:  snprintf(out, n, "%s", v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
+    case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_SKIP:
     case S_ALLDIFF:
     case S_ALLCOST:
@@ -207,6 +224,9 @@ static void change(int row, int step)
         break;
     case S_VSYNC:
         ngb_pc_set_setting(row, ngb_vsync_step(v, step));
+        break;
+    case S_QUICKSCALE:
+        ngb_pc_set_setting(row, ngb_quick_scale_step(v, step));
         break;
     case S_ASPECT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 3)) % 4);
@@ -792,13 +812,23 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         float y = CTL_Y0 + i * ROW_H;
         if (sel)
             page_fill(px, 0, y + 2, 10, ROW_H - 4, 0xE6E4FF, 0.95f, 0.85f);
-        if (r == CTL_INVX || r == CTL_INVY) {          /* Invert Camera X / Y: On or Off */
+        if (CTL_TOGGLE(r)) {                           /* the camera's On/Off rows */
             if (sel)
                 page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
-            page_text(px, m, r == CTL_INVX ? "Invert Camera X" : "Invert Camera Y", CTL_NAME_X + 6, y + 19, 18,
-                      sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0);
-            page_text(px, m, ngb_bind_invert(r - CTL_INVX) ? "On" : "Off", s_ctl_cx[1], y + 18, 15,
+            page_text_fit(px, m, s_ctl_toggle_name[r - CTL_INVX], CTL_NAME_X + 6, y + 19, 18,
+                          sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0, 260);
+            page_text(px, m, ctl_toggle_get(r) ? "On" : "Off", s_ctl_cx[2], y + 18, 15,
                       sel ? 0xFFFFFF : 0xC8C8D0, 1);
+            continue;
+        }
+        if (r == CTL_MOUSE) {
+            if (sel)
+                page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
+            page_text_fit(px, m, "Camera Sensitivity", CTL_NAME_X + 6, y + 19, 18,
+                          sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0, 260);
+            char pct[16];
+            snprintf(pct, sizeof pct, "%s%d%%%s", sel ? "< " : "", ngb_bind_mouse_sensitivity(), sel ? " >" : "");
+            page_text(px, m, pct, s_ctl_cx[2], y + 18, 15, sel ? 0xFFFFFF : 0xC8C8D0, 1);
             continue;
         }
         if (r == CTL_DEF) {                            /* Default Controls */
@@ -835,18 +865,15 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         help = s_ctl_col == 2 ? "Press the controller's button (wait to cancel)." : "Press a key or mouse button (Esc cancels).";
     else if (focused && row == CTL_DEF)
         help = "Every action as it was.";
-    else if (focused && (row == CTL_INVX || row == CTL_INVY))
-        help = row == CTL_INVX ? "Turns the camera the other way left and right (play only)."
-                               : "Turns the camera the other way up and down (play only).";
+    else if (focused && CTL_TOGGLE(row))
+        help = s_ctl_toggle_help[row - CTL_INVX];
+    else if (focused && row == CTL_MOUSE)
+        help = "How fast the right stick and the mouse turn the camera (play only).";
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : "A: change   X / Delete: clear   (play only; the menus keep theirs)";
-    int two = focused && !capturing && (row == CTL_INVX || row == CTL_INVY);   /* the stick itself is flipped */
     if (focused && help)
-        page_text_fit(px, m, help, 445, CTL_Y0 + CTL_SHOWN * ROW_H + (two ? 12 : 16), two ? 13 : 14, 0xFFFFFF, 2, 440);
-    if (two)
-        page_text_fit(px, m, "First-person look too: the game's Options > 1st Person Camera Control turns it back.",
-                      445, CTL_Y0 + CTL_SHOWN * ROW_H + 26, 12, 0xC8C8D0, 2, 440);
+        page_text_fit(px, m, help, 445, CTL_Y0 + CTL_SHOWN * ROW_H + 16, 14, 0xFFFFFF, 2, 440);
 }
 
 static void draw_page(int focused, int cat, int row)
@@ -860,17 +887,29 @@ static void draw_page(int focused, int cat, int row)
      * the right, the chosen word light violet, the others grey. */
     page_fill(px, 4, STRIP_Y, 442, STRIP_H, 0x14141C, 0.8f, 0.8f);   /* one colour behind all the words */
     page_fill(px, 4, STRIP_Y + STRIP_H - 1.5f, 442, 1.5f, 0xB4B9D2, 0.6f, 0.6f);
-    float x = STRIP_X0;
+    /* The words at 17, or smaller until they fit with a fair gap between them (six do not at 17). */
+    float x = STRIP_X0, words = 0, gap = STRIP_GAP, fs = 17;
+    for (;;) {
+        words = 0;
+        for (int c = 0; c < CATS; c++)
+            words += text_width(&s_font_body, cat_name(c), fs * k, 1.0f) / k;
+        gap = (440 - 2 * STRIP_X0 - words) / (CATS - 1);
+        if (gap >= 16 || fs <= 13)
+            break;
+        fs -= 1;
+    }
+    if (gap > STRIP_GAP)
+        gap = STRIP_GAP;
     for (int c = 0; c < CATS; c++) {
-        float w = text_width(&s_font_body, cat_name(c), 17 * k, 1.0f) / k;
+        float w = text_width(&s_font_body, cat_name(c), fs * k, 1.0f) / k;
         int on = c == cat, sel = focused && row < 0 && on;
         if (sel)
             page_fill(px, x - 6, STRIP_Y + 3, w + 12, STRIP_H - 6, 0x6E64DC, 0.75f, 0.75f);
-        page_text(px, m, cat_name(c), x, STRIP_Y + 19, 17,
+        page_text(px, m, cat_name(c), x, STRIP_Y + 19, fs,
                   sel ? 0xFFFFFF : on ? 0xC8C4FF : 0x8C8C96, 0);
         s_cat_x[c][0] = x - 6;
         s_cat_x[c][1] = x + w + 6;
-        x += w + STRIP_GAP;
+        x += w + gap;
     }
 
     if (cat == CAT_CTL) {
@@ -909,7 +948,7 @@ static void draw_page(int focused, int cat, int row)
 /* While the main menu's RECOMP SETTINGS has the Options menu (src/pc_menu.c)
  * its pictures say so: the header ("OPTIONS", sprite 0x23D) reads SETTINGS
  * and the category words (sprites 0x248-0x24D, slices of one texture) are
- * Graphics, Display and Startup Settings, Cheats and Exit. Each is a texture of
+ * Graphics, Display and Startup Settings, Gameplay, Cheats and Controls. Each is a texture of
  * ours put in the game's texture's place, the words drawn in the game's
  * pictures' style -- the size, the condensing and the colour of each row of
  * the letters measured from them, the shadow under them -- Liberation Serif
@@ -923,7 +962,7 @@ static uint32_t sprite_def(uint32_t id);
 #define RP_LABELS 6
 #define RP_WORDS 6
 static const char *const s_rp_word[RP_WORDS] = { "GRAPHICS SETTINGS", "DISPLAY SETTINGS", "STARTUP SETTINGS",
-                                                 "CHEATS", "CONTROLS", "EXIT" };
+                                                 "GAMEPLAY", "CHEATS", "CONTROLS" };
 
 static struct {
     GuestTex t;
@@ -1695,7 +1734,9 @@ void ngb_menu_mark(void);            /* src/menu_mouse.c */
     if (v_ == (const char *)1) v_ = getenv(name); v_; }))
 
 
-enum { K_UP = 1, K_DOWN, K_LEFT, K_RIGHT, K_OK, K_BACK, K_CLEAR, K_ROW = 0x100 };
+/* K_ROW | the row the mouse is on (HIT_*: up to HIT_CTL + CTL_ROWS * 4, past a byte since the quick menu's
+ * actions -- read back as a byte, the lower rows of Controls were other rows and categories) */
+enum { K_UP = 1, K_DOWN, K_LEFT, K_RIGHT, K_OK, K_BACK, K_CLEAR, K_ROW = 0x10000 };
 
 /* For the mouse (any thread): the row of the page at (x, y) in the menu's
  * 720x480, or -1; *zone -1 on the "<" half of its value, 1 on the ">"
@@ -1716,7 +1757,7 @@ static int ctl_hit(float x, float y)
     if (r >= CTL_ROWS)
         return -1;
     if (r >= A_COUNT)
-        c = 0;                                        /* Invert Camera, Default Controls: anywhere on it */
+        c = 0;                                        /* the camera rows, Default Controls: anywhere on it */
     for (int i = 0; i < 3 && r < A_COUNT; i++)
         if (fabsf(x - s_ctl_cx[i]) <= s_ctl_w[i] / 2)
             c = i;
@@ -1762,6 +1803,11 @@ static int ctl_keys(int key, int *row, int strip)
         break;
     case K_LEFT:
     case K_RIGHT: {
+        if (*row == CTL_MOUSE) {
+            ngb_bind_step_mouse_sensitivity(key == K_LEFT ? -1 : 1);
+            play_sound(1);
+            break;
+        }
         int c = s_ctl_col + (key == K_LEFT ? -1 : 1);
         if (c >= 0 && c <= 2 && !(c == 2 && *row < A_COUNT && ngb_bind_pad_fixed(*row))) {
             s_ctl_col = c;
@@ -1770,8 +1816,11 @@ static int ctl_keys(int key, int *row, int strip)
         break;
     }
     case K_OK:
-        if (*row == CTL_INVX || *row == CTL_INVY) {
-            ngb_bind_set_invert(*row - CTL_INVX, !ngb_bind_invert(*row - CTL_INVX));
+        if (CTL_TOGGLE(*row)) {
+            ctl_toggle_flip(*row);
+            play_sound(6);
+        } else if (*row == CTL_MOUSE) {
+            ngb_bind_step_mouse_sensitivity(1);
             play_sound(6);
         } else if (*row == CTL_DEF) {
             ngb_bind_defaults();
@@ -1815,7 +1864,7 @@ static void pt_draw(void)
             play_sound(6);
     }
     if (key & K_ROW) {                                /* the mouse on a row or a category */
-        int r = key & 0xFF;
+        int r = key & 0xFFFF;
         if (r >= HIT_CTL && s_cat == CAT_CTL) {      /* a cell of Controls' list */
             ctl_mouse(r, &s_row);
         } else if (r >= HIT_CAT && r < HIT_CAT + CATS) {
@@ -1867,13 +1916,18 @@ static void pt_draw(void)
         play_sound(s_focus ? 6 : 3);                  /* in, as a tab's page; back */
     for (int i = 0; i < S_COUNT; i++)
         vals[i] = ngb_pc_setting(i);
-    int shown = s_cat * 4096 + (s_row + 1) * 64 + s_ctl_col * 16 + (s_cat == CAT_CTL ? s_ctl_top : 0);
+    /* what is drawn, each part in bits of its own (the list's top, past 15 since the quick menu's actions,
+     * ran into the column's: a scroll could leave the page as it was) */
+    int shown = (s_cat & 7) << 28 | ((s_row + 1) & 0xFF) << 20 | (s_ctl_col & 3) << 18 |
+                (s_cat == CAT_CTL ? s_ctl_top & 0x3F : 0) << 12;
     if (s_cat == CAT_CTL)                             /* and the bindings, and waiting for one */
-        shown ^= (int)(ngb_bind_generation() << 20) ^ ngb_bind_capturing() << 30;
+        shown ^= (int)(ngb_bind_generation() & 0x7FF) << 1 ^ ngb_bind_capturing();
     if (s_drawn.page != 0 || s_focus != s_drawn.focused || shown != s_drawn.row ||
         memcmp(vals, s_drawn.vals, sizeof vals) || s_drawn.zh != ngb_zh_on()) {
         s_drawn.zh = ngb_zh_on();
         draw_page(s_focus, s_cat, s_row);
+        if (s_cat == CAT_CTL && getenv("NGB_CTL_LOG"))   /* NGB_CTL_LOG=1: the Controls list as drawn */
+            fprintf(stderr, "[CTL] row %d col %d top %d\n", s_row, s_ctl_col, s_ctl_top);
         s_drawn.page = 0;
         s_drawn.focused = s_focus;
         s_drawn.row = shown;
@@ -2022,8 +2076,8 @@ static int ngb_confirm_tick(void)
     int key = ngb_pause_tab_key(&s_dlg_focus), r = -1;
     s_dlg_back = key == K_BACK;
     if (key & K_ROW) {                                 /* the mouse */
-        if ((key & 0xFF) < 2 && (key & 0xFF) != s_dlg_sel) {
-            s_dlg_sel = key & 0xFF;
+        if ((key & 0xFFFF) < 2 && (key & 0xFFFF) != s_dlg_sel) {
+            s_dlg_sel = key & 0xFFFF;
             play_sound(1);
         }
         key = 0;
@@ -2156,7 +2210,7 @@ void ngb_controls_panel_tick(int want)
             play_sound(6);
     }
     if (key & K_ROW) {
-        int r = key & 0xFF;
+        int r = key & 0xFFFF;
         if (r >= HIT_CTL)
             ctl_mouse(r, &s_ov_row);
         key = 0;
@@ -2173,8 +2227,8 @@ void ngb_controls_panel_tick(int want)
         play_sound(3);
         return;
     }
-    int shown = (s_ov_row + 1) * 64 + s_ctl_col * 16 + s_ctl_top;
-    shown ^= (int)(ngb_bind_generation() << 20) ^ ngb_bind_capturing() << 30;
+    int shown = ((s_ov_row + 1) & 0xFF) << 20 | (s_ctl_col & 3) << 18 | (s_ctl_top & 0x3F) << 12;   /* as the tab's */
+    shown ^= (int)(ngb_bind_generation() & 0x7FF) << 1 ^ ngb_bind_capturing();
     if (shown != s_ov_drawn) {
         ov_draw();
         s_ov_drawn = shown;
@@ -2411,7 +2465,7 @@ static void pt_exit_draw(void)
     int was = s_focus;
     int key = ngb_pause_tab_key(&s_focus);
     if (key & K_ROW) {                                /* the mouse on a row */
-        int r = key & 0xFF;
+        int r = key & 0xFFFF;
         if (r < EXIT_ROWS && r != s_exit_row) {
             s_exit_row = r;
             s_exit_armed = -1;

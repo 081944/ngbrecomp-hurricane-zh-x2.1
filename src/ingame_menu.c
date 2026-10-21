@@ -82,7 +82,9 @@ void ngb_menu_set_running(const NgbSettings *s)
  * startup, 10 MSAA samples (1, 2, 4, 8); 1 is the anisotropy (0, 2-16);
  * 11-13 the cheats (src/cheats.c: infinite health, ninpo, essence), 14 every
  * difficulty from the start (src/cheats.c, saved), 15 the golden scarabs
- * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved). A change
+ * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved), 18 Smoother
+ * Glow (src/d3d/vk/glow_options.h), 19 quick-menu pause, 20 quick-menu scale (100..0
+ * percent, in tens), 21 infinite items, 22 infinite projectiles (cheats, src/cheats.c). A change
  * applies at once (8 and 9 at the next start) and is saved, the cheats'
  * not. */
 int ngb_cheat(int which);
@@ -96,6 +98,8 @@ int ngb_pc_setting(int which)
         return ngb_cheat(which - 11);
     if (which == 15)
         return ngb_cheat(3);
+    if (which == 21 || which == 22)                    /* infinite items, infinite projectiles */
+        return ngb_cheat(which - 17);
     if (which == 14 || which == 16 || which == 17) {
         ngb_pc_setting(0);
         return which == 14 ? s_running.all_difficulties : which == 16 ? s_running.all_costumes : s_running.movie_43;
@@ -118,14 +122,17 @@ int ngb_pc_setting(int which)
     case 8:  return s_running.skip_intro;
     case 9:  return s_running.show_launcher;
     case 10: return s_running.msaa;
+    case 18: return s_running.smooth_glow;
+    case 19: return s_running.quick_menu_freeze;
+    case 20: return s_running.quick_menu_scale;
     default: return s_running.show_fps;
     }
 }
 
 void ngb_pc_set_setting(int which, int value)
 {
-    if ((which >= 11 && which <= 13) || which == 15) {
-        ngb_cheat_set(which == 15 ? 3 : which - 11, value);
+    if ((which >= 11 && which <= 13) || which == 15 || which == 21 || which == 22) {
+        ngb_cheat_set(which == 15 ? 3 : which >= 21 ? which - 17 : which - 11, value);
         return;
     }
     ngb_pc_setting(0);
@@ -136,6 +143,8 @@ void ngb_pc_set_setting(int which, int value)
     case 0: s_running.scale = value; break;
     case 1: s_running.anisotropy = value; break;
     case 10: s_running.msaa = value; break;
+    case 19: s_running.quick_menu_freeze = !!value; break;
+    case 20: s_running.quick_menu_scale = ngb_quick_scale_value(value); break;
     case 2: s_running.shadow_scale = value; break;
     case 3:
         s_running.fullscreen = value;
@@ -145,6 +154,7 @@ void ngb_pc_set_setting(int which, int value)
     case 5: s_running.show_fps = value; nv2a_present_set_show_fps(value); break;
     case 8: s_running.skip_intro = value; break;        /* both at the next start */
     case 9: s_running.show_launcher = value; break;
+    case 18: s_running.smooth_glow = !!value; break;
     case 6:
         if (value / 8 == s_running.aspect && value % 8 < ngb_settings_size_count(value / 8)) {
             ngb_settings_size_at(value / 8, value % 8, &s_running.width, &s_running.height);
@@ -506,8 +516,12 @@ void ngb_restart_to_menu(void)
     __atomic_store_n(&s_soft_reset_at, mono_ms(), __ATOMIC_RELEASE);
 }
 
+void ngb_keep_game_for_restart(void);   /* src/main.c */
+
+/* Started again without the arguments (the game found as at any start: the folder kept, #59) */
 static void restart_program(void)
 {
+    ngb_keep_game_for_restart();
 #if !defined(_WIN32)
     char self[4096];
     long n = ngb_exe_path(self, sizeof self);
@@ -518,7 +532,8 @@ static void restart_program(void)
         fflush(stderr);
         close_on_exec_all();
         quiet_signals();
-        execv(self, s_argv);
+        char *args[2] = { s_argv[0], NULL };
+        execv(self, args);
         fprintf(stderr, "[MENU] could not start again; exiting\n");
     }
 #else
@@ -533,7 +548,9 @@ static void restart_program(void)
         if (GetModuleFileNameW(NULL, self, MAX_PATH) && SetEnvironmentVariableA("NGB_TO_MAIN_MENU", "1")) {
             fprintf(stderr, "[MENU] Return to Main Menu: starting the program again\n");
             fflush(stderr);
-            if (CreateProcessW(self, GetCommandLineW(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+            static wchar_t line[MAX_PATH + 3];
+            swprintf(line, MAX_PATH + 3, L"\"%ls\"", self);   /* the program alone */
+            if (CreateProcessW(self, line, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
                 CloseHandle(pi.hThread);
                 CloseHandle(pi.hProcess);
                 TerminateProcess(GetCurrentProcess(), 0);
@@ -636,7 +653,7 @@ static int tab_hit(float x, float y, int *zone)
     default: return ngb_pause_tab_hit(x, y, zone);
     }
 }
-#define TAB_ROW 0x100
+#define TAB_ROW 0x10000   /* | the row (src/pause_tab.c's K_ROW): past a byte */
 
 /* Presses for the game's pad, played out a frame at a time (render
  * thread) so that each is seen: held 90 ms, then 60 ms let go. Low byte
@@ -1182,6 +1199,8 @@ static bool game_mouse(const SDL_Event *ev)
 void nv2a_window_event_hook(const void *sdl_event)
 {
     const SDL_Event *ev = sdl_event;
+    extern int ngb_quick_event(const void *event);
+    if (ngb_quick_event(ev)) return;
     if (ev->type == SDL_KEYDOWN && ev->key.keysym.sym == SDLK_F7 && !ev->key.repeat) {
         extern volatile int ngb_trace_request;   /* src/d3d/vk/backend.cpp: record the next frames */
         ngb_trace_request = 1;
