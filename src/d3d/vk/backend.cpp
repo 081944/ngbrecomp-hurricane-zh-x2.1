@@ -362,7 +362,8 @@ private:
 
     Image display_[3];   // copies of the front buffer for the presenter, in turn
     Image quick_layer_;
-    Image quick_background_;
+    Image quick_background_, quick_blur_, quick_full_;   // the quick menu's paused background: small, its blur's
+                                                          // other half, and the frame blitted for it
     VkSampler quick_sampler_ = VK_NULL_HANDLE;
     void QuickMenu(Image& dst);
     void QuickMenuBackground(Image& dst);
@@ -872,6 +873,9 @@ VulkanBackend::~VulkanBackend() {
     if (dev_) {
         for (auto& image:continuous_glow_) DestroyImage(image);
         for (auto& image:glow_soft_) DestroyImage(image);
+        DestroyImage(quick_background_);
+        DestroyImage(quick_blur_);
+        DestroyImage(quick_full_);
         if (glow_soft_sampler_) d_.vkDestroySampler(dev_,glow_soft_sampler_,nullptr);
     }
 }
