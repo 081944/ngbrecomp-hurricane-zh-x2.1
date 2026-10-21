@@ -478,8 +478,8 @@ static void apply(uint16_t item, int category)
         unsigned cls = MEM8(r + 0xD);
         if (cls < 1 || cls > 3)
             return;
-        /* The inventory handler checks ownership of the weapon and its
-         * required components before passing it to the resource loader. */
+        /* The inventory handler checks ownership of the weapon before
+         * passing it to the resource loader. */
         esi = item;
         if (!call(sub_001542C0))
         {
@@ -496,14 +496,13 @@ static void apply(uint16_t item, int category)
             fprintf(stderr, "[QUICK] refused %04X: %u required parts\n", item, n);
             return;
         }
+        /* A part the game does not count as owned does not stop it: its own Weapon menu equips such a
+         * weapon (the Kitetsu of a chapter 13 save, part 0x0EA; the Spear Gun without spears, 0x099). */
         for (unsigned i = 0; i < n; i++)
         {
             esi = MEM16(scratch + i * 2);
             if (!call(sub_001542C0))
-            {
-                fprintf(stderr, "[QUICK] refused %04X: its part %04X is not owned\n", item, (unsigned)MEM16(scratch + i * 2));
-                return;
-            }
+                fprintf(stderr, "[QUICK] %04X: its part %04X is not owned\n", item, (unsigned)MEM16(scratch + i * 2));
         }
         if (MEM16(0x58A570 + player + (cls - 1) * 2) == item)
         {
