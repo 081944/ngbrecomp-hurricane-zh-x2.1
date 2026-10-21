@@ -121,8 +121,9 @@ static void cheat_wrote(void)
  * the game's own path runs and its caller sees it done. What an item is: its descriptor (the table
  * at [0xDB98E4], [0xDB5E24] of them): +0x0C 1 or 3 ammunition (shuriken, incendiary shuriken, smoke
  * bombs; arrows, explosive arrows, spears), +0x0D its class (5 an item), +0x1D its effect (0x12
- * health, 0x13 ninpo, 0x17 Lives of the Thousand Gods, 0x22 the Talisman of Rebirth; not 0x14 / 0x15,
- * Life of the Gods and Spirit of the Devils, whose use raises the most health or ninpo for good). */
+ * health, 0x13 ninpo, 0x15 Spirit of the Devils (the Ki limit up), 0x16 the Jewel of the Demon Seal
+ * (a Ninpo upgraded), 0x17 Lives of the Thousand Gods (the health limit up), 0x22 the Talisman of
+ * Rebirth -- 0x15 and 0x16 asked for in #52; not 0x14, Life of the Gods, nine of which make one step). */
 static uint32_t item_record(uint16_t item)
 {
     uint32_t base = MEM32(0xDB98E4), count = MEM32(0xDB5E24);
@@ -140,7 +141,8 @@ static int item_kept(uint16_t item)
     uint8_t ammo = MEM8(r + 0x0C), cls = MEM8(r + 0x0D), effect = MEM8(r + 0x1D);
     if (s_cheat[5] && (ammo == 1 || ammo == 3))
         return 1;
-    return s_cheat[4] && cls == 5 && (effect == 0x12 || effect == 0x13 || effect == 0x17 || effect == 0x22);
+    return s_cheat[4] && cls == 5 &&
+           (effect == 0x12 || effect == 0x13 || effect == 0x15 || effect == 0x16 || effect == 0x17 || effect == 0x22);
 }
 
 static void item_count_change(void);

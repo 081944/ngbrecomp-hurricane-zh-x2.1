@@ -109,7 +109,7 @@ static const char *const s_help[S_COUNT] = {
     "A softer, fainter glow on bright lights. Off: the console's.",
     "The game pauses while the quick menu is open (once Ryu's action ends).",
     "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
-    "Elixirs, rations and the Talisman of Rebirth are not used up. For this session only.",
+    "Not used up: healing items, the Talisman of Rebirth, Lives of the Thousand Gods,\nSpirit of the Devils and the Jewel of the Demon Seal. For this session only.",
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
 };
 
@@ -908,7 +908,18 @@ static void draw_page(int focused, int cat, int row)
         }
     }
     if (focused && row >= 0 && row < n)
-        page_text(px, m, s_help[s_cat_rows[cat][row]], 445, ROW_Y0 + CAT_ROWS * ROW_H + 14, 15, 0xFFFFFF, 2);
+        {   /* a help of two lines: split at its \n */
+            const char *h = s_help[s_cat_rows[cat][row]], *nl = strchr(h, '\n');
+            char first[160];
+            if (nl && (size_t)(nl - h) < sizeof first) {
+                memcpy(first, h, (size_t)(nl - h));
+                first[nl - h] = 0;
+                page_text_fit(px, m, first, 445, ROW_Y0 + CAT_ROWS * ROW_H + 14, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, nl + 1, 445, ROW_Y0 + CAT_ROWS * ROW_H + 32, 15, 0xFFFFFF, 2, 440);
+            } else {
+                page_text_fit(px, m, h, 445, ROW_Y0 + CAT_ROWS * ROW_H + 14, 15, 0xFFFFFF, 2, 440);
+            }
+        }
 
     upload(&s_tex[2], px);
 }
