@@ -83,7 +83,7 @@ void ngb_menu_set_running(const NgbSettings *s)
  * difficulty from the start (src/cheats.c, saved), 15 the golden scarabs
  * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved), 18 Smoother
  * Glow (src/d3d/vk/glow_options.h), 19 quick-menu pause, 20 quick-menu scale (100..0
- * percent, in tens). A change
+ * percent, in tens), 21 infinite items, 22 infinite projectiles (cheats, src/cheats.c). A change
  * applies at once (8 and 9 at the next start) and is saved, the cheats'
  * not. */
 int ngb_cheat(int which);
@@ -97,6 +97,8 @@ int ngb_pc_setting(int which)
         return ngb_cheat(which - 11);
     if (which == 15)
         return ngb_cheat(3);
+    if (which == 21 || which == 22)                    /* infinite items, infinite projectiles */
+        return ngb_cheat(which - 17);
     if (which == 14 || which == 16 || which == 17) {
         ngb_pc_setting(0);
         return which == 14 ? s_running.all_difficulties : which == 16 ? s_running.all_costumes : s_running.movie_43;
@@ -128,8 +130,8 @@ int ngb_pc_setting(int which)
 
 void ngb_pc_set_setting(int which, int value)
 {
-    if ((which >= 11 && which <= 13) || which == 15) {
-        ngb_cheat_set(which == 15 ? 3 : which - 11, value);
+    if ((which >= 11 && which <= 13) || which == 15 || which == 21 || which == 22) {
+        ngb_cheat_set(which == 15 ? 3 : which >= 21 ? which - 17 : which - 11, value);
         return;
     }
     ngb_pc_setting(0);

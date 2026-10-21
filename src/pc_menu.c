@@ -62,7 +62,7 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
-       ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE,
+       ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -77,7 +77,7 @@ static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHA
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_BACK };
 static const uint8_t s_rows_start[] = { ROW_SKIP, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
 static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
-static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_BACK };
+static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
 static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
     { s_rows_gfx, (int)sizeof s_rows_gfx },
@@ -94,6 +94,10 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define T_QUICKFREEZE 0x201B7
 #define D_QUICKFREEZE 0x201B8
 #define D_GAMEPLAY 0x201B9            /* the category */
+#define T_INFITEMS 0x201BA            /* the cheats: infinite items, infinite projectiles */
+#define T_INFAMMO  0x201BB
+#define D_INFITEMS 0x201BC
+#define D_INFAMMO  0x201BD
 #define T_QUICKSCALE  0x201C0
 #define D_QUICKSCALE  0x201C1
 #define T_QUICKSCALE0 0x201C2        /* + 0..10: 100%, 90%, ... 10%, Off */
@@ -167,6 +171,10 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
     { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen." },
+    { T_INFITEMS, "Infinite Items" },
+    { T_INFAMMO,  "Infinite Projectiles" },
+    { D_INFITEMS, "Elixirs, rations and the Talisman of Rebirth are not used up. For this session only." },
+    { D_INFAMMO,  "Shuriken, smoke bombs, arrows and spears are not used up. For this session only." },
     { T_QUICKSCALE0 + 0, "100%" }, { T_QUICKSCALE0 + 1, "90%" },
     { T_QUICKSCALE0 + 2, "80%" }, { T_QUICKSCALE0 + 3, "70%" },
     { T_QUICKSCALE0 + 4, "60%" }, { T_QUICKSCALE0 + 5, "50%" },
@@ -229,7 +237,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_HEALTH,  "Ryu's health stays full. For this session only." },
     { D_NINPO,   "Ninpo is always ready. For this session only." },
     { D_ESSENCE, "As much essence as can be held. For this session only." },
-    { D_CHEATS,  "Help for a hard spot: health, ninpo and essence. Not saved." },
+    { D_CHEATS,  "Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved." },
     { T_ALLDIFF, "All Difficulties" },
     { D_ALLDIFF, "Every difficulty at New Game, Ninja Dog to Master Ninja." },
     { T_SCARABS, "Golden Scarabs" },
@@ -299,7 +307,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_RENDER, T_TEXTURE, T_SHADOW, T_DISPLAY, T_VSYNC,
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
-                                   T_GLOW, T_QUICKFREEZE, T_QUICKSCALE };
+                                   T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -700,6 +708,8 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_SCARABS: return ngb_pc_setting(15) ? T_ON : T_OFF;
     case ROW_ALLCOST: return ngb_pc_setting(16) ? T_YES : T_NO;
     case ROW_GLOW:    return ngb_pc_setting(18) ? T_ON : T_OFF;
+    case ROW_INFITEMS: return ngb_pc_setting(21) ? T_ON : T_OFF;
+    case ROW_INFAMMO: return ngb_pc_setting(22) ? T_ON : T_OFF;
     default:          return 0;
     }
 }
@@ -710,7 +720,7 @@ static int pc_value_change(int row, int delta)
 {
     int kind = row_kind(row);
     int step = delta > 0 ? 1 : -1;
-    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_QUICKSCALE))
+    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_INFAMMO))
         return 0;
     if (!delta)
         return 1;
@@ -752,6 +762,8 @@ static int pc_value_change(int row, int delta)
     case ROW_SCARABS: ngb_pc_set_setting(15, !ngb_pc_setting(15)); break;
     case ROW_ALLCOST: ngb_pc_set_setting(16, !ngb_pc_setting(16)); break;
     case ROW_GLOW:    ngb_pc_set_setting(18, !ngb_pc_setting(18)); break;
+    case ROW_INFITEMS: ngb_pc_set_setting(21, !ngb_pc_setting(21)); break;
+    case ROW_INFAMMO: ngb_pc_set_setting(22, !ngb_pc_setting(22)); break;
     case ROW_HEALTH:
     case ROW_NINPO:
     case ROW_ESSENCE: {
@@ -1833,7 +1845,8 @@ void sub_00220870(void)
                                            D_HEALTH & 0xFFFF, D_NINPO & 0xFFFF, D_ESSENCE & 0xFFFF,
                                            D_ALLDIFF & 0xFFFF, D_SCARABS & 0xFFFF, D_ALLCOST & 0xFFFF,
                                            D_EXTRACOST & 0xFFFF, D_GLOW & 0xFFFF,
-                                           D_QUICKFREEZE & 0xFFFF, D_QUICKSCALE & 0xFFFF };
+                                           D_QUICKFREEZE & 0xFFFF, D_QUICKSCALE & 0xFFFF,
+                                           D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);
