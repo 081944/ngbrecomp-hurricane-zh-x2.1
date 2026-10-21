@@ -120,8 +120,8 @@ static const char *const s_help[S_COUNT] = {
 /* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
-    { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW },
-    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS },
+    { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
+    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, -1 },
     { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
     { S_QUICKSCALE, S_QUICKFREEZE, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO },
