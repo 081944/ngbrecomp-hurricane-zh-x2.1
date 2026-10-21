@@ -33,7 +33,9 @@
 
 - vb-zh-x2.1 的全部内容：中文汉化、交差之法切换（飓风包 / 黑之章）、宁静腕轮、妖刀鬼彻扣血、
   带全部金圣甲虫开新一轮、还魂护符开关、扳机选服装、弓箭准星、第三人称视角设定等。
-- ngbrecomp 的 PC 功能：高渲染分辨率、16:9 / 16:10 / 21:9、键鼠与改键、多重采样抗锯齿、各向异性过滤、稳定帧率。
+- ngbrecomp 的 PC 功能：高渲染分辨率、16:9 / 16:10 / 21:9、键鼠与改键、多重采样抗锯齿、各向异性过滤、稳定帧率、
+  镜头灵敏度、柔和泛光；“玩法”中的快速菜单（仿《忍者龙剑传 2》，用十字键选择武器、忍法与道具，默认关闭）；
+  作弊（含无限道具、无限飞行道具）。
 - 重编译版自己的菜单（PC版设置、暂停菜单的“设置”页、F1 设置、退出页与确认框）在游戏文字语言为“亚洲”时显示中文（x2.1 默认即是）。
 
 不包含：SFC 忍者龙剑传三部曲与街机版。它们是另外的程序，没有重编译，主菜单中已隐藏这两项。
@@ -62,11 +64,14 @@
 - 重编译器（`xboxrecomp/tools/recomp`）：支持 pushad / popad / pushfd / popfd，并为补丁写入 XBE 的代码新增三个选项——
   `--flags-after-call`、`--flags-out`（把标志位交还调用方的挂钩）和 `--ebp-to-callee`（读取调用方 ebp 的挂钩）。
   清单在 `src/*.json`，测试在 `xboxrecomp/tools/recomp/test_*.py`。
-- ngbrecomp 手写的函数与其中的 x2.1 改动合并（`src/pc_menu.c`、`src/menu_mouse.c`、`src/hurricane_hint.c`；脚本在 `tools/hurricane/`）。
+- ngbrecomp 手写的函数与其中的 x2.1 改动合并（`src/pc_menu.c`、`src/menu_mouse.c`、`src/hurricane_hint.c`；脚本在 `tools/hurricane/`），
+  包括上游手写改写的游戏函数：`src/camera.c` 的镜头（x2.1 在 0x47A92、0x4FA22 的视角设定调用）与 `src/cheats.c` 的道具计数
+  （x2.1 在 0x1543B9 清除还魂护符开关）。
 - 重编译版自身文字的中文：`tools/hurricane/zh_text.tsv` → `src/hurricane_zh_data.c`（`tools/hurricane/make_zh.py`）；
   x2.1 字库缺的 9 个字在运行时补进字库页的空格（`src/hurricane_zh.c`）。
-- 金龙图标（`tools/hurricane/make_icon.py`）、带版本号的窗口标题、高 DPI 支持、隐藏街机入口、
-  不加入上游的“反转镜头”（x2.1 已有自己的视角设定）。
+- 金龙图标（`tools/hurricane/make_icon.py`）、带版本号的窗口标题、高 DPI 支持、隐藏街机入口。
+  不加入上游的“反转镜头”“第一人称反转”“读档后第三人称”：x2.1 已有自己的视角设定，读档后也一律是第三人称镜头。
+  只改变速度的“镜头灵敏度”保留。
 
 ## 从源码构建（Windows）
 

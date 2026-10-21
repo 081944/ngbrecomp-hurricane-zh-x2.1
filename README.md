@@ -36,7 +36,9 @@ No game data is included. You need your own copy of the game and the x2.1 patch.
   Tranquility, Kitetsu's health drain, a new round with all Golden Scarabs, the Talisman of Rebirth switch,
   costumes by trigger, the bow crosshair, the third-person camera option and the rest.
 - ngbrecomp's PC features: high render resolutions, 16:9 / 16:10 / 21:9, keyboard and mouse with
-  rebinding, MSAA, anisotropic filtering, steady frame pacing.
+  rebinding, MSAA, anisotropic filtering, steady frame pacing, Camera Sensitivity, Smoother Glow, and
+  under Gameplay an NG2-style d-pad Quick Menu for weapons, Ninpo and items (off unless chosen); cheats
+  including Infinite Items and Infinite Projectiles.
 - The recomp's own menus (RECOMP SETTINGS, the pause menu's Settings tab, the F1 settings, the
   Exit page and dialogs) in Chinese while the game's text language is Asia (the x2.1 default).
 
@@ -71,12 +73,16 @@ Branch `hurricane`, merged with upstream as it moves on:
   caller) and `--ebp-to-callee` (hooks that read an FPO caller's ebp). Lists in `src/*.json`; tests in
   `xboxrecomp/tools/recomp/test_*.py`.
 - Hand-written functions of ngbrecomp merged with the x2.1 changes in them (`src/pc_menu.c`,
-  `src/menu_mouse.c`, `src/hurricane_hint.c`; scripts in `tools/hurricane/`).
+  `src/menu_mouse.c`, `src/hurricane_hint.c`; scripts in `tools/hurricane/`), including the game functions
+  upstream rewrote by hand: the cameras in `src/camera.c` (x2.1's camera-direction calls at 0x47A92 and
+  0x4FA22) and the item count in `src/cheats.c` (x2.1's Talisman of Rebirth switch cleared at 0x1543B9).
 - Chinese for the recomp's own text: `tools/hurricane/zh_text.tsv` → `src/hurricane_zh_data.c`
   (`tools/hurricane/make_zh.py`); the nine characters x2.1's glyph page lacks are added to its free cells
   at run time (`src/hurricane_zh.c`).
 - Icon (a golden dragon, `tools/hurricane/make_icon.py`), window title with the version, per-monitor DPI
-  awareness, the arcade entry hidden, upstream's Invert Camera left out (x2.1 has its own camera option).
+  awareness, the arcade entry hidden. Upstream's Invert Camera, Invert First-Person X and Start in Third
+  Person are left out: x2.1 has its own camera-direction option and starts every load in the third-person
+  camera. Camera Sensitivity, which changes only the speed, is kept.
 
 ## Building from source (Windows)
 
