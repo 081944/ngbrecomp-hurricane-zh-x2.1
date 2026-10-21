@@ -703,8 +703,10 @@ static void choose_renderer(void)
 {
 #if defined(NGB_NV2A_VK)
     set_default("NGB_RENDERER", "d3d");   /* read again by src/d3d (d3d.c, hle.cpp, vk/backend.cpp) */
-    if (!strcmp(getenv("NGB_RENDERER"), "d3d") && !getenv("NGB_D3D_KEEP_NV2A"))
+    if (!strcmp(getenv("NGB_RENDERER"), "d3d") && !getenv("NGB_D3D_KEEP_NV2A")) {
         set_default("NV2A_NO_PREWARM", "1");   /* xemu's renderer draws nothing: none of its pipelines */
+        set_default("NV2A_NO_DRAWS", "1");     /* nor its buffers for drawing (#73) */
+    }
 #endif
     const char *r = getenv("NGB_RENDERER");
 #if defined(NGB_NV2A_VK)
