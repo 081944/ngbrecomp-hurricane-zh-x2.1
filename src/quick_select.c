@@ -173,9 +173,6 @@ static void picture(NgbQuickEntry *e)
     case 0x14E:
         art_id = 0;
         break;
-    case 0x165:
-        art_id = 8;
-        break;
     case 0xF:
     case 0x9C:
     case 0x16D:
@@ -317,6 +314,10 @@ static void picture(NgbQuickEntry *e)
     case 0x30:
         art = "fu_syuri";
         name = "Windmill Shuriken";
+        break;
+    case 0x165:                       /* its own picture, not the incendiary shuriken's */
+        art = "smokebom";
+        name = "Smoke Bomb";
         break;
     case 0x27:
     case 0x29:
