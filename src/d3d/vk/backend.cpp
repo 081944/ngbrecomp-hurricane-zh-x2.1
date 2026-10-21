@@ -509,7 +509,7 @@ private:
     VkImageView BindTexture(const State& s, int stage, TexInfo& info, bool& from_target);
     Image null2d_, nullcube_, null3d_;
     std::unordered_map<uint64_t, VkSampler> samplers_;
-    VkSampler Sampler(const State& s, int stage, const TexInfo& info, bool mirror = false);
+    VkSampler Sampler(const State& s, int stage, const TexInfo& info);
 
     // shaders and pipelines
     VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
@@ -1831,12 +1831,11 @@ void VulkanBackend::BumpCheck(Tex& tx, const char* when) {
     vmaDestroyBuffer(vma_, buf, mem);
 }
 
-VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info, bool mirror) {
+VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info) {
     const auto& t = s.tss[size_t(stage)];
     // D3DTEXF: 1 point, 2 linear, 3 anisotropic, 4 quincunx, 5 gaussian
     uint32_t mag = t[kTssMagFilter], min = t[kTssMinFilter], mip = t[kTssMipFilter];
     uint32_t au = t[kTssAddressU], av = t[kTssAddressV], aw = t[kTssAddressW], border = t[kTssBorderColor];
-    if (mirror) au = av = 2;                           // D3DTADDRESS_MIRROR (see the heat haze, Draw)
     // the console tests texel OP reference; Vulkan tests reference OP texel, so the sides swap
     static const uint8_t swap[8] = {0, 4, 2, 6, 1, 5, 3, 7};
     uint32_t cmp = info.shadow ? swap[uint32_t(Cmp(s.rs[kRsShadowFunc]))] : 0;
@@ -2834,18 +2833,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         img[i] = {VK_NULL_HANDLE, v,
                   info[i].shadow ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         if (!views[i]) img[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        // The heat haze over lava (texture modes 0x2621) reads the picture on stage 2 at offsets that go past
-        // its edges, clamped there: the last column repeated, a streaky band down the right of the screen,
-        // the console's too (#55). Mirrored, the read past the edge is the picture just inside it.
-        // NGB_D3D_HAZE_CLAMP=1: as the console.
-        static const bool haze_clamp = std::getenv("NGB_D3D_HAZE_CLAMP") != nullptr;
-        bool haze = !haze_clamp && i == 2 && from_target[2] && s.rs[kRsPsTextureModes] == 0x2621 &&
-                    s.tss[2][kTssAddressU] == 3 && s.tss[2][kTssAddressV] == 3;
-        if (haze) {
-            static bool told;
-            if (!told) { told = true; std::fprintf(stderr, "[D3D] heat haze: its picture read mirrored at the edges\n"); }
-        }
-        VkSampler sampler=glow_pass && i==0 ? glow_soft_sampler_ : Sampler(s,i,info[i],haze);
+        VkSampler sampler=glow_pass && i==0 ? glow_soft_sampler_ : Sampler(s,i,info[i]);
         smp[i] = {sampler, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
     }
     VkWriteDescriptorSet w[10] = {};
