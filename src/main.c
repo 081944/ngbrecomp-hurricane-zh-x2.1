@@ -388,6 +388,25 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
     fprintf(stderr, "             esi=%08X edi=%08X esp=%08X\n",
             g_esi, g_edi, g_esp);
     print_host_symbol((void *)(uintptr_t)ep->ContextRecord->Rip);
+#if !defined(_WIN32)
+    {   /* the host's call chain: a fault outside the lifted code (a driver, a layer) names its caller */
+        void *bt[48];
+        int n = backtrace(bt, 48);
+        FILE *mf = fopen("/proc/self/maps", "r");   /* which mapping the faulting instruction is in */
+        char line[512];
+        uintptr_t rip = (uintptr_t)ep->ContextRecord->Rip;
+        while (mf && fgets(line, sizeof line, mf)) {
+            unsigned long lo, hi;
+            if (sscanf(line, "%lx-%lx", &lo, &hi) == 2 && rip >= lo && rip < hi)
+                fprintf(stderr, "  RIP in mapping: %s", line);
+        }
+        if (mf)
+            fclose(mf);
+        fprintf(stderr, "  host backtrace:\n");
+        fflush(stderr);
+        backtrace_symbols_fd(bt, n, fileno(stderr));
+    }
+#endif
     print_guest_stack();
     fflush(stderr);
     return EXCEPTION_CONTINUE_SEARCH;
