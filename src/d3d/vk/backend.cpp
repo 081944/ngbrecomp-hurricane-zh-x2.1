@@ -1471,6 +1471,24 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     if (ds) Barrier(ds->img, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     if (rt && rt->samples > 1) Barrier(rt->ms, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     if (ds && ds->samples > 1) Barrier(ds->ms, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    {   // The pass before, on the same targets in the same layout, got no barrier above (Barrier skips an
+        // unchanged layout), and Vulkan orders attachment writes only within a pass: its depth and colour
+        // writes against this pass's tests and blending need one. RADV keeps passes in order regardless;
+        // AMD's Windows driver does not have to -- Ryu's shadow, drawn in a pass after another on its shadow
+        // map, went missing for a few frames at a time there (#50).
+        VkMemoryBarrier2 mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+        mb.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                          VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        mb.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        mb.dstStageMask = mb.srcStageMask;
+        mb.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+                           VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                           VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        VkDependencyInfo di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        di.memoryBarrierCount = 1;
+        di.pMemoryBarriers = &mb;
+        d_.vkCmdPipelineBarrier2(cmd_, &di);
+    }
     VkRenderingAttachmentInfo ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     VkRenderingAttachmentInfo da{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     if (rt) {
