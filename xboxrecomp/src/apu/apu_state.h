@@ -234,7 +234,7 @@ hrtf_filter_set_target_params(HrtfFilter *f, float hrir_coeff[2][HRTF_NUM_TAPS],
         for (int k = 0; k < HRTF_NUM_TAPS; k++) {
             s += fabsf(coeff[k]);
         }
-        if (s == 0.0f || s == 1.0f) break;
+        if (s == 0.0f || s == 1.0f) continue;   /* xboxrecomp: not break -- the other ear still normalised */
         for (int k = 0; k < HRTF_NUM_TAPS; k++) {
             coeff[k] /= s;
         }
