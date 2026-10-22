@@ -35,7 +35,9 @@
 #include "nv2a_window.h"
 #include "ngb_launch.h"
 
+#ifndef TRILOGY_XBE   /* NinjaTomoe.xbe for the Japanese build (CMakeLists.txt) */
 #define TRILOGY_XBE "NinjaTrilogy.xbe"
+#endif
 
 /* RECOMP_TLS: the runtime's guest registers are thread-local (as in src/main.c) */
 extern RECOMP_TLS uint32_t g_esp;

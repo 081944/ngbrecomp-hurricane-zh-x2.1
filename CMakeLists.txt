@@ -226,57 +226,63 @@ endif()
 # ngb-setup asks for the player's disc and installs it (src/install.c); the
 # game runs it from beside itself when it finds no game files. Optional:
 # without Qt the game asks through zenity/kdialog.
-# ── NinjaTrilogy: the NES Ninja Gaiden the arcade cabinet launches (#18, src/trilogy/main.c) ──
-# Built when tools/pipeline_trilogy.sh has generated its code. It draws with the GPU model's own
-# NV2A renderer, so it needs it.
+# ── The arcade Ninja Gaiden the cabinet and the main menu launch (#18, src/trilogy/main.c) ──
+# NinjaTrilogy.xbe is the English build, NinjaTomoe.xbe the Japanese one (the game picks it when its
+# voices are set to Japanese): one program each, from tools/pipeline_trilogy.sh [tomoe]. Each is built
+# when its code has been generated. They draw with the GPU model's own NV2A renderer, so they need it.
 
-file(GLOB TRILOGY_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen_trilogy/*.c")
-if(TRILOGY_GEN_SOURCES AND NGB_NV2A_VK)
-    add_library(trilogy_gen OBJECT ${TRILOGY_GEN_SOURCES})
-    target_include_directories(trilogy_gen PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy
+function(ngb_arcade_program target output gen_dir xbe)
+    file(GLOB gen_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}/*.c")
+    if(NOT gen_sources OR NOT NGB_NV2A_VK)
+        return()
+    endif()
+    add_library(${target}_gen OBJECT ${gen_sources})
+    target_include_directories(${target}_gen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}
         ${XBOXRECOMP_DIR}/include
         ${XBOXRECOMP_DIR}/src
         ${XBOXRECOMP_DIR}/src/kernel)
-    target_link_libraries(trilogy_gen PRIVATE platform)
+    target_link_libraries(${target}_gen PRIVATE platform)
     if(NGB_TRILOGY_ABI_CHECK)   # log every call that returns with ebx/esi/edi changed or the stack unbalanced
-        target_compile_definitions(trilogy_gen PRIVATE RECOMP_ABI_CHECK)
+        target_compile_definitions(${target}_gen PRIVATE RECOMP_ABI_CHECK)
     endif()
     if(MSVC)
-        target_compile_options(trilogy_gen PRIVATE /bigobj /O2)
+        target_compile_options(${target}_gen PRIVATE /bigobj /O2)
     else()
-        target_compile_options(trilogy_gen PRIVATE
+        target_compile_options(${target}_gen PRIVATE
             -O2 -fno-strict-aliasing -fwrapv
             -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable
             -Wno-parentheses-equality -Wno-tautological-compare
             -Wno-incompatible-pointer-types-discards-qualifiers)
     endif()
-    add_executable(ninja_trilogy
+    add_executable(${target}
         src/trilogy/main.c
         src/launch.c
         src/recomp_manual.c
-        $<TARGET_OBJECTS:trilogy_gen>
+        $<TARGET_OBJECTS:${target}_gen>
         $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>)
-    target_link_libraries(ninja_trilogy PRIVATE xboxrecomp xbox_nv2a_vk)
-    target_compile_definitions(ninja_trilogy PRIVATE NGB_NV2A_VK)
+    target_link_libraries(${target} PRIVATE xboxrecomp xbox_nv2a_vk)
+    target_compile_definitions(${target} PRIVATE NGB_NV2A_VK TRILOGY_XBE="${xbe}")
     if(NGB_TRILOGY_ABI_CHECK)
-        target_compile_definitions(ninja_trilogy PRIVATE NGB_TRILOGY_ABI_CHECK)
+        target_compile_definitions(${target} PRIVATE NGB_TRILOGY_ABI_CHECK)
     endif()
-    target_include_directories(ninja_trilogy PRIVATE
+    target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}
         ${XBOXRECOMP_DIR}/include
         ${XBOXRECOMP_DIR}/src
         ${XBOXRECOMP_DIR}/src/nv2a_vk/host)
-    set_target_properties(ninja_trilogy PROPERTIES OUTPUT_NAME NinjaTrilogy)
+    set_target_properties(${target} PROPERTIES OUTPUT_NAME ${output})
     if(WIN32)
-        set_target_properties(ninja_trilogy PROPERTIES WIN32_EXECUTABLE TRUE)
-        target_link_libraries(ninja_trilogy PRIVATE winmm dbghelp shell32 ole32)
+        set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_link_libraries(${target} PRIVATE winmm dbghelp shell32 ole32)
     else()
-        target_link_libraries(ninja_trilogy PRIVATE ${CMAKE_DL_LIBS} m)
+        target_link_libraries(${target} PRIVATE ${CMAKE_DL_LIBS} m)
     endif()
-    message(STATUS "NinjaTrilogy: ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy")
-endif()
+    message(STATUS "${output}: ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}")
+endfunction()
+ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe)
+ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe)
 
 if(NOT WIN32)
     find_package(Qt6 QUIET COMPONENTS Widgets)

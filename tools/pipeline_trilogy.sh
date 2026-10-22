@@ -2,16 +2,21 @@
 # Regenerate src/recomp/gen_trilogy from the disc's NinjaTrilogy.xbe -- the NES Ninja Gaiden that the
 # arcade cabinet and the main menu's ARCADE NINJA GAIDEN launch (#18; src/trilogy/main.c, src/launch.c).
 #
-#   tools/pipeline_trilogy.sh        (after tools/pipeline.sh has unpacked the disc into game_files/)
+#   tools/pipeline_trilogy.sh         (after tools/pipeline.sh has unpacked the disc into game_files/)
+#   tools/pipeline_trilogy.sh tomoe   NinjaTomoe.xbe, the Japanese build, into src/recomp/gen_tomoe
 #
-# Its analysis goes to build/trilogy, apart from default.xbe's.
+# The analysis goes to build/trilogy (build/tomoe), apart from default.xbe's. The two builds' code is the
+# same function for function (three struct offsets in the pause menu differ), so they share the seeds.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")/.." && pwd)
 toolkit=${XBOXRECOMP_DIR:-$here/xboxrecomp}
 toolkit=$(cd "$toolkit" && pwd)
-xbe=$here/game_files/NinjaTrilogy.xbe
-out=$here/build/trilogy
+if [ "${1:-}" = tomoe ]; then
+    xbe=$here/game_files/NinjaTomoe.xbe out=$here/build/tomoe gen=$here/src/recomp/gen_tomoe name="Ninja Gaiden (NES, Japanese)"
+else
+    xbe=$here/game_files/NinjaTrilogy.xbe out=$here/build/trilogy gen=$here/src/recomp/gen_trilogy name="Ninja Gaiden (NES)"
+fi
 py=$toolkit/.venv/bin/python
 [ -x "$py" ] || { echo "run tools/pipeline.sh first (it makes the toolkit's venv and unpacks the disc)"; exit 1; }
 [ -f "$xbe" ] || { echo "no $xbe: run tools/pipeline.sh first"; exit 1; }
@@ -28,9 +33,9 @@ echo "== func_id"; "$py" -m tools.func_id "$xbe" --functions "$out/disasm/functi
 echo "== abi";     "$py" -m tools.abi_analysis "$xbe" --disasm-dir "$out/disasm" --func-id-dir "$out/func_id" \
                       --output-dir "$out/abi" >/dev/null
 echo "== recomp"
-mkdir -p "$here/src/recomp/gen_trilogy" && find "$here/src/recomp/gen_trilogy" -name "*.[ch]" -delete
-"$py" -m tools.recomp "$xbe" --all --split 250 --game-name "Ninja Gaiden (NES)" \
+mkdir -p "$gen" && find "$gen" -name "*.[ch]" -delete
+"$py" -m tools.recomp "$xbe" --all --split 250 --game-name "$name" \
     --disasm-dir "$out/disasm" --func-id-dir "$out/func_id" --abi-dir "$out/abi" \
-    -o "$out/recomp" --gen-dir "$here/src/recomp/gen_trilogy" > "$out/recomp_log.txt" 2>&1 \
+    -o "$out/recomp" --gen-dir "$gen" > "$out/recomp_log.txt" 2>&1 \
     || { tail -20 "$out/recomp_log.txt"; exit 1; }
 tail -3 "$out/recomp_log.txt"

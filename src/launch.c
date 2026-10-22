@@ -10,7 +10,8 @@
  * (RECOMP_LAUNCH_PAGE: the runtime puts it back where XGetLaunchInfo looks) and starts that program in
  * place of this one: exec on Linux and macOS, a new process and this one ended on Windows. Each image
  * is its own recompiled program, next to this one: NinjaGaidenBlack for default.xbe, NinjaTrilogy for
- * NinjaTrilogy.xbe.
+ * NinjaTrilogy.xbe, NinjaTomoe for NinjaTomoe.xbe (the Japanese arcade, launched instead when the game's
+ * voices are Japanese).
  */
 #include "ngb_launch.h"
 #include "port.h"
@@ -200,6 +201,8 @@ static int program_for(const char *path, char *out, size_t n)
         prog = "NinjaGaidenBlack";
     else if (!strcasecmp(name, "NinjaTrilogy.xbe"))
         prog = "NinjaTrilogy";
+    else if (!strcasecmp(name, "NinjaTomoe.xbe"))   /* the Japanese build: the game's voices set to Japanese */
+        prog = "NinjaTomoe";
     else
         return 0;
     long len = ngb_exe_path(out, n);
@@ -299,6 +302,6 @@ void ngb_launch_init(const char *game_dir, const char *save_dir, int width, int 
     long len = ngb_exe_path(self, sizeof self);
     if (len > 0) {
         self[len] = 0;
-        s_is_trilogy = strstr(self, "NinjaTrilogy") != NULL;
+        s_is_trilogy = strstr(self, "NinjaTrilogy") != NULL || strstr(self, "NinjaTomoe") != NULL;
     }
 }
