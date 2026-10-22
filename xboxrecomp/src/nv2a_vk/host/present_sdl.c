@@ -397,6 +397,19 @@ int nv2a_window_create(const char *title, int width, int height,
  * the main thread, which owns the window. */
 static int s_win_req, s_win_w, s_win_h, s_win_fs;
 
+int nv2a_window_mode(int *width, int *height)
+{
+    if (!s_window)
+        return -1;
+    Uint32 flags = SDL_GetWindowFlags(s_window);
+    if (flags & SDL_WINDOW_FULLSCREEN)
+        return 1;
+    if (flags & SDL_WINDOW_BORDERLESS)
+        return 2;
+    SDL_GetWindowSize(s_window, width, height);
+    return 0;
+}
+
 void nv2a_window_request(int width, int height, int fullscreen)   /* mode: 0, 1, 2 */
 {
     s_win_w = width;

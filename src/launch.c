@@ -14,6 +14,7 @@
  */
 #include "ngb_launch.h"
 #include "port.h"
+#include "nv2a_window.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -237,12 +238,23 @@ static void launch_image(const char *path, const void *page, size_t len)
         return;
     }
     fclose(f);
+    /* The window as the player left it (F11, Alt+Enter, the settings), not as it started. */
+    {
+        int w = s_w, h = s_h, fs = nv2a_window_mode(&w, &h);
+        if (fs >= 0) {
+            s_fs = fs;
+            if (w > 0 && h > 0) {
+                s_w = w;
+                s_h = h;
+            }
+        }
+    }
     snprintf(win, sizeof win, "%d %d %d", s_w, s_h, s_fs);
     set_env("RECOMP_LAUNCH_PAGE", file);
     set_env("NGB_GAME_DIR", s_game);
     set_env("NGB_SAVE_DIR", s_save);
     set_env("NGB_LAUNCH_WINDOW", win);
-    fprintf(stderr, "[LAUNCH] %s: starting %s\n", path, prog);
+    fprintf(stderr, "[LAUNCH] %s: starting %s (window %s)\n", path, prog, win);
     fflush(stderr);
 #if !defined(_WIN32)
     close_on_exec_all();
