@@ -1372,7 +1372,7 @@ static void voice_process(MCPXAPUState *d,
          * ear's (DirectSound sets them 6, 8, 7, 9: 3D front and rear left, front and rear right). They take the
          * filter's left and right output; the voice's own channel gave a mono voice's left ear to all four, and
          * positional sounds came out centred (#30). */
-        int ch = (v < MCPX_HW_MAX_3D_VOICES && b < 4) ? b >> 1 : b % channels;
+        int ch = (v < MCPX_HW_MAX_3D_VOICES && b < 4 && g_config.audio.hrtf) ? b >> 1 : b % channels;
         for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
             mixbins[bin[b]][i] += g * samples[i][ch];
         }
@@ -1394,6 +1394,13 @@ static void voice_process(MCPXAPUState *d,
     }
 
     (void)voice_list;
+}
+
+/* xboxrecomp: the HRTF filters on or off (a host setting: they place the 3D voices left and right, #30, but
+ * also take 3-4 dB off their treble). Off, the 3D submixes all take the voice's own channel, as before #30. */
+void mcpx_apu_set_hrtf(int on)
+{
+    g_config.audio.hrtf = on != 0;
 }
 
 /* ============================================================

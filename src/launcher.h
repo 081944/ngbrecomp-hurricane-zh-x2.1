@@ -25,6 +25,7 @@ typedef struct NgbSettings {
     int all_difficulties;
     int all_costumes;       /* every costume at New Game's Costume Selection */
     int movie_43;           /* the game's Movie Display Ratio 4:3 (kept here: src/pc_menu.c) */
+    int positional_audio;   /* the APU's HRTF filters: 3D sounds placed left and right (#30), duller */
     int smooth_glow;        /* the glow's continuous filtering (src/d3d/vk/glow_filter.h, #64) */
     /* Hard, Very Hard and Master Ninja offered without clearing the one before */
 } NgbSettings;

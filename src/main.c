@@ -827,6 +827,9 @@ static void *guest_main(void *unused)
         g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
         fprintf(stderr, "[BOOT] emulated APU %s\n",
                 g_apu_state ? "up" : "FAILED to initialise");
+        extern int ngb_pc_setting(int which);
+        extern void mcpx_apu_set_hrtf(int on);
+        mcpx_apu_set_hrtf(ngb_pc_setting(23));   /* Positional Audio (#30), off unless chosen */
     }
 
     xbox_kernel_init();

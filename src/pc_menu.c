@@ -62,7 +62,7 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
-       ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO,
+       ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO, ROW_POSAUDIO,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -76,7 +76,7 @@ static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
 static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_BACK };
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_BACK };
 static const uint8_t s_rows_start[] = { ROW_SKIP, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_POSAUDIO, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
 static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
@@ -101,6 +101,8 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define T_QUICKSCALE  0x201C0
 #define D_QUICKSCALE  0x201C1
 #define T_QUICKSCALE0 0x201C2        /* + (150 - size) / 25: 150%, 125%, 100% ... 25%, Off (+6) */
+#define T_POSAUDIO 0x201C9            /* Positional Audio (the APU's HRTF filters, #30) */
+#define D_POSAUDIO 0x201CA
 #define T_PC       0x20100
 #define T_RENDER   0x20101
 #define T_TEXTURE  0x20102
@@ -168,6 +170,8 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 
 static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKFREEZE, "Quick Menu Pause" },
+    { T_POSAUDIO, "Positional Audio" },
+    { D_POSAUDIO, "Places sounds left and right as the console's sound chip does, but duller. Off: centred." },
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
     { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen." },
@@ -305,7 +309,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_RENDER, T_TEXTURE, T_SHADOW, T_DISPLAY, T_VSYNC,
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
-                                   T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO };
+                                   T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO, T_POSAUDIO };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -674,6 +678,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
 {
     switch (row_kind(row)) {
     case ROW_QUICKFREEZE: return ngb_pc_setting(19) ? T_ON : T_OFF;
+    case ROW_POSAUDIO: return ngb_pc_setting(23) ? T_ON : T_OFF;
     case ROW_QUICKSCALE: {
         int v = ngb_pc_setting(20);
         return T_QUICKSCALE0 + (uint32_t)(v ? (150 - v) / 25 : 6);
@@ -721,12 +726,13 @@ static int pc_value_change(int row, int delta)
 {
     int kind = row_kind(row);
     int step = delta > 0 ? 1 : -1;
-    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_INFAMMO))
+    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_POSAUDIO))
         return 0;
     if (!delta)
         return 1;
     switch (kind) {
     case ROW_QUICKFREEZE: ngb_pc_set_setting(19, !ngb_pc_setting(19)); break;
+    case ROW_POSAUDIO: ngb_pc_set_setting(23, !ngb_pc_setting(23)); break;
     case ROW_QUICKSCALE: ngb_pc_set_setting(20, ngb_quick_scale_step(ngb_pc_setting(20), step)); break;
     case ROW_RENDER: {
         int v = ngb_pc_setting(0) + step;
@@ -1847,7 +1853,7 @@ void sub_00220870(void)
                                            D_ALLDIFF & 0xFFFF, D_SCARABS & 0xFFFF, D_ALLCOST & 0xFFFF,
                                            D_EXTRACOST & 0xFFFF, D_GLOW & 0xFFFF,
                                            D_QUICKFREEZE & 0xFFFF, D_QUICKSCALE & 0xFFFF,
-                                           D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF };
+                                           D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF, D_POSAUDIO & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);
