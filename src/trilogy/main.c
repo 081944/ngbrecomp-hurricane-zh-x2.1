@@ -241,3 +241,23 @@ int main(int argc, char **argv)
         pause();
 #endif
 }
+
+#ifdef NGB_TRILOGY_ABI_CHECK
+/* -DNGB_TRILOGY_ABI_CHECK=ON: a call that returned with ebx, esi or edi changed or its stack not unwound
+ * (the generated code's RECOMP_ABI_CALL), once per callee: where a recompiled function breaks its caller. */
+void recomp_abi_violation_log(uint32_t va, uint32_t ebx0, uint32_t esi0, uint32_t edi0, uint32_t esp0)
+{
+    extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
+    static uint32_t seen[64];
+    static int count;
+    for (int i = 0; i < count; i++)
+        if (seen[i] == va)
+            return;
+    if (count == 64)
+        return;
+    seen[count++] = va;
+    fprintf(stderr, "[ABI] sub_%08X:%s%s%s%s  ebx %08X->%08X esi %08X->%08X edi %08X->%08X esp %08X->%08X\n", va,
+            g_ebx != ebx0 ? " ebx" : "", g_esi != esi0 ? " esi" : "", g_edi != edi0 ? " edi" : "",
+            g_esp != esp0 + 4 ? " esp" : "", ebx0, g_ebx, esi0, g_esi, edi0, g_edi, esp0, g_esp);
+}
+#endif

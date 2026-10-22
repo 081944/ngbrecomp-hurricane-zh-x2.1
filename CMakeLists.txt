@@ -239,6 +239,9 @@ if(TRILOGY_GEN_SOURCES AND NGB_NV2A_VK)
         ${XBOXRECOMP_DIR}/src
         ${XBOXRECOMP_DIR}/src/kernel)
     target_link_libraries(trilogy_gen PRIVATE platform)
+    if(NGB_TRILOGY_ABI_CHECK)   # log every call that returns with ebx/esi/edi changed or the stack unbalanced
+        target_compile_definitions(trilogy_gen PRIVATE RECOMP_ABI_CHECK)
+    endif()
     if(MSVC)
         target_compile_options(trilogy_gen PRIVATE /bigobj /O2)
     else()
@@ -256,6 +259,9 @@ if(TRILOGY_GEN_SOURCES AND NGB_NV2A_VK)
         $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>)
     target_link_libraries(ninja_trilogy PRIVATE xboxrecomp xbox_nv2a_vk)
     target_compile_definitions(ninja_trilogy PRIVATE NGB_NV2A_VK)
+    if(NGB_TRILOGY_ABI_CHECK)
+        target_compile_definitions(ninja_trilogy PRIVATE NGB_TRILOGY_ABI_CHECK)
+    endif()
     target_include_directories(ninja_trilogy PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy
