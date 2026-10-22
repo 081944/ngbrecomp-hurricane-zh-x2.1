@@ -185,6 +185,7 @@ add_executable(${PROJECT_NAME}
     $<$<BOOL:${NGB_NV2A_VK}>:${CMAKE_CURRENT_SOURCE_DIR}/src/keyboard.c>
     $<$<BOOL:${NGB_NV2A_VK}>:${CMAKE_CURRENT_SOURCE_DIR}/src/bindings.c>
     src/install.c
+    src/launch.c
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
@@ -225,6 +226,52 @@ endif()
 # ngb-setup asks for the player's disc and installs it (src/install.c); the
 # game runs it from beside itself when it finds no game files. Optional:
 # without Qt the game asks through zenity/kdialog.
+# ── NinjaTrilogy: the NES Ninja Gaiden the arcade cabinet launches (#18, src/trilogy/main.c) ──
+# Built when tools/pipeline_trilogy.sh has generated its code. It draws with the GPU model's own
+# NV2A renderer, so it needs it.
+
+file(GLOB TRILOGY_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen_trilogy/*.c")
+if(TRILOGY_GEN_SOURCES AND NGB_NV2A_VK)
+    add_library(trilogy_gen OBJECT ${TRILOGY_GEN_SOURCES})
+    target_include_directories(trilogy_gen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy
+        ${XBOXRECOMP_DIR}/include
+        ${XBOXRECOMP_DIR}/src
+        ${XBOXRECOMP_DIR}/src/kernel)
+    target_link_libraries(trilogy_gen PRIVATE platform)
+    if(MSVC)
+        target_compile_options(trilogy_gen PRIVATE /bigobj /O2)
+    else()
+        target_compile_options(trilogy_gen PRIVATE
+            -O2 -fno-strict-aliasing -fwrapv
+            -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable
+            -Wno-parentheses-equality -Wno-tautological-compare
+            -Wno-incompatible-pointer-types-discards-qualifiers)
+    endif()
+    add_executable(ninja_trilogy
+        src/trilogy/main.c
+        src/launch.c
+        src/recomp_manual.c
+        $<TARGET_OBJECTS:trilogy_gen>
+        $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>)
+    target_link_libraries(ninja_trilogy PRIVATE xboxrecomp xbox_nv2a_vk)
+    target_compile_definitions(ninja_trilogy PRIVATE NGB_NV2A_VK)
+    target_include_directories(ninja_trilogy PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy
+        ${XBOXRECOMP_DIR}/include
+        ${XBOXRECOMP_DIR}/src
+        ${XBOXRECOMP_DIR}/src/nv2a_vk/host)
+    set_target_properties(ninja_trilogy PROPERTIES OUTPUT_NAME NinjaTrilogy)
+    if(WIN32)
+        set_target_properties(ninja_trilogy PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_link_libraries(ninja_trilogy PRIVATE winmm dbghelp shell32 ole32)
+    else()
+        target_link_libraries(ninja_trilogy PRIVATE ${CMAKE_DL_LIBS} m)
+    endif()
+    message(STATUS "NinjaTrilogy: ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen_trilogy")
+endif()
+
 if(NOT WIN32)
     find_package(Qt6 QUIET COMPONENTS Widgets)
     if(Qt6_FOUND)

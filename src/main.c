@@ -1274,6 +1274,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "Cannot open the game window.\n");
         return 1;
     }
+    {   /* XLaunchNewImage: the arcade cabinet's NES Ninja Gaiden is another program (src/launch.c, #18) */
+        extern void ngb_launch_init(const char *game_dir, const char *save_dir, int width, int height, int fullscreen);
+        ngb_launch_init(s_game_dir, s_save_dir, cfg.width, cfg.height, cfg.fullscreen);
+    }
     /* Controllers and keyboard, on the thread that pumps the window's
      * events (hotplug arrives there too). */
     if (s_use_gpu && !s_headless)
