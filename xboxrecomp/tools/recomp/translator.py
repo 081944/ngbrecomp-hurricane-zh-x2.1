@@ -1376,7 +1376,7 @@ class FunctionTranslator:
             "scasb": {"edi"}, "scasw": {"edi"}, "scasd": {"edi"},
             "cmpsb": {"esi", "edi"}, "cmpsw": {"esi", "edi"},
             "loop": {"ecx"}, "loope": {"ecx"}, "loopne": {"ecx"},
-            "leave": {"esp", "ebp"}, "popad": set(full_registers),
+            "leave": {"esp", "ebp"}, "popad": set(full_registers), "popal": set(full_registers),
             "xlat": {"eax"}, "xlatb": {"eax"},
         }
 
@@ -2498,6 +2498,9 @@ class FunctionTranslator:
             "esp": "esp", "sp": "esp",
         }
         for insn in instructions:
+            # PUSHAD/POPAD name no operands but use all eight (lifter.py)
+            if insn.mnemonic in ("pushal", "pushad", "popal", "popad"):
+                regs.update(("eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp"))
             for op in insn.operands:
                 if op.type == "reg" and op.reg in reg_map:
                     regs.add(reg_map[op.reg])

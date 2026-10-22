@@ -1415,6 +1415,17 @@ class Lifter:
             return self._lift_push(insn, ops)
         if m == "pop":
             return self._lift_pop(insn, ops)
+        # PUSHAD/POPAD (capstone: pushal/popal): the eight registers, esp as it was before the first
+        # push; POPAD skips the saved esp. Hand-written assembly saves everything this way (Ninja Gaiden
+        # Black's arcade program: its CPU emulator's entry); as no-ops its registers came back wrong.
+        if m in ("pushal", "pushad"):
+            return ["{ uint32_t _sp0 = esp;",
+                    "  PUSH32(esp, eax); PUSH32(esp, ecx); PUSH32(esp, edx); PUSH32(esp, ebx);",
+                    "  PUSH32(esp, _sp0); PUSH32(esp, ebp); PUSH32(esp, esi); PUSH32(esp, edi); }"]
+        if m in ("popal", "popad"):
+            return ["{ uint32_t _skip;",
+                    "  POP32(esp, edi); POP32(esp, esi); POP32(esp, ebp); POP32(esp, _skip);",
+                    "  POP32(esp, ebx); POP32(esp, edx); POP32(esp, ecx); POP32(esp, eax); (void)_skip; }"]
 
         # ── Arithmetic ──
         if m in ("add", "sub", "and", "or", "xor"):
