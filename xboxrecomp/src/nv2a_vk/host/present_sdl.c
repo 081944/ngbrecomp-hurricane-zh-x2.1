@@ -1388,6 +1388,12 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
         vkCmdClearColorImage(cmd, s_images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                              &black, 1, &range);
+        /* The picture is blitted over the cleared image: two transfer writes to it, ordered only by a
+         * barrier (the validation layer's WRITE_AFTER_WRITE; a driver may overlap them, the clear landing
+         * over part of the picture). */
+        barrier(cmd, s_images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     }
 
     nv2a_host_presents++;

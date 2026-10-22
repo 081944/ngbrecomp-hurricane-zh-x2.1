@@ -1487,7 +1487,8 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
         VkDependencyInfo di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
         di.memoryBarrierCount = 1;
         di.pMemoryBarriers = &mb;
-        d_.vkCmdPipelineBarrier2(cmd_, &di);
+        static const bool off = std::getenv("NGB_D3D_NO_PASS_BARRIER") != nullptr;   // to compare
+        if (!off) d_.vkCmdPipelineBarrier2(cmd_, &di);
     }
     VkRenderingAttachmentInfo ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     VkRenderingAttachmentInfo da{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};

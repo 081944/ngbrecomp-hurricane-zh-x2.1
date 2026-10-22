@@ -65,7 +65,11 @@ Driving and watching a headless run:
   our bug or the game's".
 - Vulkan's validation layer: `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation`,
   `VK_LAYER_LOG_FILENAME=<file>`, `VK_LAYER_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG`. Run it when a bug
-  shows on one vendor's GPUs only: AMD's driver tolerates things others do not. The headless gamescope's
+  shows on one vendor's GPUs only: AMD's driver tolerates things others do not. Add `NGB_D3D_NO_PREWARM=1`:
+  with the renderer's prewarm thread making pipelines while the game thread records, the layer (1.4.363)
+  crashes in its own command-buffer checks in most runs (in 0.9.25 too). `VK_LAYER_VALIDATE_SYNC=1` adds
+  synchronization validation; set `VK_LAYER_DEBUG_ACTION` without `VK_LAYER_LOG_FILENAME` to have the
+  messages in the game's unbuffered log, so the last ones before a crash are not lost. The headless gamescope's
   own WSI layer adds swapchain and dma-buf messages that are not ours. The SPIR-V cache
   (`$NV2A_SHADER_CACHE/d3d/spirv.bin`: an 8-byte `NGBD3DC1` header, then records of hash u64, word count
   u32, words) can be split and checked offline with `spirv-val`.

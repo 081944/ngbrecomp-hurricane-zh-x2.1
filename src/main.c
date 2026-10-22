@@ -402,6 +402,11 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
         }
         if (mf)
             fclose(mf);
+        {   /* a call through a bad pointer: its return address is the word at the stack pointer */
+            uintptr_t rsp = (uintptr_t)ep->ContextRecord->Rsp;
+            fprintf(stderr, "  RSP=0x%llX, return address there:\n", (unsigned long long)rsp);
+            print_host_symbol(*(void **)rsp);
+        }
         fprintf(stderr, "  host backtrace:\n");
         fflush(stderr);
         backtrace_symbols_fd(bt, n, fileno(stderr));
