@@ -103,6 +103,16 @@ static const char *const s_mouse_name[6] = { "", "Mouse Left", "Mouse Middle", "
 const char *ngb_bind_name(int a) { return a >= 0 && a < A_COUNT ? s_act[a].name : ""; }
 const char *ngb_bind_help(int a) { return a >= 0 && a < A_COUNT ? s_act[a].help : ""; }
 int ngb_bind_pad_fixed(int a) { return a >= 0 && a < A_COUNT && s_act[a].kind == T_AXIS; }
+
+/* What the controller always has for an action that is two buttons together on the Xbox (Ninpo: Y + B, Wind
+ * Run: X + A), whatever button it is also bound to; NULL for the others (src/pause_tab.c shows it in an
+ * empty controller slot, #75). */
+const char *ngb_bind_pad_combo(int a)
+{
+    if (a < 0 || a >= A_COUNT || s_act[a].kind != T_AN2)
+        return NULL;
+    return s_act[a].a == XBOX_BUTTON_Y ? "Y + B" : s_act[a].a == XBOX_BUTTON_X ? "X + A" : NULL;
+}
 unsigned ngb_bind_generation(void) { return s_gen; }
 
 static void identity_check(void)

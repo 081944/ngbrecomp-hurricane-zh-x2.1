@@ -814,6 +814,7 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         for (int c = 0; c < 3; c++) {
             char name[64];
             int fixed = c == 2 && ngb_bind_pad_fixed(r), on = sel && c == s_ctl_col;
+            const char *combo = c == 2 && !ngb_bind_get(r, 2) ? ngb_bind_pad_combo(r) : NULL;   /* the game's own two buttons */
             float cx = s_ctl_cx[c], w = s_ctl_w[c];
             page_fill(px, cx - w / 2, y + 3, w, ROW_H - 6, on ? 0x6E64DC : 0x14141C, on ? 0.9f : 0.55f,
                       on ? 0.9f : 0.55f);
@@ -821,10 +822,12 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
                 snprintf(name, sizeof name, c == 2 ? "Press a button" : "Press a key");
             else if (fixed)
                 snprintf(name, sizeof name, r >= A_CAM_UP ? "R Stick" : "L Stick");
+            else if (combo)
+                snprintf(name, sizeof name, "%s", combo);
             else
                 ngb_bind_input_name(ngb_bind_get(r, c), name, sizeof name);
             page_text_fit(px, m, name, cx, y + 18, 15,
-                          on && capturing ? 0xF5EB5A : on ? 0xFFFFFF : fixed ? 0x6E6E78 : 0xC8C8D0, 1, w - 6);
+                          on && capturing ? 0xF5EB5A : on ? 0xFFFFFF : fixed || combo ? 0x6E6E78 : 0xC8C8D0, 1, w - 6);
         }
     }
     /* how far down the list is: a thin bar at the right */
