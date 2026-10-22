@@ -174,7 +174,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen." },
     { T_INFITEMS, "Infinite Items" },
     { T_INFAMMO,  "Infinite Projectiles" },
-    { D_INFITEMS, "Elixirs, rations and the Talisman of Rebirth are not used up. For this session only." },
+    { D_INFITEMS, "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only." },
     { D_INFAMMO,  "Shuriken, smoke bombs, arrows and spears are not used up. For this session only." },
     { T_QUICKSCALE0 + 0, "150%" }, { T_QUICKSCALE0 + 1, "125%" },
     { T_QUICKSCALE0 + 2, "100%" }, { T_QUICKSCALE0 + 3, "75%" },

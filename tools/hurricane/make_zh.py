@@ -45,6 +45,7 @@ def load_rows():
         if not l or l.startswith('#'):
             continue
         ctx, en, zh, use = l.split('\t')
+        en, zh = en.replace('\\n', '\n'), zh.replace('\\n', '\n')   # a help of two lines: \n in the file
         assert use in ('E', 'P'), l
         rows.append((ctx, en, zh, use))
     keys = [(r[0], r[1]) for r in rows]
@@ -126,7 +127,7 @@ def encode(zh, cmap):
 
 
 def c_str(s):
-    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return '"' + s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n') + '"'
 
 
 def c_bytes(b):
@@ -231,7 +232,7 @@ def main():
     L.append('')
     for i, (ctx, en, zh, use) in enumerate(rows):
         if use == 'E':
-            L.append('static const char s_e%d[] = %s;   /* %s */' % (i, c_bytes(encode(zh, cmap)), zh))
+            L.append('static const char s_e%d[] = %s;   /* %s */' % (i, c_bytes(encode(zh, cmap)), zh.replace('\n', ' ')))
     L.append('')
     L.append('const NgbZhText ngb_zh_texts[] = {')
     for i, (ctx, en, zh, use) in enumerate(rows):
@@ -279,7 +280,7 @@ def main():
     L.append('const int ngb_zh_art_count = %d;' % len(arts))
     out = os.path.join(FORK, 'src', 'hurricane_zh_data.c')
     open(out, 'w', encoding='utf-8', newline='\n').write('\n'.join(L) + '\n')
-    chars = {ch for r in rows for ch in r[2]} | {chr(c) for c in range(0x20, 0x7F)} | set('，。、：；！？（）／')
+    chars = {ch for r in rows for ch in r[2] if ch != '\n'} | {chr(c) for c in range(0x20, 0x7F)} | set('，。、：；！？（）／')
     size = make_font(sorted(chars), os.path.join(FORK, 'assets', 'fonts', 'NGBHanzi-Bold.ttf'))
     print('%d texts (%d for the game\'s table), new glyphs %s at cells %s, font %d chars %d bytes, %d pictures' % (
         len(rows), sum(r[3] == 'E' for r in rows), ''.join(order), [new[c][1] for c in order], len(chars), size,
