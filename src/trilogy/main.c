@@ -117,6 +117,26 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/* NGB_TRILOGY_TABLE_DUMP=<file>: 3 s in, the CPU core's opcode table (0x3210A0, 65536 handlers, filled at
+ * run time) as its distinct targets, one a line -- seeds for tools/pipeline_trilogy.sh. */
+static void *table_dump(void *path)
+{
+    sleep(3);
+    static uint32_t seen[8192];
+    int n = 0;
+    for (uint32_t i = 0; i < 65536; i++) {
+        uint32_t t = *(uint32_t *)((uintptr_t)g_xbox_mem_offset + 0x3210A0u + i * 4);
+        int k = 0;
+        while (k < n && seen[k] != t) k++;
+        if (k == n && n < 8192) seen[n++] = t;
+    }
+    FILE *f = fopen((const char *)path, "w");
+    for (int k = 0; f && k < n; k++) fprintf(f, "0x%08X\n", seen[k]);
+    if (f) fclose(f);
+    fprintf(stderr, "[TABLE] %d distinct handlers written to %s\n", n, (const char *)path);
+    return NULL;
+}
+
 static void *guest_main(void *unused)
 {
     char xbe_path[4200];
@@ -159,6 +179,11 @@ static void *guest_main(void *unused)
     g_esp = XBOX_STACK_TOP;
     if (!recomp_dispatch_init())
         fprintf(stderr, "[BOOT] flat dispatch unavailable\n");
+    if (getenv("NGB_TRILOGY_TABLE_DUMP")) {
+        pthread_t th;
+        if (pthread_create(&th, NULL, table_dump, (void *)getenv("NGB_TRILOGY_TABLE_DUMP")) == 0)
+            pthread_detach(th);
+    }
     printf("Starting " TRILOGY_XBE "...\n");
     xbe_entry_point();
     printf("Program returned.\n");
