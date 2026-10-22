@@ -74,9 +74,9 @@ static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OU
 static const uint8_t s_rows_ws[] = { ROW_SCREEN, ROW_MOVIE, ROW_DEFAULT, ROW_EXIT };
 static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
 static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_BACK };
-static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_BACK };
+static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_POSAUDIO, ROW_BACK };
 static const uint8_t s_rows_start[] = { ROW_SKIP, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_POSAUDIO, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
 static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
@@ -171,7 +171,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKFREEZE, "Quick Menu Pause" },
     { T_POSAUDIO, "Positional Audio" },
-    { D_POSAUDIO, "Places sounds left and right as the console's sound chip does, but duller. Off: centred." },
+    { D_POSAUDIO, "Places sounds left and right, as the console's sound chip does. Off: centred and a little brighter." },
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
     { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen." },
@@ -230,7 +230,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_SKIP,    "Starts at the title screen, from the next start." },
     { D_LAUNCHER, "Shows the settings screen before the game, from the next start." },
     { D_CAT0 + 0, "Render resolution, texture filtering, anti-aliasing, shadows and the glow." },
-    { D_CAT0 + 1, "Aspect ratio, window size, display mode, V-Sync and the FPS counter." },
+    { D_CAT0 + 1, "Aspect ratio, window size, display mode, V-Sync, the FPS counter and positional audio." },
     { D_CAT0 + 2, "What the game shows when it starts, and the difficulties New Game offers." },
     { D_BACK,    "Returns to the Recomp Settings screen." },
     { T_HEALTH,  "Infinite Health" },

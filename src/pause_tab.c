@@ -111,7 +111,7 @@ static const char *const s_help[S_COUNT] = {
     "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
     "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only.",
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
-    "Places sounds left and right as the console's sound chip does, but duller. Off: centred.",
+    "Places sounds left and right, as the console's sound chip does. Off: centred and a little brighter.",
 };
 
 /* The categories: the strip's words, their rows. */
@@ -119,12 +119,12 @@ static const char *const s_help[S_COUNT] = {
 #define CAT_ROWS 6
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 /* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
-static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Startup", "Gameplay", "Cheats", "Controls" };
+static const char *const s_cat_name[CATS] = { "Graphics", "Display & Audio", "Startup", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
-    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, -1 },
+    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_POSAUDIO },
     { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
-    { S_QUICKSCALE, S_QUICKFREEZE, S_POSAUDIO, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO },
     { -1 },
 };
@@ -450,12 +450,38 @@ static float sample_ink(int t, float x, float y)
     return v;
 }
 
+/* One character of the typeface (coverage into m when m is given); its advance. */
+static float ttf_char(uint8_t *m, int w, int h, const stbtt_fontinfo *f, int cp, float px, float sx,
+                      float x, float base)
+{
+    float scale = stbtt_ScaleForPixelHeight(f, px);
+    int adv, lsb, x1, y1, x2, y2;
+    stbtt_GetCodepointHMetrics(f, cp, &adv, &lsb);
+    stbtt_GetCodepointBitmapBox(f, cp, scale * sx, scale, &x1, &y1, &x2, &y2);
+    int gw = x2 - x1, gh = y2 - y1;
+    static uint8_t g[160 * 160];
+    if (m && gw > 0 && gh > 0 && gw <= 160 && gh <= 160) {
+        stbtt_MakeCodepointBitmap(f, g, gw, gh, gw, scale * sx, scale, cp);
+        for (int yy = 0; yy < gh; yy++)
+            for (int xx = 0; xx < gw; xx++) {
+                int X = (int)floorf(x) + x1 + xx, Y = (int)lroundf(base) + y1 + yy;
+                if (X >= 0 && Y >= 0 && X < w && Y < h && g[yy * gw + xx] > m[Y * w + X])
+                    m[Y * w + X] = g[yy * gw + xx];
+            }
+    }
+    return adv * scale * sx;
+}
+
 static float game_text(uint8_t *m, int w, int h, const char *s, float px, float sx,
                        float x, float base)
 {
     float k = px * 0.66f / s_cap_h, x0 = x;     /* output pixels a texel */
     for (; *s; s++) {
         float c[4];
+        if (*s == '&') {                         /* the game's letters have none (its cell is a quote mark) */
+            x += ttf_char(m, w, h, &s_font_body, '&', px * 0.92f, sx, x, base);
+            continue;
+        }
         int t = glyph((unsigned char)*s, c);
         if (t < 0)
             continue;
@@ -918,10 +944,10 @@ static void draw_page(int focused, int cat, int row)
             if (nl && (size_t)(nl - h) < sizeof first) {
                 memcpy(first, h, (size_t)(nl - h));
                 first[nl - h] = 0;
-                page_text_fit(px, m, first, 445, ROW_Y0 + CAT_ROWS * ROW_H + 14, 15, 0xFFFFFF, 2, 440);
-                page_text_fit(px, m, nl + 1, 445, ROW_Y0 + CAT_ROWS * ROW_H + 32, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, first, 445, ROW_Y0 + CAT_ROWS * ROW_H + 28, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, nl + 1, 445, ROW_Y0 + CAT_ROWS * ROW_H + 46, 15, 0xFFFFFF, 2, 440);
             } else {
-                page_text_fit(px, m, h, 445, ROW_Y0 + CAT_ROWS * ROW_H + 14, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, h, 445, ROW_Y0 + CAT_ROWS * ROW_H + 28, 15, 0xFFFFFF, 2, 440);
             }
         }
 
@@ -934,7 +960,7 @@ static void draw_page(int focused, int cat, int row)
 /* While the main menu's RECOMP SETTINGS has the Options menu (src/pc_menu.c)
  * its pictures say so: the header ("OPTIONS", sprite 0x23D) reads SETTINGS
  * and the category words (sprites 0x248-0x24D, slices of one texture) are
- * Graphics, Display and Startup Settings, Gameplay, Cheats and Controls. Each is a texture of
+ * Graphics Settings, Display & Audio, Startup Settings, Gameplay, Cheats and Controls. Each is a texture of
  * ours put in the game's texture's place, the words drawn in the game's
  * pictures' style -- the size, the condensing and the colour of each row of
  * the letters measured from them, the shadow under them -- Liberation Serif
@@ -947,7 +973,7 @@ static uint32_t sprite_def(uint32_t id);
 #define RP_LABEL0 0x248
 #define RP_LABELS 6
 #define RP_WORDS 6
-static const char *const s_rp_word[RP_WORDS] = { "GRAPHICS SETTINGS", "DISPLAY SETTINGS", "STARTUP SETTINGS",
+static const char *const s_rp_word[RP_WORDS] = { "GRAPHICS SETTINGS", "DISPLAY & AUDIO", "STARTUP SETTINGS",
                                                  "GAMEPLAY", "CHEATS", "CONTROLS" };
 
 static struct {
