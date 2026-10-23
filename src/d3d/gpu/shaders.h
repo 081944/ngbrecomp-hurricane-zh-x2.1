@@ -19,6 +19,7 @@ struct TexInfo {
 enum : uint8_t {
     kTexWide = 4,  // an upscaled target shrunk by the pass: each tap averaged over console texels
     kTexSigned = 8,  // a bump map (V8U8): its du dv decoded texel by texel in the shader (bumpduv)
+    kTexLinear = 16, // a screen quad's texture filtered linearly: weighted by alpha above 1x (QuadSnap, #83)
 };
 
 struct PixelKey {

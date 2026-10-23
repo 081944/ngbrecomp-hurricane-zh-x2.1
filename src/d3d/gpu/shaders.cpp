@@ -1002,6 +1002,32 @@ std::string PixelHlsl(const PixelKey& k) {
                           norm.c_str(), i, i, t.shadow, i);
             else if (t.kind == kTex2D && (t.flags & kTexWide))
                 body += F("float4 t%d = spreadtap%d(%s, spread[%d], %s);\n", i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
+            else if (t.kind == kTex2D && k.quad && (t.flags & kTexLinear)) {
+                // the four texels around, weighted by their alpha when the backend asks (qsnap.y, QuadSnap)
+                std::string tap =
+                    "float4 t$;\n"
+                    "if (qsnap.y > 0) {\n"
+                    "    float2 sz$; tex$.GetDimensions(sz$.x, sz$.y);\n"
+                    "    float2 f$ = (UV) * sz$ - 0.5;\n"
+                    "    float2 b$ = floor(f$), w$ = f$ - b$, c$ = (b$ + 0.5) / sz$, d$ = 1 / sz$;\n"
+                    "    float4 q0$ = tex$.SampleLevel(smp$, c$, 0), q1$ = tex$.SampleLevel(smp$, c$ + float2(d$.x, 0), 0);\n"
+                    "    float4 q2$ = tex$.SampleLevel(smp$, c$ + float2(0, d$.y), 0), q3$ = tex$.SampleLevel(smp$, c$ + d$, 0);\n"
+                    "    float4 wq$ = float4((1 - w$.x) * (1 - w$.y), w$.x * (1 - w$.y), (1 - w$.x) * w$.y, w$.x * w$.y);\n"
+                    "    float4 aw$ = wq$ * float4(q0$.a, q1$.a, q2$.a, q3$.a);\n"
+                    "    float sa$ = aw$.x + aw$.y + aw$.z + aw$.w;\n"
+                    "    float3 rgb$ = sa$ > 0 ? (q0$.rgb * aw$.x + q1$.rgb * aw$.y + q2$.rgb * aw$.z + q3$.rgb * aw$.w) / sa$\n"
+                    "                          : q0$.rgb * wq$.x + q1$.rgb * wq$.y + q2$.rgb * wq$.z + q3$.rgb * wq$.w;\n"
+                    // an on-or-off mask (a cut-out's 0 and 255): the nearest texel's alpha, its edge as sharp and
+                    // where the console's is -- a blend would let what is behind show along it; soft alpha (text)
+                    // stays filtered
+                    "    float4 qa$ = float4(q0$.a, q1$.a, q2$.a, q3$.a);\n"
+                    "    if (all(qa$ < 0.02 || qa$ > 0.98)) sa$ = w$.y < 0.5 ? (w$.x < 0.5 ? q0$.a : q1$.a) : (w$.x < 0.5 ? q2$.a : q3$.a);\n"
+                    "    t$ = float4(rgb$, sa$);\n"
+                    "} else t$ = tex$.Sample(smp$, UV);\n";
+                for (size_t at; (at = tap.find("UV")) != std::string::npos;) tap.replace(at, 2, uv);
+                for (size_t at; (at = tap.find('$')) != std::string::npos;) tap.replace(at, 1, std::to_string(i));
+                body += tap;
+            }
             else if (t.kind == kTex2D) body += F("float4 t%d = tex%d.Sample(smp%d, %s);\n", i, i, i, uv.c_str());
             else if (t.kind == kTexCube && !(cube = Hooks().Cube(t, i, F("tc%d.xyz", i))).empty()) body += F("float4 t%d = %s;\n", i, cube.c_str());
             else if (t.kind) body += F("float4 t%d = tex%d.Sample(smp%d, tc%d.xyz);\n", i, i, i, i);

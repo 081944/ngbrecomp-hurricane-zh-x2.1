@@ -474,7 +474,7 @@ private:
     std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16), or their own (| 1)
     void Retire(Image& img, VkImageView extra = VK_NULL_HANDLE);
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
-    void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, DrawConstants& c);
+    void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples, DrawConstants& c);
     bool recording_ = false;
     void Begin();
     void Submit();
@@ -989,12 +989,19 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
 // axis-aligned pretransformed 4-vertex quad, each stage's texture coordinate gradients in console pixels and the
 // range the console's pixel centres sample -- the quad's own range less half a console pixel's worth at each side.
 // Off (qsnap.x 0) at 1x, for other draws, and for a quad whose coordinates are generated or transformed.
-void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, DrawConstants& c) {
+void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples,
+                             DrawConstants& c) {
     std::memset(c.uvc, 0, sizeof(c.uvc));
     std::memset(c.uvg, 0, sizeof(c.uvg));
     std::memset(c.qsnap, 0, sizeof(c.qsnap));
     static const bool off = std::getenv("NGB_D3D_NO_QUADSNAP") != nullptr;
-    if (off || !quad || !a.pretransformed || count != 4 || c.surf[3] <= 1.0f) return;
+    // above 1x, or at 1x with MSAA (whose samples an edge between pixel centres covers in part: the same strips)
+    if (off || !quad || !a.pretransformed || count != 4 || (c.surf[3] <= 1.0f && samples <= 1)) return;
+    // a linearly filtered texture weighted by its alpha (qsnap.y, the pixel shader's kTexLinear stages): between
+    // texels, as an upscaled picture samples, a transparent texel's colour is not blended into its opaque
+    // neighbour's -- the light fringe where a sprite's picture meets the clear part of its texture (the pause
+    // menu's dagger above 1x, #83). At the console's pixel centres it is the same texel as before.
+    c.qsnap[1] = 1.0f;
     const VertexElement& pe = a.elements[0];
     if (pe.buffer >= a.buffer_count || !a.buffers[pe.buffer].src || !a.buffers[pe.buffer].stride) return;
     const auto& pb = a.buffers[pe.buffer];
@@ -2435,6 +2442,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     draw_rt_ = rt;
     for (int i = 0; i < 4; i++) views[i] = BindTexture(s, i, info[i], from_target[i]);
     draw_rt_ = nullptr;
+    for (int i = 0; i < 4 && quad; i++)   // a screen quad's linearly filtered textures (QuadSnap's alpha weighting)
+        if (info[i].kind == kTex2D && !info[i].shadow && (s.tss[size_t(i)][kTssMagFilter] >= 2 || aniso_level_ > 0))
+            info[i].flags |= kTexLinear;
     if ((info[0].flags & kTexSigned) && std::getenv("NGB_D3D_BUMPLOG")) {   // the water's stage 0 sampling (#16)
         static int n;
         if (n++ < 6) {
@@ -2967,7 +2977,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     } else {
         vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
     }
-    QuadSnap(s, a, count, quad, c);
+    QuadSnap(s, a, count, quad, rt ? rt->samples : ds ? ds->samples : 1, c);
     VkDeviceSize dc = Upload(&c, sizeof(c), ringAlign_);
 
     // the vertices and indices
