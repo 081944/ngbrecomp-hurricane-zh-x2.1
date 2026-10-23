@@ -133,7 +133,7 @@ void ngb_settings_load(NgbSettings *s)
     s->msaa = 1;
     s->shadow_scale = 4;
     s->quick_menu_freeze = 1;
-    s->positional_audio = 1;
+    s->positional_audio = 2;  /* panning: 3D sounds placed without the filters' duller sound (#30, #86) */
     s->show_hud = 1;  /* the console's HRTF placement of 3D sounds (#30) */
     s->quick_menu_scale = 0;    /* the quick menu off unless chosen (Gameplay) */
     s->skip_intro = 0;
