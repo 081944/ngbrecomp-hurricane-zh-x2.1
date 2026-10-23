@@ -54,9 +54,10 @@ Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
 
 Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
 
-### macOS (experimental)
+### macOS (unsupported)
 
-Build the Apple Silicon app using the commands below, extract the resulting zip, and open
+The macOS code is a community contribution (#49) that I can't build or test, so there are no
+official macOS packages and macOS bugs may go unfixed. Build the Apple Silicon app using the commands below, extract the resulting zip, and open
 `Ninja Gaiden Black.app`. Choose your own disc image or extracted game folder on first start.
 Current dependencies require macOS 26. Intel Macs and the xemu renderer are unsupported;
 packages are signed ad hoc, without Developer ID signing or notarization.
