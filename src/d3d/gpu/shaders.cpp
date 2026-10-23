@@ -61,6 +61,9 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4x4 wvb[4];
     float4x4 wvbn[4];
     float4x4 pv;
+    float4 uvc[4];
+    float4 uvg[4];
+    float4 qsnap;
 };
 )";
 
@@ -987,7 +990,12 @@ std::string PixelHlsl(const PixelKey& k) {
             if (!t.kind && (reads_tex(0) || reads_tex(4)))
                 break;
             std::string norm = (t.rect ? F(" / texsize[%d].xy", i) : "") + F(" + texsize[%d].zw", i);
-            std::string uv = (k.proj >> i) & 1 ? F("(tc%d.xy / tc%d.w)%s", i, i, norm.c_str()) : F("tc%d.xy%s", i, norm.c_str());
+            // a 2D quad above 1x: its coordinates kept to what the console's pixel centres sample, in the vertices'
+            // own units (before a render target's texel scale): no nearer a font cell's or a tile's edge than the
+            // console reads (the line around an area name's letters, the seams of a scrolling background, #83)
+            std::string tcxy = k.quad ? F("(qsnap.x > 0 ? clamp(tc%d.xy, uvc[%d].xy, uvc[%d].zw) : tc%d.xy)", i, i, i, i)
+                                      : F("tc%d.xy", i);
+            std::string uv = (k.proj >> i) & 1 ? F("(tc%d.xy / tc%d.w)%s", i, i, norm.c_str()) : F("%s%s", tcxy.c_str(), norm.c_str());
             std::string cube;
             if (t.shadow)
                 body += F("float4 t%d = shadow%d((tc%d.xy / tc%d.w)%s, tc%d.z / tc%d.w, %d, i.pos.xy, texsize[%d].xy);\n", i, i, i, i,
@@ -1060,8 +1068,23 @@ std::string SpriteHlsl(std::string s) {
 }
 
 std::string QuadHlsl(std::string s) {
-    // Full screen passes once had their far edges pulled out half a pixel, and their texture coordinates
-    // put back; with the console's pixel centres kept (the vertex epilogue) they cover the target as drawn.
+    // A 2D quad above 1x (qsnap.x, set by the backend for an axis-aligned pretransformed quad): its edges go to
+    // the console's pixel boundaries -- the pixels the console covers, whose centres are inside -- and its
+    // texture coordinates move with them along their gradients. Shifted half a console pixel as everything is,
+    // an edge at a whole coordinate left a strip of the target uncovered above 1x (the top and left of a full
+    // screen fade, #83). At 1x the same pixels and coordinates as before.
+    const std::string shift = "    p.xy += 0.5;\n";
+    size_t at = s.find(shift);
+    if (at != std::string::npos)
+        s.insert(at, "    if (qsnap.x > 0) {\n"
+                     "        float2 sp = ceil(p.xy - 0.0001) - 0.5;\n"
+                     "        float2 dq = (sp - p.xy) / float2(ext.x > 0 ? ext.x : 1, ext.z > 0 ? ext.z : 1);\n"
+                     "        oT0.xy += float2(dot(uvg[0].xy, dq), dot(uvg[0].zw, dq));\n"
+                     "        oT1.xy += float2(dot(uvg[1].xy, dq), dot(uvg[1].zw, dq));\n"
+                     "        oT2.xy += float2(dot(uvg[2].xy, dq), dot(uvg[2].zw, dq));\n"
+                     "        oT3.xy += float2(dot(uvg[3].xy, dq), dot(uvg[3].zw, dq));\n"
+                     "        p.xy = sp;\n"
+                     "    }\n");
     return s;
 }
 }  // namespace gpu

@@ -474,6 +474,7 @@ private:
     std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16), or their own (| 1)
     void Retire(Image& img, VkImageView extra = VK_NULL_HANDLE);
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
+    void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, DrawConstants& c);
     bool recording_ = false;
     void Begin();
     void Submit();
@@ -982,6 +983,63 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
         }
     }
     return n;
+}
+
+// A 2D quad above 1x drawn as the console covers and samples it (gpu::QuadHlsl, the pixel shader's clamp): for an
+// axis-aligned pretransformed 4-vertex quad, each stage's texture coordinate gradients in console pixels and the
+// range the console's pixel centres sample -- the quad's own range less half a console pixel's worth at each side.
+// Off (qsnap.x 0) at 1x, for other draws, and for a quad whose coordinates are generated or transformed.
+void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, DrawConstants& c) {
+    std::memset(c.uvc, 0, sizeof(c.uvc));
+    std::memset(c.uvg, 0, sizeof(c.uvg));
+    std::memset(c.qsnap, 0, sizeof(c.qsnap));
+    static const bool off = std::getenv("NGB_D3D_NO_QUADSNAP") != nullptr;
+    if (off || !quad || !a.pretransformed || count != 4 || c.surf[3] <= 1.0f) return;
+    const VertexElement& pe = a.elements[0];
+    if (pe.buffer >= a.buffer_count || !a.buffers[pe.buffer].src || !a.buffers[pe.buffer].stride) return;
+    const auto& pb = a.buffers[pe.buffer];
+    if (pb.bytes / pb.stride < 4) return;
+    float xy[4][2], x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f;
+    for (int v = 0; v < 4; v++) {
+        std::memcpy(xy[v], pb.src + size_t(v) * pb.stride + pe.offset, 8);
+        x0 = std::min(x0, xy[v][0]); x1 = std::max(x1, xy[v][0]);
+        y0 = std::min(y0, xy[v][1]); y1 = std::max(y1, xy[v][1]);
+    }
+    for (int v = 0; v < 4; v++)   // axis-aligned: every corner on the box
+        if (!((xy[v][0] == x0 || xy[v][0] == x1) && (xy[v][1] == y0 || xy[v][1] == y1))) return;
+    if (x1 - x0 < 1.0f || y1 - y0 < 1.0f) return;
+    // the corners at (x0,y0), (x1,y0), (x0,y1)
+    int c00 = -1, c10 = -1, c01 = -1;
+    for (int v = 0; v < 4; v++) {
+        if (xy[v][0] == x0 && xy[v][1] == y0) c00 = v;
+        if (xy[v][0] == x1 && xy[v][1] == y0) c10 = v;
+        if (xy[v][0] == x0 && xy[v][1] == y1) c01 = v;
+    }
+    if (c00 < 0 || c10 < 0 || c01 < 0) return;
+    for (int i = 0; i < 4; i++) {
+        c.uvc[i][0] = c.uvc[i][1] = -1e30f;
+        c.uvc[i][2] = c.uvc[i][3] = 1e30f;
+        uint32_t set = s.tss[size_t(i)][kTssTexCoordIndex] & 3;   // pretransformed: stage i reads this set as given
+        const VertexElement& te = a.elements[9 + set];
+        if (!((a.regs >> (9 + set)) & 1) || te.buffer >= a.buffer_count || !a.buffers[te.buffer].src) continue;
+        const auto& tb = a.buffers[te.buffer];
+        if (!tb.stride || tb.bytes / tb.stride < 4) continue;
+        float uv[4][2];
+        for (int v = 0; v < 4; v++) std::memcpy(uv[v], tb.src + size_t(v) * tb.stride + te.offset, 8);
+        float w = x1 - x0, h = y1 - y0;
+        float dudx = (uv[c10][0] - uv[c00][0]) / w, dvdx = (uv[c10][1] - uv[c00][1]) / w;
+        float dudy = (uv[c01][0] - uv[c00][0]) / h, dvdy = (uv[c01][1] - uv[c00][1]) / h;
+        c.uvg[i][0] = dudx; c.uvg[i][1] = dudy; c.uvg[i][2] = dvdx; c.uvg[i][3] = dvdy;
+        // the console samples the centres of the pixels inside: half a pixel in from each edge
+        float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
+        for (int v = 0; v < 4; v++) {
+            float cx = xy[v][0] == x0 ? 0.5f : -0.5f, cy = xy[v][1] == y0 ? 0.5f : -0.5f;
+            float u = uv[v][0] + dudx * cx + dudy * cy, vv = uv[v][1] + dvdx * cx + dvdy * cy;
+            u0 = std::min(u0, u); u1 = std::max(u1, u); v0 = std::min(v0, vv); v1 = std::max(v1, vv);
+        }
+        c.uvc[i][0] = u0; c.uvc[i][1] = v0; c.uvc[i][2] = u1; c.uvc[i][3] = v1;
+    }
+    c.qsnap[0] = 1.0f;
 }
 
 void VulkanBackend::Retire(Image& img, VkImageView extra) {
@@ -2357,7 +2415,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::string src = prog ? VertexProgramHlsl(s.vs->program, a.regs, a.decode)
                                : FixedVertexHlsl(a.regs, a.pretransformed, a.decode, fk);
         if (spark_quad) src = SparkStrokeHlsl(std::move(src));
-        if (quad) src = QuadHlsl(std::move(src));
+        // the quad step for a screen quad -- and for every pretransformed fixed-function draw, as the shader cache
+        // rebuilds those (its record has no quad flag; the step does nothing unless QuadSnap turns it on)
+        if (quad || (!prog && a.pretransformed)) src = QuadHlsl(std::move(src));
         if (points) src = PointHlsl(std::move(src), prog ? 0 : a.pretransformed ? 2 : 1);
         static const char* dump = std::getenv("NGB_D3D_SHADERDUMP");
         if (dump) {
@@ -2907,6 +2967,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     } else {
         vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
     }
+    QuadSnap(s, a, count, quad, c);
     VkDeviceSize dc = Upload(&c, sizeof(c), ringAlign_);
 
     // the vertices and indices
@@ -4042,6 +4103,7 @@ void VulkanBackend::Prewarm() {
                 if (d[10]) key ^= 0xC3C30000;
                 if (key != r.key) continue;
                 hlsl = VertexProgramHlsl(words, regs, decode);
+                if (d[10]) hlsl = QuadHlsl(std::move(hlsl));   // as Draw makes a screen quad's
             } else if (r.kind == 'F' && r.data.size() == 11 + sizeof(FixedKey)) {
                 uint16_t regs;
                 uint64_t decode;
@@ -4050,6 +4112,7 @@ void VulkanBackend::Prewarm() {
                 std::memcpy(&decode, d + 3, 8);
                 std::memcpy(&fk, d + 11, sizeof(fk));
                 hlsl = FixedVertexHlsl(regs, d[2] != 0, decode, fk);
+                if (d[2]) hlsl = QuadHlsl(std::move(hlsl));    // pretransformed: as Draw makes it
             } else if (r.kind == 'P' && r.data.size() == sizeof(PixelKey)) {
                 PixelKey pk;
                 std::memcpy(&pk, d, sizeof(pk));
