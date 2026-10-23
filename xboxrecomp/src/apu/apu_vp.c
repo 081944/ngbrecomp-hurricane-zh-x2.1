@@ -1187,6 +1187,9 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
  * Voice processing (main per-voice function)
  * ============================================================ */
 
+/* xboxrecomp: Positional Audio "Panning" (mcpx_apu_set_hrtf 2): the filters' placement only */
+static int s_hrtf_pan;
+
 static void voice_process(MCPXAPUState *d,
                           float mixbins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME],
                           float sample_buf[NUM_SAMPLES_PER_FRAME][2],
@@ -1354,7 +1357,10 @@ static void voice_process(MCPXAPUState *d,
             (uint16_t)voice_get_mask(d, v, NV_PAVS_VOICE_CFG_HRTF_TARGET,
                                      NV_PAVS_VOICE_CFG_HRTF_TARGET_HANDLE);
         if (hrtf_handle != HRTF_NULL_HANDLE) {
-            hrtf_filter_process(&d->vp.filters[v].hrtf, samples, samples);
+            if (s_hrtf_pan)
+                hrtf_pan_process(&d->vp.filters[v].hrtf, samples, samples);
+            else
+                hrtf_filter_process(&d->vp.filters[v].hrtf, samples, samples);
         }
     }
 
@@ -1398,9 +1404,10 @@ static void voice_process(MCPXAPUState *d,
 
 /* xboxrecomp: the HRTF filters on or off (a host setting: they place the 3D voices left and right, #30, but
  * also take 3-4 dB off their treble). Off, the 3D submixes all take the voice's own channel, as before #30. */
-void mcpx_apu_set_hrtf(int on)
+void mcpx_apu_set_hrtf(int mode)
 {
-    g_config.audio.hrtf = on != 0;
+    g_config.audio.hrtf = mode != 0;
+    s_hrtf_pan = mode == 2;
 }
 
 /* ============================================================

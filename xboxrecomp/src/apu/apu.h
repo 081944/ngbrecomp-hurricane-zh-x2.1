@@ -21,8 +21,8 @@ MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
 /* Shut down and free the APU state. */
 void mcpx_apu_shutdown(MCPXAPUState *d);
 
-/* The HRTF filters on the 3D voices (positional sound, off by default). */
-void mcpx_apu_set_hrtf(int on);
+/* Positional sound for the 3D voices: 0 off (centred), 1 the HRTF filters, 2 their placement only (panning). */
+void mcpx_apu_set_hrtf(int mode);
 
 /* MMIO read from APU register space (addr is offset from 0xFE800000). */
 uint64_t mcpx_apu_mmio_read(MCPXAPUState *d, uint64_t addr, unsigned int size);

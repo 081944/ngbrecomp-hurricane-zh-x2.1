@@ -291,6 +291,26 @@ static inline void hrtf_filter_process(HrtfFilter *f,
     }
 }
 
+/* xboxrecomp: the placement alone (Positional Audio "Panning"): each ear the voice at a level from the strength of
+ * that ear's filter (its taps' RMS), the two at constant power -- left and right as the filters place it, without
+ * their colouring (the treble they take off). No interaural delay: its fractional interpolation is a low-pass too. */
+static inline void hrtf_pan_process(HrtfFilter *f, float in[][2], float out[][2]) {
+    for (int n = 0; n < HRTF_SAMPLES_PER_FRAME; n++) {
+        hrtf_filter_step_parameters(f);
+        float e[2];
+        for (int ch = 0; ch < 2; ch++) {
+            float s = 0.0f;
+            for (int k = 0; k < HRTF_NUM_TAPS; k++) s += f->ch[ch].hrir_coeff_cur[k] * f->ch[ch].hrir_coeff_cur[k];
+            e[ch] = s;
+        }
+        float tot = e[0] + e[1];
+        for (int ch = 0; ch < 2; ch++) {
+            float g = tot > 0.0f ? sqrtf(2.0f * e[ch] / tot) : 1.0f;
+            out[n][ch] = g * in[n][ch];
+        }
+    }
+}
+
 /* ============================================================
  * ADPCM Decoder - from vp/adpcm.h
  * ============================================================ */

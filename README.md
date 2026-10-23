@@ -84,8 +84,8 @@ of the pause menu. Changes apply at once and are saved.
   bright lights; off is the console's look)
 - **Display & Audio**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off,
-  Positional Audio (3D sounds placed left and right through the console sound chip's filters, on by
-  default; off, they are centred)
+  Positional Audio (3D sounds placed left and right: Console, through the sound chip's filters as on the
+  Xbox, the default; Panning, the same placement without the filters' duller sound; Off, centred)
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open
