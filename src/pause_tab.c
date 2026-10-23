@@ -111,7 +111,7 @@ static const char *const s_help[S_COUNT] = {
     "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
     "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only.",
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
-    "Places sounds left and right, as the console's sound chip does. Off: centred and a little brighter.",
+    "Places sounds left and right, as the console's sound chip does. Off: all sounds centred.",
 };
 
 /* The categories: the strip's words, their rows. */

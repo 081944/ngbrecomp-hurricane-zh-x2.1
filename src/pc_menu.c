@@ -171,7 +171,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKFREEZE, "Quick Menu Pause" },
     { T_POSAUDIO, "Positional Audio" },
-    { D_POSAUDIO, "Places sounds left and right, as the console's sound chip does. Off: centred and a little brighter." },
+    { D_POSAUDIO, "Places sounds left and right, as the console's sound chip does. Off: all sounds centred." },
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
     { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen." },
