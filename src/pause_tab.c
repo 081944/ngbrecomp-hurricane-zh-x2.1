@@ -77,7 +77,7 @@ void ngb_pc_set_setting(int which, int value);
 /* The settings, numbered as ngb_pc_setting has them. */
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
-       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_COUNT };
+       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT, S_COUNT };
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
@@ -86,6 +86,7 @@ static const char *const s_label[S_COUNT] = {
     "Infinite Health", "Infinite Ninpo", "Infinite Essence", "All Difficulties",
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
+    "Audio Output",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -113,17 +114,18 @@ static const char *const s_help[S_COUNT] = {
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
     "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer.",
     "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.",
+    "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. From the next start.",
 };
 
 /* The categories: the strip's words, their rows. */
 #define CATS 6
-#define CAT_ROWS 7
+#define CAT_ROWS 8
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 /* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display & Audio", "Startup", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
-    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_POSAUDIO },
+    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_POSAUDIO, S_AUDIOOUT },
     { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
     { S_QUICKSCALE, S_QUICKFREEZE, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, -1 },
@@ -194,6 +196,7 @@ static void value_text(int row, char *out, size_t n)
     case S_ASPECT:  snprintf(out, n, "%s", v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
+    case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
     case S_SKIP:
     case S_ALLDIFF:
     case S_ALLCOST:
@@ -244,6 +247,7 @@ static void change(int row, int step)
         ngb_pc_set_setting(row, ngb_quick_scale_step(v, step));
         break;
     case S_POSAUDIO:
+    case S_AUDIOOUT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
     case S_ASPECT:

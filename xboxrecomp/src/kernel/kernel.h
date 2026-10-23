@@ -748,6 +748,7 @@ NTSTATUS __stdcall xbox_NtDuplicateObject(HANDLE SourceHandle, PHANDLE TargetHan
 
 NTSTATUS __stdcall xbox_NtCreateEvent(PHANDLE EventHandle, PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, ULONG EventType, BOOLEAN InitialState);
 NTSTATUS __stdcall xbox_NtSetEvent(HANDLE EventHandle, PLONG PreviousState);
+int      xbox_guest_set_event(uint32_t handle);   /* kernel_bridge.c: a guest event set from host code */
 NTSTATUS __stdcall xbox_NtCreateSemaphore(PHANDLE SemaphoreHandle, PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount, LONG MaximumCount);
 NTSTATUS __stdcall xbox_NtReleaseSemaphore(HANDLE SemaphoreHandle, LONG ReleaseCount, PLONG PreviousCount);
 NTSTATUS __stdcall xbox_NtWaitForSingleObject(HANDLE Handle, BOOLEAN Alertable, PLARGE_INTEGER Timeout);

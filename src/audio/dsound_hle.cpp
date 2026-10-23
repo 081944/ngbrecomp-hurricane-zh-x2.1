@@ -4,9 +4,10 @@
 // only, no streams) and given the sound chip's HRTF filters for Positional Audio's "Console" choice.
 //
 // The emulated sound chip (xboxrecomp/src/apu) is not started with this; NGB_AUDIO_ENGINE=apu goes back to it.
-// 5.1 when the default output device has six channels or more (the title is told its speakers are surround, and mixes
-// for them); NGB_AUDIO_CHANNELS=2 or 6 chooses. NGB_DSOUND_LOG=1 logs the calls as they first come;
-// NGB_DSOUND_WAV=<file> writes what plays (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out (comparing).
+// 5.1 by Audio Output, on Auto when the default output device has six channels or more (the title is told its
+// speakers are surround, and mixes for them); NGB_AUDIO_CHANNELS=2 or 6 overrides it. NGB_DSOUND_LOG=1 logs the
+// calls as they first come (2 every volume change too, 3 every Lock); NGB_DSOUND_WAV=<file> writes what plays
+// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out (comparing).
 #include <SDL.h>
 
 #include <algorithm>
@@ -25,10 +26,10 @@
 #include "kernel/kernel.h"
 
 extern "C" {
-#define DS_FUNCS_TABLE
 #include "dsound_funcs.h"
 uint32_t xbox_HeapAlloc(uint32_t size, uint32_t align);
 extern volatile int apu_host_paused;   // xboxrecomp/src/apu/apu_core.c: a menu holds the game
+int xbox_guest_set_event(uint32_t handle);   // xboxrecomp kernel_bridge.c
 }
 
 using kernel::HostPtr;
@@ -50,11 +51,11 @@ constexpr uint32_t kBinI3dl2 = 10;      // dsstdfx's I3DL2 reverb reads this sen
 constexpr uint32_t kSends = 1u << kBinI3dl2;
 constexpr uint32_t kLanes = kBinFirstSend;
 
-// the library's full HRTF tables (DirectSoundUseFullHRTF, its filter pick at 0x37D8A8): a filter number per azimuth
-// step by elevation step, and the filters -- the ear away from the sound first, 31 sign and magnitude taps and its
-// interaural delay in samples in the last byte, then the near ear's
-constexpr uint32_t kHrtfIndex = 0x395430;
-constexpr uint32_t kHrtfFilters = 0x383E70;
+// the library's full HRTF tables (DirectSoundUseFullHRTF; the game's are at 0x395430 and 0x383E70, its filter pick
+// at 0x37D8A8, dsound_hle_set_hrtf_tables): a filter number per azimuth step by elevation step, and the filters --
+// the ear away from the sound first, 31 sign and magnitude taps and its interaural delay in samples in the last
+// byte, then the near ear's. A program without them (the arcade's, which has no 3D sound) plays 3D sounds centred.
+uint32_t g_hrtf_index = 0, g_hrtf_filters = 0;
 constexpr int kHrtfTaps = 31;
 constexpr int kHrtfAzimuths = 61;    // 0 to 180 degrees in 3
 constexpr int kHrtfElevations = 31;  // -90 to 90 degrees in 6
@@ -66,7 +67,8 @@ constexpr int kEarLength = 64;  // past the longest delay and the taps: 31 + 31
 constexpr uint32_t kDsErrInvalidCall = 0x88780032u, kEFail = 0x80004005u;
 
 std::atomic<int> g_positional{2};
-bool g_surround = false;  // the output is 5.1: FL FR C LFE BL BR, SDL's order and the mix bins'  // Positional Audio: 0 off, 1 console (the HRTF filters), 2 panning
+bool g_surround = false;
+int g_output_choice = 0;  // Audio Output: 0 auto, 1 stereo, 2 5.1 (dsound_hle_set_output)  // the output is 5.1: FL FR C LFE BL BR, SDL's order and the mix bins'  // Positional Audio: 0 off, 1 console (the HRTF filters), 2 panning
 int g_log = -1;
 
 bool Log() {
@@ -124,6 +126,9 @@ struct Voice {
     uint32_t ear_pos = 0;
     EarPair hrtf;
     bool has_hrtf = false;
+    // SetNotificationPositions: frames, and the events set when play reaches them (DSBPN_OFFSETSTOP: at the stop)
+    std::vector<std::pair<uint32_t, uint32_t>> notify;
+    uint32_t notify_stop = 0;
     // the ADPCM block last decoded
     int64_t block = -1;
     int16_t decoded[65 * 2];
@@ -132,6 +137,7 @@ struct Voice {
 std::recursive_mutex g_lock;
 std::map<uint32_t, Voice> g_voices;
 std::vector<uint32_t> g_free_objects;  // released buffers' objects, for the next
+std::vector<uint32_t> g_events;        // notifications reached, set at the next DirectSoundDoWork (the title's thread)
 float g_listener[3] = {}, g_front[3] = {0, 0, 1}, g_top[3] = {0, 1, 0};
 // IDirectSound_SetMixBinHeadroom: a step halves the bin; the library starts bins 0..30 at 1 and 31 at 0
 uint8_t g_bin_headroom[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -374,14 +380,14 @@ uint32_t HrtfEntry(float azimuth, float elevation) {
     int a = deg / kHrtfAzimuthStep, e = (el + kHrtfPole) / kHrtfElevationStep;
     if (a < 0 || a >= kHrtfAzimuths) a = 0;
     if (e < 0 || e >= kHrtfElevations) e = 0;
-    return static_cast<const uint16_t*>(HostPtr(kHrtfIndex))[a * kHrtfElevations + e];
+    return static_cast<const uint16_t*>(HostPtr(g_hrtf_index))[a * kHrtfElevations + e];
 }
 
 // the two ears' filters for a direction: the table's far ear is the left for a sound on the right
 EarPair Ears(float azimuth, float elevation) {
     EarPair p;
     if (!(std::fabs(azimuth) <= 180) || !(std::fabs(elevation) <= 90)) return p;
-    const uint8_t* f = static_cast<const uint8_t*>(HostPtr(kHrtfFilters)) + HrtfEntry(azimuth, elevation) * 32u;
+    const uint8_t* f = static_cast<const uint8_t*>(HostPtr(g_hrtf_filters)) + HrtfEntry(azimuth, elevation) * 32u;
     int far = azimuth < 0 ? 1 : 0;
     for (int k = 0; k < 2; k++) {
         const uint8_t* t = f + k * 32;
@@ -470,10 +476,13 @@ void Levels(const Voice& v, const Place& at, float g[2][kLanes], float w[2]) {
     for (uint32_t c = 0; c < 2; c++)
         for (uint32_t s = c; c < v.channels && s < per && s < n; s += step) {
             uint32_t b = bin[s];
-            float x = Db(v.bin_mb[b]) * v.volume * v.headroom * at.att * BinScale(at, b);
+            // the bin's headroom (SetMixBinHeadroom; the library's default a step, half), as the chip mixes it: the
+            // game sets its bins to none, the arcade leaves them
+            float x = std::ldexp(Db(v.bin_mb[b]) * v.volume * v.headroom * at.att * BinScale(at, b),
+                                 -g_bin_headroom[b]);
             if (kSends >> b & 1) {
                 if (at.on) x *= v.room;
-                w[c] += std::ldexp(x, -g_bin_headroom[b]);
+                w[c] += x;
                 continue;
             }
             if (b >= kBinFirstSend) continue;  // other effect sends
@@ -496,6 +505,9 @@ void Levels(const Voice& v, const Place& at, float g[2][kLanes], float w[2]) {
 
 // ── mixing ──
 
+// a notification reached: its event set at the next DirectSoundDoWork, on the title's thread
+void Reached(uint32_t ev) { g_events.push_back(ev); }
+
 // the voice's frame at its position and the one after it, none once it stopped
 struct Cursor {
     uint32_t f, next;
@@ -512,6 +524,8 @@ std::optional<Cursor> BufferFrame(Voice& v) {
         }
         v.pos -= end - start;
         f = uint32_t(v.pos);
+        for (auto& [at, ev] : v.notify)  // the notifications from the start of the loop to here (the end's came)
+            if (at >= start && at <= f) Reached(ev);
         if (f >= end) f = start, v.pos = start;
     }
     if (!v.data) return std::nullopt;
@@ -555,7 +569,7 @@ void MixVoice(Voice& v, float* out, float* send, uint32_t frames, int mode) {
     Place at = Locate(v);
     float g[2][kLanes], w[2];
     Levels(v, at, g, w);
-    bool ears = at.on && v.channels == 1 && mode != 0;
+    bool ears = at.on && v.channels == 1 && mode != 0 && g_hrtf_index;
     EarPair now, then;
     if (ears) {
         now = Ears(at.azimuth, at.elevation);
@@ -600,8 +614,14 @@ void MixVoice(Voice& v, float* out, float* send, uint32_t frames, int mode) {
                 o[k] += x[0] * v.gain[0][k] + x[1] * v.gain[1][k];
             }
         }
+        uint32_t before = uint32_t(v.pos);
         v.pos += rate;
+        uint32_t after = uint32_t(v.pos);
+        if (after != before)
+            for (auto& [at, ev] : v.notify)
+                if (at > before && at <= after) Reached(ev);
     }
+    if (!v.playing && v.notify_stop) Reached(v.notify_stop);
     std::memcpy(v.gain, g, sizeof(g));
     v.send_gain[0] = w[0], v.send_gain[1] = w[1];
     if (ears) {
@@ -680,9 +700,11 @@ void SdlCallback(void*, Uint8* stream, int len) {
     Pull(reinterpret_cast<float*>(stream), uint32_t(len) / (4 * Channels()));
 }
 
-// 5.1 when the default output device has six channels or more, or as NGB_AUDIO_CHANNELS says
+// Audio Output (setting 25): Stereo, 5.1, or Auto -- 5.1 when the default output device has six channels or more.
+// NGB_AUDIO_CHANNELS=2|6 overrides it.
 bool WantSurround() {
     if (const char* c = std::getenv("NGB_AUDIO_CHANNELS")) return std::atoi(c) >= 6;
+    if (g_output_choice) return g_output_choice == 2;
     SDL_AudioSpec spec{};
     char* name = nullptr;
     if (SDL_GetDefaultAudioInfo(&name, &spec, 0) != 0) return false;
@@ -862,6 +884,13 @@ void LogFirst(int fn, const uint32_t* a) {
 }  // namespace
 
 extern "C" void dsound_hle_set_positional(int mode) { g_positional = std::clamp(mode, 0, 2); }
+// before the title's DirectSoundCreate: Audio Output (0 auto, 1 stereo, 2 5.1)
+extern "C" void dsound_hle_set_output(int choice) { g_output_choice = std::clamp(choice, 0, 2); }
+// the program's HRTF tables (DirectSoundUseFullHRTF's), for Positional Audio
+extern "C" void dsound_hle_set_hrtf_tables(uint32_t index, uint32_t filters) {
+    g_hrtf_index = index;
+    g_hrtf_filters = filters;
+}
 
 extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t* r) {
     (void)va;
@@ -878,6 +907,13 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
         }
         W32(a[1], g_ds);
         return 1;
+    case DSF_DirectSoundDoWork: {
+        // the notifications reached since the last: set here, on the title's thread, as the events are its own
+        std::vector<uint32_t> ev;
+        ev.swap(g_events);
+        for (uint32_t e : ev) xbox_guest_set_event(e);
+        return 1;
+    }
     case DSF_IDirectSound_Release:
     case DSF_DirectSoundUseFullHRTF:
     case DSF_IDirectSound_CommitDeferredSettings:  // the settings apply as they come
@@ -950,8 +986,21 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
         if (a[3] & 2) v.pos = 0;  // DSBPLAY_FROMSTART
         return 1;
     case DSF_IDirectSoundBuffer_Stop:
+        if (v.playing && v.notify_stop) g_events.push_back(v.notify_stop);
         v.playing = false;
         return 1;
+    case DSF_IDirectSoundBuffer_SetNotificationPositions: {
+        // DSBPOSITIONNOTIFY: dwOffset, hEventNotify
+        v.notify.clear();
+        v.notify_stop = 0;
+        for (uint32_t i = 0; i < std::min<uint32_t>(a[1], 64); i++) {
+            uint32_t off = R32(a[2] + i * 8), ev = R32(a[2] + i * 8 + 4);
+            if (off == 0xFFFFFFFFu) v.notify_stop = ev;
+            else v.notify.push_back({FramesOf(v, off), ev});
+        }
+        if (Log()) std::fprintf(stderr, "[DSOUND] %08X: %u notifications\n", v.obj, a[1]);
+        return 1;
+    }
     case DSF_IDirectSoundBuffer_StopEx:
         // a[1..2] the time to stop at (now, here). DSBSTOPEX_RELEASEWAVEFORM (2): out of the loop, on to the end;
         // otherwise at once (DSBSTOPEX_ENVELOPE's release has no envelope to play here)
@@ -980,6 +1029,12 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
         return 1;
     case DSF_IDirectSoundBuffer_Lock: {
         uint32_t off = a[1], n = a[2];
+        if (Log() && std::getenv("NGB_DSOUND_LOG")[0] == '3') {
+            using namespace std::chrono;
+            static auto t0 = steady_clock::now();
+            std::fprintf(stderr, "[DSOUND] %08X lock %u+%u (flags %X), playing at %u, %.3f s\n", v.obj, off, n, a[7],
+                         BytesOf(v, uint32_t(v.pos)), duration<double>(steady_clock::now() - t0).count());
+        }
         if (a[7] & 2) n = v.bytes;  // DSBLOCK_ENTIREBUFFER
         if (a[7] & 1) off = BytesOf(v, uint32_t(v.pos));  // DSBLOCK_FROMWRITECURSOR
         if (!v.bytes) {

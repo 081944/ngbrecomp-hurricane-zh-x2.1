@@ -8,9 +8,9 @@
  */
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
-#define DS_FUNCS_TABLE
 #include "dsound_funcs.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -65,4 +65,20 @@ void ngb_audio_set_positional(int mode)
 {
     mcpx_apu_set_hrtf(mode);
     dsound_hle_set_positional(mode);
+}
+
+void dsound_hle_set_output(int choice);         /* src/audio/dsound_hle.cpp */
+
+/* Audio Output (0 auto, 1 stereo, 2 5.1): for the mixer, when it starts (the title's DirectSoundCreate), and for
+ * the arcade's programs the game hands over to (NGB_AUDIO_OUTPUT, src/trilogy/main.c). */
+void ngb_audio_set_output(int choice)
+{
+    char v[4];
+    dsound_hle_set_output(choice);
+    snprintf(v, sizeof v, "%d", choice < 0 ? 0 : choice > 2 ? 2 : choice);
+#if defined(_WIN32)
+    _putenv_s("NGB_AUDIO_OUTPUT", v);
+#else
+    setenv("NGB_AUDIO_OUTPUT", v, 1);
+#endif
 }

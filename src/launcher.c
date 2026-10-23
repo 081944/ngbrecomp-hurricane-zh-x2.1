@@ -181,6 +181,8 @@ void ngb_settings_load(NgbSettings *s)
             s->all_difficulties = atoi(val) != 0;
         } else if (!strcmp(key, "unlock_all_costumes")) {
             s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "audio_output")) {
+            s->audio_output = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 auto, 1 stereo, 2 5.1 */
         } else if (!strcmp(key, "show_hud")) {
             s->show_hud = atoi(val) != 0;
         } else if (!strcmp(key, "positional_audio")) {
@@ -232,6 +234,7 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
+    fprintf(f, "audio_output = %d\n", s->audio_output);
     fprintf(f, "quick_menu_freeze = %d\n", s->quick_menu_freeze);
     fprintf(f, "quick_menu_scale = %d\n", ngb_quick_scale_value(s->quick_menu_scale));
     fprintf(f, "skip_intro = %d\n", s->skip_intro);

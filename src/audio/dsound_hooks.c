@@ -1,8 +1,45 @@
-/* Every DirectSound entry point of the title (tools/take_dsound.py writes this):
+/* Every DirectSound entry point of the game (tools/take_dsound.py writes this):
  * the hook first (src/audio/dsound.c), the recompiled body unless it took the call. */
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
 #include "dsound_funcs.h"
+
+const DsFunc ds_funcs[DSF_COUNT] = {
+    [DSF_IDirectSound_Release] = { 0x0037A947, "IDirectSound_Release", 4 },
+    [DSF_IDirectSoundBuffer_Unlock] = { 0x0037A95D, "IDirectSoundBuffer_Unlock", 20 },
+    [DSF_IDirectSoundBuffer_Release] = { 0x0037A962, "IDirectSoundBuffer_Release", 4 },
+    [DSF_DirectSoundUseFullHRTF] = { 0x0037A978, "DirectSoundUseFullHRTF", 0 },
+    [DSF_IDirectSound_GetSpeakerConfig] = { 0x0037B685, "IDirectSound_GetSpeakerConfig", 8 },
+    [DSF_IDirectSound_DownloadEffectsImage] = { 0x0037B6A1, "IDirectSound_DownloadEffectsImage", 20 },
+    [DSF_IDirectSound_SetMixBinHeadroom] = { 0x0037B6C8, "IDirectSound_SetMixBinHeadroom", 12 },
+    [DSF_IDirectSoundBuffer_SetVolume] = { 0x0037B6E8, "IDirectSoundBuffer_SetVolume", 8 },
+    [DSF_IDirectSoundBuffer_SetFilter] = { 0x0037B704, "IDirectSoundBuffer_SetFilter", 8 },
+    [DSF_IDirectSoundBuffer_SetHeadroom] = { 0x0037B720, "IDirectSoundBuffer_SetHeadroom", 8 },
+    [DSF_IDirectSoundBuffer_SetMixBinVolumes] = { 0x0037B73C, "IDirectSoundBuffer_SetMixBinVolumes", 8 },
+    [DSF_IDirectSoundBuffer_Play] = { 0x0037B758, "IDirectSoundBuffer_Play", 16 },
+    [DSF_IDirectSoundBuffer_Stop] = { 0x0037B77C, "IDirectSoundBuffer_Stop", 4 },
+    [DSF_IDirectSoundBuffer_StopEx] = { 0x0037B794, "IDirectSoundBuffer_StopEx", 16 },
+    [DSF_IDirectSoundBuffer_SetLoopRegion] = { 0x0037B7B8, "IDirectSoundBuffer_SetLoopRegion", 12 },
+    [DSF_IDirectSoundBuffer_GetStatus] = { 0x0037B7D8, "IDirectSoundBuffer_GetStatus", 8 },
+    [DSF_IDirectSoundBuffer_GetCurrentPosition] = { 0x0037B7F4, "IDirectSoundBuffer_GetCurrentPosition", 12 },
+    [DSF_IDirectSoundBuffer_SetCurrentPosition] = { 0x0037B814, "IDirectSoundBuffer_SetCurrentPosition", 8 },
+    [DSF_IDirectSoundBuffer_Lock] = { 0x0037B830, "IDirectSoundBuffer_Lock", 32 },
+    [DSF_IDirectSoundBuffer_SetFrequency] = { 0x0037BFBF, "IDirectSoundBuffer_SetFrequency", 8 },
+    [DSF_IDirectSoundBuffer_SetMixBins] = { 0x0037BFDB, "IDirectSoundBuffer_SetMixBins", 8 },
+    [DSF_IDirectSoundBuffer_SetMaxDistance] = { 0x0037BFF7, "IDirectSoundBuffer_SetMaxDistance", 12 },
+    [DSF_IDirectSoundBuffer_SetMinDistance] = { 0x0037C01B, "IDirectSoundBuffer_SetMinDistance", 12 },
+    [DSF_IDirectSoundBuffer_SetPosition] = { 0x0037C03F, "IDirectSoundBuffer_SetPosition", 20 },
+    [DSF_IDirectSoundBuffer_SetVelocity] = { 0x0037C074, "IDirectSoundBuffer_SetVelocity", 20 },
+    [DSF_IDirectSoundBuffer_SetDistanceFactor] = { 0x0037C0A9, "IDirectSoundBuffer_SetDistanceFactor", 12 },
+    [DSF_IDirectSoundBuffer_SetRolloffFactor] = { 0x0037C0CD, "IDirectSoundBuffer_SetRolloffFactor", 12 },
+    [DSF_IDirectSoundBuffer_SetBufferData] = { 0x0037C607, "IDirectSoundBuffer_SetBufferData", 12 },
+    [DSF_IDirectSound_CommitDeferredSettings] = { 0x0037C9DE, "IDirectSound_CommitDeferredSettings", 4 },
+    [DSF_IDirectSound_CreateSoundBuffer] = { 0x0037CC9B, "IDirectSound_CreateSoundBuffer", 16 },
+    [DSF_IDirectSound_SetPosition] = { 0x0037CCBF, "IDirectSound_SetPosition", 20 },
+    [DSF_IDirectSound_SetVelocity] = { 0x0037CCF4, "IDirectSound_SetVelocity", 20 },
+    [DSF_IDirectSound_SetI3DL2Listener] = { 0x0037CD29, "IDirectSound_SetI3DL2Listener", 12 },
+    [DSF_DirectSoundCreate] = { 0x0037CEEF, "DirectSoundCreate", 12 },
+};
 
 int dsound_hook(int fn);
 

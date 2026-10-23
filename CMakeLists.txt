@@ -246,13 +246,18 @@ endif()
 # voices are set to Japanese): one program each, from tools/pipeline_trilogy.sh [tomoe]. Each is built
 # when its code has been generated. They draw with the GPU model's own NV2A renderer, so they need it.
 
-function(ngb_arcade_program target output gen_dir xbe)
+function(ngb_arcade_program target output gen_dir xbe dsound)
     file(GLOB gen_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}/*.c")
     if(NOT gen_sources OR NOT NGB_NV2A_VK)
         return()
     endif()
-    add_library(${target}_gen OBJECT ${gen_sources})
+    # with its DirectSound hooks (src/audio, tools/take_dsound.py trilogy|tomoe)
+    add_library(${target}_gen OBJECT ${gen_sources}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_hooks_arcade.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_orig_${dsound}.c)
     target_include_directories(${target}_gen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
         ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}
         ${XBOXRECOMP_DIR}/include
         ${XBOXRECOMP_DIR}/src
@@ -277,6 +282,7 @@ function(ngb_arcade_program target output gen_dir xbe)
         src/fps_text.c              # Show FPS (handed over by the game) in the game's lettering
         ${NGB_FONT_SOURCES}
         $<TARGET_OBJECTS:${target}_gen>
+        $<TARGET_OBJECTS:ngb_audio>
         $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>)
     target_link_libraries(${target} PRIVATE xboxrecomp xbox_nv2a_vk)
     target_compile_definitions(${target} PRIVATE NGB_NV2A_VK TRILOGY_XBE="${xbe}")
@@ -299,8 +305,8 @@ function(ngb_arcade_program target output gen_dir xbe)
     endif()
     message(STATUS "${output}: ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}")
 endfunction()
-ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe)
-ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe)
+ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe trilogy)
+ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe tomoe)
 
 if(NOT WIN32)
     find_package(Qt6 QUIET COMPONENTS Widgets)
