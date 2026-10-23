@@ -473,6 +473,7 @@ private:
     void BumpCheck(Tex& tx, const char* when);
     std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16), or their own (| 1)
     void Retire(Image& img, VkImageView extra = VK_NULL_HANDLE);
+    size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
     bool recording_ = false;
     void Begin();
     void Submit();
@@ -950,7 +951,37 @@ void VulkanBackend::EndFrame() {
             i++;
         }
     }
+    if (frame_ % 60 == 0) {   // once a second: textures unused for 30 s go (EvictTextures)
+        size_t gone = EvictTextures(1800);
+        static const bool stats = std::getenv("NGB_D3D_TEXSTATS") != nullptr;
+        if (stats) {
+            uint64_t bytes = 0;
+            for (const auto& t : textures_)
+                bytes += uint64_t(t.second.img.w) * t.second.img.h * 4 * (t.second.gen == 1 ? 4 : 3) / 3;
+            std::fprintf(stderr, "[TEXSTATS] frame %u: %zu textures, ~%llu MB, %zu evicted\n", frame_, textures_.size(),
+                         (unsigned long long)(bytes >> 20), gone);
+        }
+    }
     Begin();
+}
+
+// Textures not used for a while give their memory back (#81). Each texture the game puts at a new address made
+// an image that stayed for the rest of the session, so a long one -- the game streaming area after area into
+// different memory -- filled the card's memory until an image could no longer be made and that texture was drawn
+// black, which nothing but a restart cleared (the game's soft reset keeps the renderer). Retired, not destroyed:
+// a frame still in flight may read it. Returns how many went.
+size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
+    size_t n = 0;
+    for (auto it = textures_.begin(); it != textures_.end();) {
+        if (it->second.img.image && frame_ - it->second.used > idle_frames) {
+            Retire(it->second.img);
+            it = textures_.erase(it);
+            n++;
+        } else {
+            ++it;
+        }
+    }
+    return n;
 }
 
 void VulkanBackend::Retire(Image& img, VkImageView extra) {
@@ -1746,10 +1777,18 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             tx.gen = 2;        // not to be made: the same whatever the setting
         }
     }
-    if (!CreateImage(tx.img, fmt, d.width, d.height, faces, levels, false, d.cube,
-                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                         (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, false))
-        return VK_NULL_HANDLE;
+    auto make = [&] {
+        return CreateImage(tx.img, fmt, d.width, d.height, faces, levels, false, d.cube,
+                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                               (tx.gen == 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0), 1, false);
+    };
+    if (!make()) {   // out of memory: what this frame and the last didn't use goes, and once more (#81)
+        size_t gone = EvictTextures(2);
+        std::fprintf(stderr, "[D3D] texture %08X %ux%u: no memory, %zu idle textures freed\n", d.data, d.width, d.height,
+                     gone);
+        if (!gone || !make())
+            return VK_NULL_HANDLE;
+    }
     tx.sig = sig;
     tx.used = frame_;
     // NGB_D3D_TEXDUMP=dir: the first textures' top level, as DDS (DXT) or PPM (BGRA), to check the data
