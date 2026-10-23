@@ -259,6 +259,8 @@ function(ngb_arcade_program target output gen_dir xbe)
         src/trilogy/main.c
         src/launch.c
         src/recomp_manual.c
+        src/fps_text.c              # Show FPS (handed over by the game) in the game's lettering
+        ${NGB_FONT_SOURCES}
         $<TARGET_OBJECTS:${target}_gen>
         $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>)
     target_link_libraries(${target} PRIVATE xboxrecomp xbox_nv2a_vk)
@@ -271,7 +273,8 @@ function(ngb_arcade_program target output gen_dir xbe)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}
         ${XBOXRECOMP_DIR}/include
         ${XBOXRECOMP_DIR}/src
-        ${XBOXRECOMP_DIR}/src/nv2a_vk/host)
+        ${XBOXRECOMP_DIR}/src/nv2a_vk/host
+        ${XBOXRECOMP_DIR}/third_party/stb)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME ${output})
     if(WIN32)
         set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE TRUE)
