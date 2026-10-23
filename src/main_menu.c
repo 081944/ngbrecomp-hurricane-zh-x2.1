@@ -138,11 +138,8 @@ void sub_0017A010(void)
     if (n == 8 && !ENV_ONCE("NGB_KEEP_RANKING")) {
         MEM8(list + 8 * 3 + 4) = MEM8(list + 8 * 3 + 5) = 1;   /* "RECOMP SETTINGS": shown and chosen */
         MEM8(list + 8 * 6 + 4) = MEM8(list + 8 * 6 + 5) = 1;   /* OPTIONS, in COMING ATTRACTIONS' place */
-        /* Hurricane: the arcade game (entry 4, id 0x0B) is another XBE, not recompiled -- choosing it would
-         * hang -- so it stays hidden and not chosen, as the game keeps it before it is unlocked (user
-         * 2026-10-17) */
-        if (MEM32(list + 8 * 4) == 0x0B)
-            MEM8(list + 8 * 4 + 4) = MEM8(list + 8 * 4 + 5) = 0;
+        /* Hurricane: the arcade game (entry 4) was hidden here while it was not recompiled (user 2026-10-17);
+         * since 0.9.28 it is its own program (src/launch.c), shown as the game unlocks it. */
         extern int ngb_main_menu_exit_tick(void);              /* src/pause_tab.c */
         if (ngb_main_menu_exit_tick()) {                       /* the Are you sure? box: */
             esp += 4;                                          /* alone, the entries not drawn */

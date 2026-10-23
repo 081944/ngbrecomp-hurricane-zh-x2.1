@@ -134,6 +134,8 @@ void ngb_settings_load(NgbSettings *s)
     s->msaa = 1;
     s->shadow_scale = 4;
     s->quick_menu_freeze = 1;
+    s->positional_audio = 1;
+    s->show_hud = 1;  /* the console's HRTF placement of 3D sounds (#30) */
     s->quick_menu_scale = 0;    /* the quick menu off unless chosen (Gameplay) */
     s->skip_intro = 0;
     s->show_launcher = 1;
@@ -180,6 +182,10 @@ void ngb_settings_load(NgbSettings *s)
             s->all_difficulties = atoi(val) != 0;
         } else if (!strcmp(key, "unlock_all_costumes")) {
             s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "show_hud")) {
+            s->show_hud = atoi(val) != 0;
+        } else if (!strcmp(key, "positional_audio")) {
+            s->positional_audio = atoi(val) != 0;
         } else if (!strcmp(key, "smoother_glow")) {
             s->smooth_glow = atoi(val) != 0;
         } else if (!strcmp(key, "movie_ratio")) {
@@ -225,6 +231,8 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
     fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
+    fprintf(f, "positional_audio = %d\n", s->positional_audio);
+    fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "quick_menu_freeze = %d\n", s->quick_menu_freeze);
     fprintf(f, "quick_menu_scale = %d\n", ngb_quick_scale_value(s->quick_menu_scale));
     fprintf(f, "skip_intro = %d\n", s->skip_intro);

@@ -12,6 +12,7 @@
 #include <string.h>
 
 int ngb_pc_setting(int which);
+void ngb_pc_set_setting(int which, int value);   /* src/ingame_menu.c */
 
 static SDL_SpinLock s_lock;
 static NgbQuickMenu s_menu;
@@ -100,6 +101,14 @@ void ngb_quick_poll(void)
         XBOX_INPUT_STATE pad;
         int connected = xbox_InputGetStateRaw(p, &pad) == 0;
         bits |= ngb_bind_quick_state(s_keys, s_mouse, connected ? &pad : NULL);
+    }
+    {   /* Toggle HUD (Controls; nothing bound by default): each new press flips Display & Audio > HUD */
+        static unsigned hud_held;
+        unsigned hud = bits & NGB_BIND_HUD_BIT;
+        if (hud && !hud_held && !ngb_bind_capturing())
+            ngb_pc_set_setting(24, !ngb_pc_setting(24));
+        hud_held = hud;
+        bits &= ~(unsigned)NGB_BIND_HUD_BIT;
     }
     SDL_AtomicLock(&s_lock);
     if (!ngb_pc_setting(20))

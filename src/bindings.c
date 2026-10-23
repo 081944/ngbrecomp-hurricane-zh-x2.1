@@ -87,6 +87,8 @@ static const Action s_act[A_COUNT] = {
     { "Quick Menu: Next", "quick_right", "Opens the melee weapons on the next card; while open, selects the next entry.", SDL_SCANCODE_RIGHT, 0, P(P_DR), T_HOST, 8, 0 },
     { "Quick Menu: Confirm", "quick_confirm", "Equips the selected weapon or Ninpo, or uses the selected item.", SDL_SCANCODE_RETURN, 0, P(P_A), T_HOST, 16, 0 },
     { "Quick Menu: Cancel", "quick_cancel", "Closes the quick menu without applying the selection.", SDL_SCANCODE_ESCAPE, SDL_SCANCODE_BACKSPACE, P(P_B), T_HOST, 32, 0 },
+    { "Toggle HUD", "toggle_hud", "Shows or hides the HUD (Display & Audio > HUD). Not bound unless chosen.", 0, 0, 0, T_HOST,
+      NGB_BIND_HUD_BIT, 0 },
 };
 
 static int s_bind[A_COUNT][3];
@@ -103,6 +105,81 @@ static const char *const s_mouse_name[6] = { "", "Mouse Left", "Mouse Middle", "
 const char *ngb_bind_name(int a) { return a >= 0 && a < A_COUNT ? s_act[a].name : ""; }
 const char *ngb_bind_help(int a) { return a >= 0 && a < A_COUNT ? s_act[a].help : ""; }
 int ngb_bind_pad_fixed(int a) { return a >= 0 && a < A_COUNT && s_act[a].kind == T_AXIS; }
+
+/* What the controller always has for an action that is two buttons together on the Xbox (Ninpo: Y + B, Wind
+ * Run: X + A), whatever button it is also bound to; NULL for the others (src/pause_tab.c shows it in an
+ * empty controller slot, #75). */
+/* ---------- the game's own Button Settings ----------
+ *
+ * The game gives each controller button an action in its options (Options > Controller > Button
+ * Settings): ten entries at 0xDB9380 + 0xA0 -- A, B, X, Y, Black, White, LT, RT, then X + A and Y + B --
+ * each an action 0-10: not used, Ninpo, Wind Run, Jump, Projectile Weapon, Attack, Special Attack,
+ * Guard, Center Camera, Display Map, Karma Window (the menu's text order, sub_0021D970). Ours bind
+ * a key or a controller button to an action; the Xbox button that action takes is the one the game's
+ * table gives it now, so a change there does not move what our bindings do. */
+#define GAME_BUTTONS 0xDB9420u
+static const unsigned char s_game_default[10] = { 3, 4, 5, 6, 9, 10, 7, 8, 2, 1 };
+extern ptrdiff_t g_xbox_mem_offset;
+
+static void game_buttons(unsigned char out[10])
+{
+    memcpy(out, s_game_default, 10);
+    if (!g_xbox_mem_offset)
+        return;
+    const uint32_t *t = (const uint32_t *)((uintptr_t)GAME_BUTTONS + g_xbox_mem_offset);
+    unsigned char v[10];
+    int any = 0;
+    for (int i = 0; i < 10; i++) {
+        if (t[i] > 10)
+            return;                                  /* not the options (yet) */
+        v[i] = (unsigned char)t[i];
+        any |= v[i];
+    }
+    if (any)
+        memcpy(out, v, 10);
+}
+
+/* The game's action for one of ours (by the button it has by default), or -1. */
+static int game_action(const Action *t)
+{
+    if (t->kind == T_AN2)
+        return t->a == XBOX_BUTTON_Y ? 1 : 2;        /* Ninpo (Y + B), Wind Run (X + A) */
+    if (t->kind == T_AN && t->a < 8)
+        return s_game_default[t->a];
+    return -1;
+}
+
+/* Where the game has that action now: 0-7 a button (the analog index), 8 X + A, 9 Y + B; -1 nowhere. */
+static int game_slot(const Action *t, const unsigned char tab[10])
+{
+    int id = game_action(t);
+    if (id < 0)
+        return -1;
+    for (int i = 0; i < 10; i++)
+        if (tab[i] == id)
+            return i;
+    return -1;
+}
+
+static int game_buttons_default(void)
+{
+    unsigned char tab[10];
+    game_buttons(tab);
+    return !memcmp(tab, s_game_default, 10);
+}
+
+/* What the controller always has for an action that is two buttons together in the game's Button Settings
+ * (by default Ninpo: Y + B, Wind Run: X + A), whatever button it is also bound to; NULL for the others
+ * (src/pause_tab.c shows it in an empty controller slot, #75). */
+const char *ngb_bind_pad_combo(int a)
+{
+    if (a < 0 || a >= A_COUNT)
+        return NULL;
+    unsigned char tab[10];
+    game_buttons(tab);
+    int slot = game_slot(&s_act[a], tab);
+    return slot == 8 ? "X + A" : slot == 9 ? "Y + B" : NULL;
+}
 unsigned ngb_bind_generation(void) { return s_gen; }
 
 static void identity_check(void)
@@ -382,13 +459,18 @@ static void press(XBOX_INPUT_STATE *st, const Action *t, int v, int axes[4])
             st->Gamepad.wButtons |= t->a;
         break;
     case T_AN2:
-        if (v > an[t->b])
-            an[t->b] = (BYTE)v;
-        /* fall through */
-    case T_AN:
-        if (v > an[t->a])
-            an[t->a] = (BYTE)v;
+    case T_AN: {   /* the button (or the two) the game's Button Settings give this action now */
+        unsigned char tab[10];
+        game_buttons(tab);
+        int slot = game_slot(t, tab);
+        int b0 = slot < 0 ? -1 : slot < 8 ? slot : slot == 8 ? XBOX_BUTTON_X : XBOX_BUTTON_Y;
+        int b1 = slot == 8 ? XBOX_BUTTON_A : slot == 9 ? XBOX_BUTTON_B : -1;
+        if (b0 >= 0 && v > an[b0])
+            an[b0] = (BYTE)v;
+        if (b1 >= 0 && v > an[b1])
+            an[b1] = (BYTE)v;
         break;
+    }
     case T_AXIS:
         if (v > 30)
             axes[t->a] += t->b ? -32767 : 32767;
@@ -564,7 +646,8 @@ void xbox_pad_remap(XBOX_INPUT_STATE *st)
         return;
     apply_invert(st);
     int quick = ngb_quick_controls_active();
-    if (!quick && (s_pad_identity || getenv("NGB_NO_PAD_REMAP")))
+    /* The controller as it is when nothing is rebound -- here or in the game's own Button Settings. */
+    if (!quick && ((s_pad_identity && game_buttons_default()) || getenv("NGB_NO_PAD_REMAP")))
         return;
     int v[P_COUNT], axes[4] = { 0 };
     pad_inputs(st, v);

@@ -18,6 +18,7 @@ enum {
     A_DPAD_UP, A_DPAD_DOWN, A_DPAD_LEFT, A_DPAD_RIGHT,
     A_QUICK_WEAPONS, A_QUICK_ITEMS, A_QUICK_LEFT, A_QUICK_RIGHT,
     A_QUICK_CONFIRM, A_QUICK_CANCEL,
+    A_HUD,                       /* Toggle HUD: Display & Audio > HUD (src/hud.c), nothing bound by default */
     A_COUNT
 };
 
@@ -30,6 +31,7 @@ enum { P_A, P_B, P_X, P_Y, P_BLACK, P_WHITE, P_LT, P_RT, P_START, P_BACK, P_LS, 
        P_DU, P_DD, P_DL, P_DR, P_COUNT };
 
 #define BIND_KEYS 2              /* keyboard and mouse slots an action has */
+#define NGB_BIND_HUD_BIT 64      /* Toggle HUD in ngb_bind_quick_state's bits (the quick menu's are 1-32) */
 
 const char *ngb_bind_name(int action);        /* "Attack" */
 const char *ngb_bind_help(int action);        /* a line about it */
@@ -56,6 +58,7 @@ void ngb_bind_load(void);
 /* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a
  * short one for a keycap (1-3 characters; "" for a mouse button). */
 void ngb_bind_input_name(int input, char *out, int n);
+const char *ngb_bind_pad_combo(int a);   /* "X + A" for Wind Run, "Y + B" for Ninpo; else NULL */
 void ngb_bind_input_short(int input, char *out, int n);
 /* The keyboard or mouse input shown for the pad's button b (XBOX_BUTTON_*)
  * in play's prompts; 0 none. */

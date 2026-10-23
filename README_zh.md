@@ -35,11 +35,12 @@
   带全部金圣甲虫开新一轮、还魂护符开关、扳机选服装、弓箭准星、第三人称视角设定等。
 - ngbrecomp 的 PC 功能：高渲染分辨率、16:9 / 16:10 / 21:9、键鼠与改键、多重采样抗锯齿、各向异性过滤、稳定帧率、
   镜头灵敏度、柔和泛光；“玩法”中的快速菜单（仿《忍者龙剑传 2》，用十字键选择武器、忍法与道具，默认关闭）；
-  作弊（含无限道具：恢复道具、还魂护符与魄封珠不消耗；无限飞行道具）；默认设置下只占约 250 MB 显存（0.9.27 之前超过 3 GB）。
+  作弊（含无限道具：恢复道具、还魂护符与魄封珠不消耗；无限飞行道具）；“显示与音效”中的界面显示开关与立体声定位；默认设置下只占约 250 MB 显存（0.9.27 之前超过 3 GB）。
+- 汉斯酒吧街机台与主菜单（解锁后）的街机版忍者龙剑传：另外重编译成独立程序（`NinjaTrilogy.exe`、`NinjaTomoe.exe`，上游 #18），
+  游戏会切换过去、玩完再切回来。文字为中文时游戏启动的是日文版街机，与 Xbox 上相同。
 - 重编译版自己的菜单（PC版设置、暂停菜单的“设置”页、F1 设置、退出页与确认框）在游戏文字语言为“亚洲”时显示中文（x2.1 默认即是）。
 
-不包含：SFC 忍者龙剑传三部曲与街机版。它们是另外的程序，没有重编译，主菜单中已隐藏这两项。
-汉斯酒吧里的忍者龙剑传街机台也是这个另外的程序，同样不能玩：一玩游戏就会关闭（上游 #18），玩之前请先存档。
+不包含：SFC 忍者龙剑传三部曲（`NinjaFCJ.xbe` / `NinjaFCU.xbe`）。它是另外的程序，没有重编译，主菜单中不显示这一项。
 
 ## 使用方法（Windows）
 
@@ -54,7 +55,7 @@
 ## 版本号
 
 发布版本与所基于的 ngbrecomp 版本一致（`hurricane-v0.9.9` 即基于 ngbrecomp 0.9.9）；在同一版本上我们自己的更新加 `-1`、`-2`……
-窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.27`。
+窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.28`。
 
 ## 与 ngbrecomp 的区别
 
@@ -69,7 +70,7 @@
   （x2.1 在 0x1543B9 清除还魂护符开关）。
 - 重编译版自身文字的中文：`tools/hurricane/zh_text.tsv` → `src/hurricane_zh_data.c`（`tools/hurricane/make_zh.py`）；
   x2.1 字库缺的 9 个字在运行时补进字库页的空格（`src/hurricane_zh.c`）。
-- 金龙图标（`tools/hurricane/make_icon.py`）、带版本号的窗口标题、高 DPI 支持、隐藏街机入口。
+- 金龙图标（`tools/hurricane/make_icon.py`）、带版本号的窗口标题、高 DPI 支持；街机程序按本程序的文件名切回（`src/launch.c`）。
   不加入上游的“反转镜头”“第一人称反转”“读档后第三人称”：x2.1 已有自己的视角设定，读档后也一律是第三人称镜头。
   只改变速度的“镜头灵敏度”保留。
 
@@ -84,6 +85,8 @@ CMake、Ninja、Git Bash，以及装有 `capstone` 的 Python。在 Git Bash 中
 ```sh
 xboxrecomp/third_party/fetch.sh                          # 只需一次：Vulkan 头文件、volk、VMA 等
 NGB_PY=/path/to/python.exe tools/pipeline_win.sh /path/to/x2.1/default.xbe   # 翻译成 C（几分钟）
+NGB_PY=/path/to/python.exe tools/pipeline_trilogy_win.sh /path/to/x2.1/NinjaTrilogy.xbe        # 街机版
+NGB_PY=/path/to/python.exe tools/pipeline_trilogy_win.sh /path/to/x2.1/NinjaTomoe.xbe tomoe    # 街机日文版
 cmake -S . -B build/x21 -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/windows-x64-llvm-mingw-native.cmake \
       -DNGB_WIN_DEPS=<deps：包含 llvm-mingw-*-ucrt-x86_64 和 sysroot/clang64>
