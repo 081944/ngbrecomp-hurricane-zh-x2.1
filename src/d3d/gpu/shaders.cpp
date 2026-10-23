@@ -558,6 +558,29 @@ bool PixelKey::operator==(const PixelKey& o) const { return std::memcmp(this, &o
 std::string ShaderHooks::Constants() const { return "    float4 ext;\n"; }
 
 std::string ShaderHooks::Shadow(int i) const {
+    // NGB_D3D_SHADOW_MODE=manual (#50, a test): the four texels read and compared here, texel OP reference with the
+    // console's function (misc.z), then blended bilinearly -- no comparison sampler, whatever the driver does there
+    static const char* mode = std::getenv("NGB_D3D_SHADOW_MODE");
+    if (mode && !std::strcmp(mode, "manual"))
+        return F("float shadowcmp%d(float t, float r) {\n"
+                 "    int c = int(misc.z);\n"
+                 "    bool p = c == 1 ? t < r : c == 2 ? t == r : c == 3 ? t <= r : c == 4 ? t > r : c == 5 ? t != r : c == 6 ? t >= r : c == 7;\n"
+                 "    return p ? 1.0 : 0.0;\n"
+                 "}\n"
+                 "float4 shadow%d(float2 uv, float z, int fmt, float2 px, float2 size) {\n"
+                 "    float mx = fmt == 2 ? 65535.0 : 16777215.0;\n"
+                 "    float r = clamp(z, 0, mx) / mx;\n"
+                 "    uint dw, dh; tex%d.GetDimensions(dw, dh); size = float2(dw, dh);   // the map as drawn (Shadow Resolution)\n"
+                 "    float2 t = uv * size - 0.5;\n"
+                 "    int2 b = int2(floor(t));\n"
+                 "    float2 f = t - floor(t);\n"
+                 "    int2 hi = int2(size) - 1;\n"
+                 "    float s00 = shadowcmp%d(tex%d.Load(int3(clamp(b, 0, hi), 0)), r);\n"
+                 "    float s10 = shadowcmp%d(tex%d.Load(int3(clamp(b + int2(1, 0), 0, hi), 0)), r);\n"
+                 "    float s01 = shadowcmp%d(tex%d.Load(int3(clamp(b + int2(0, 1), 0, hi), 0)), r);\n"
+                 "    float s11 = shadowcmp%d(tex%d.Load(int3(clamp(b + int2(1, 1), 0, hi), 0)), r);\n"
+                 "    return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y).xxxx;\n"
+                 "}\n", i, i, i, i, i, i, i, i, i, i, i);
     return F("// the sampler compares, a linear filter blends the four results like the console does\n"
              "float4 shadow%d(float2 uv, float z, int fmt, float2 px, float2 size) {\n"
              "    float mx = fmt == 2 ? 65535.0 : 16777215.0;\n"

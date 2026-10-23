@@ -1665,6 +1665,15 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
             return t.fb.view;
         }
         if (t.img.depth) info.shadow = (d.format == 0x2C || d.format == 0x30) ? 2 : 1;
+        static const bool shbar = std::getenv("NGB_D3D_SHADOW_BARRIER") != nullptr;   // #50 test: everything before, done
+        if (shbar && t.img.depth) {
+            EndRendering();
+            VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            mb.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+            mb.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+            d_.vkCmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb,
+                                    0, nullptr, 0, nullptr);
+        }
         Barrier(t.img, t.img.depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         from_target = true;
         return t.img.view;
@@ -1962,6 +1971,8 @@ VkSampler VulkanBackend::Sampler(const State& s, int stage, const TexInfo& info)
     if (info.shadow) {
         ci.compareEnable = VK_TRUE;
         ci.compareOp = VkCompareOp(cmp);
+        static const char* shmode = std::getenv("NGB_D3D_SHADOW_MODE");   // #50 test: nearest instead of linear
+        if (shmode && !std::strcmp(shmode, "nearest")) ci.magFilter = ci.minFilter = VK_FILTER_NEAREST;
         ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         ci.anisotropyEnable = VK_FALSE;
     }
