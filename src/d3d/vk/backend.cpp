@@ -972,6 +972,8 @@ void VulkanBackend::EndFrame() {
 // black, which nothing but a restart cleared (the game's soft reset keeps the renderer). Retired, not destroyed:
 // a frame still in flight may read it. Returns how many went.
 size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
+    static const bool off = std::getenv("NGB_D3D_NO_EVICT") != nullptr;   // NGB_D3D_NO_EVICT=1: kept, as before 0.9.29
+    if (off) return 0;
     size_t n = 0;
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (it->second.img.image && frame_ - it->second.used > idle_frames) {
