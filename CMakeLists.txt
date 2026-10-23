@@ -118,6 +118,10 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camera.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/d3d/d3d_hooks.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/d3d/d3d_orig.c
+    # The DirectSound hooks (src/audio, tools/take_dsound.py).
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_hooks.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_orig.c
     ${NGB_FONT_SOURCES})
 target_include_directories(ngb_gen PRIVATE
     ${XBOXRECOMP_DIR}/third_party/stb
@@ -174,6 +178,15 @@ if(NGB_NV2A_VK)
     target_compile_options(ngb_d3d PRIVATE -O2 -fno-strict-aliasing)
 endif()
 
+# ── DirectSound on a host mixer (src/audio, src/audio/NOTICE) ────
+
+find_package(SDL2 REQUIRED)
+add_library(ngb_audio OBJECT src/audio/dsound_hle.cpp)
+target_include_directories(ngb_audio PRIVATE src/audio src/d3d/compat
+    $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_features(ngb_audio PRIVATE cxx_std_20)
+target_compile_options(ngb_audio PRIVATE -O2 -fno-strict-aliasing)
+
 # ── Executable ──────────────────────────────────────────────────
 
 add_executable(${PROJECT_NAME}
@@ -189,6 +202,7 @@ add_executable(${PROJECT_NAME}
     src/launch.c
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
+    $<TARGET_OBJECTS:ngb_audio>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)

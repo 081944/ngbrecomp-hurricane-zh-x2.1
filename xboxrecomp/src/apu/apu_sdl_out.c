@@ -13,6 +13,8 @@
 #include "apu_sdl_out.h"
 
 static SDL_AudioDeviceID s_dev;
+static FILE *s_wav;          /* NGB_DSOUND_WAV=<file>: what is queued, 48 kHz stereo (compared with the host mixer's) */
+static uint32_t s_wav_frames;
 static int s_failed;
 static int s_playing;
 
@@ -41,6 +43,11 @@ int apu_sdl_out_init(void)
         fprintf(stderr, "[APU] cannot open an audio device: %s\n", SDL_GetError());
         s_failed = 1;
         return 0;
+    }
+    if ((e = getenv("NGB_DSOUND_WAV")) && (s_wav = fopen(e, "wb"))) {
+        static const unsigned char h[44] = { 'R','I','F','F',36,0,0,0,'W','A','V','E','f','m','t',' ',16,0,0,0,
+            1,0,2,0,0x80,0xBB,0,0,0,0xEE,2,0,4,0,16,0,'d','a','t','a',0,0,0,0 };
+        fwrite(h, 1, 44, s_wav);
     }
     /* Starts paused; apu_sdl_out_submit unpauses once a little is queued. */
     fprintf(stderr, "[APU] SDL audio: %s, 48 kHz stereo\n",
@@ -83,6 +90,20 @@ void apu_sdl_out_submit(const int16_t *frames, int n)
 
     if (!s_dev)
         return;
+    if (s_wav) {
+        uint32_t data, riff;
+        long at;
+        fwrite(frames, 4, (size_t)n, s_wav);
+        s_wav_frames += (uint32_t)n;
+        data = s_wav_frames * 4;
+        riff = 36 + data;
+        at = ftell(s_wav);
+        fseek(s_wav, 4, SEEK_SET);
+        fwrite(&riff, 4, 1, s_wav);
+        fseek(s_wav, 40, SEEK_SET);
+        fwrite(&data, 4, 1, s_wav);
+        fseek(s_wav, at, SEEK_SET);
+    }
     queued = SDL_GetQueuedAudioSize(s_dev);
     if (queued > max_queued)
         SDL_ClearQueuedAudio(s_dev);

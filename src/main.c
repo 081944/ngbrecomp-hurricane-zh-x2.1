@@ -264,6 +264,7 @@ static void print_guest_stack(void)
 /* The emulated APU: its registers are unmapped when RECOMP_AC97_READY is set,
  * and every access arrives here to be decoded and serviced. */
 typedef struct MCPXAPUState MCPXAPUState;
+int dsound_host_mixer(void);   /* src/audio/dsound.c: DirectSound on the host mixer instead */
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
 extern MCPXAPUState *g_apu_state;
 extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
@@ -746,9 +747,13 @@ static void bringup_defaults(void)
     /* With the GPU model, vblank comes from its CRTC. */
     if (!s_use_gpu)
         set_default("RECOMP_VBLANK", "1");
-    set_default("RECOMP_AC97_READY", "1");
+    /* DirectSound on the host mixer (src/audio, the default) never touches the sound chip: its registers stay
+     * plain memory, as other code reads them (an interrupt routine polls one). */
+    if (!dsound_host_mixer()) {
+        set_default("RECOMP_AC97_READY", "1");
+        set_default("RECOMP_DSP_ACK", "0x86BF8810");   /* contiguous memory starts at 64 MB */
+    }
     set_default("RECOMP_USB", "1");
-    set_default("RECOMP_DSP_ACK", "0x86BF8810");   /* contiguous memory starts at 64 MB */
 }
 
 #if defined(RECOMP_ICALL_FEEDBACK)
@@ -822,14 +827,17 @@ static void *guest_main(void *unused)
     }
 
     /* The APU and its register trap are only useful together: a trap with no
-     * model declines every access, a model nothing traps into sees nothing. */
-    if (getenv("RECOMP_AC97_READY")) {
+     * model declines every access, a model nothing traps into sees nothing.
+     * DirectSound on the host mixer (src/audio, the default) needs neither. */
+    if (getenv("RECOMP_AC97_READY") && !dsound_host_mixer()) {
         g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
         fprintf(stderr, "[BOOT] emulated APU %s\n",
                 g_apu_state ? "up" : "FAILED to initialise");
+    }
+    {
         extern int ngb_pc_setting(int which);
-        extern void mcpx_apu_set_hrtf(int on);
-        mcpx_apu_set_hrtf(ngb_pc_setting(23));   /* Positional Audio (#30, #86): panning unless chosen otherwise */
+        extern void ngb_audio_set_positional(int mode);
+        ngb_audio_set_positional(ngb_pc_setting(23));   /* Positional Audio (#30, #86): panning unless chosen otherwise */
     }
 
     xbox_kernel_init();

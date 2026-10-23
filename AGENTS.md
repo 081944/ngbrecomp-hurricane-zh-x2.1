@@ -49,6 +49,7 @@ Test runs must never touch the user's own data or desktop:
   Copy what you need into a scratch folder and point the game there: `NGB_SAVE_DIR`,
   `XDG_CONFIG_HOME`, `NGB_GAME_DIR`; `NGB_NO_SETTINGS=1` skips the settings screen.
 - **No sound**: `SDL_AUDIODRIVER=dummy` and `NGB_AUDIO=0` (under Proton only the latter reaches the game).
+  With `NGB_AUDIO=0` the mixer still runs on a timer, so `NGB_DSOUND_WAV=<file>` records what would play.
 - **No windows on the desktop**: run inside a headless gamescope, with `env -u WAYLAND_DISPLAY`:
   `gamescope --backend headless -W 1280 -H 720 -- ./run.sh`.
 - **Kill only your own processes**, by PID (check `/proc/<pid>/environ` for your scratch paths) —

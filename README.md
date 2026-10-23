@@ -24,7 +24,8 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
   controller, mouse support in the menus
 - Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
-- Positional sound (3D sounds placed left and right as on the console), an optional HUD-free view
+- Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
+  7.1 output; an optional HUD-free view
 - Smooth frame pacing and low input latency; shaders prepared in the background (no first-time
   stutter)
 
@@ -200,7 +201,7 @@ and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
   LGPL-2.1-or-later, its shader generators GPL-2.0 or 3.0; xemu as a whole is GPL-2.0)
 - TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) and
   [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp): the renderer's shader, vertex and
-  texture code (MIT)
+  texture code, and the sound mixer's model (MIT)
 - Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
 - Keyboard and mouse prompts: Xelu's Free Controller & Key Prompts (CC0)
 - Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)
