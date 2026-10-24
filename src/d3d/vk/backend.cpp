@@ -476,7 +476,6 @@ private:
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
     void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples, DrawConstants& c);
     bool recording_ = false;
-    uint32_t order_draws_ = 0;   // this frame's opaque depth-writing draws so far (NGB_D3D_ORDER_BIAS)
     void Begin();
     void Submit();
     uint32_t frame_ = 0;
@@ -985,17 +984,6 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
             ++it;
         }
     }
-    return n;
-}
-
-// NGB_D3D_ORDER_BIAS=n (testing): each opaque draw that writes depth and tests LESSEQUAL drawn n depth steps nearer
-// than the one before it in the frame, so of two meshes lying in one plane the later wins every frame -- on the
-// console both come out at the same depth and LESSEQUAL lets the later through; here rounding differs by a step
-// either way and the two flicker (the walls by the Tairon drawbridge: draws 124 and 128 of the same state). Such
-// draws' pipelines take their depth bias as dynamic state (kOrderBias in the key's zbias).
-constexpr int32_t kOrderBias = -0x7FFF0000;
-float OrderBiasStep() {
-    static const float n = std::getenv("NGB_D3D_ORDER_BIAS") ? float(std::atof(std::getenv("NGB_D3D_ORDER_BIAS"))) : 0.0f;
     return n;
 }
 
@@ -2247,7 +2235,7 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
         // viewport transform: with the flipped viewport the two agree, so no inversion
         rs.frontFace = k.ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
         rs.depthBiasEnable = k.zbias || k.zslope;
-        rs.depthBiasConstantFactor = k.zbias == kOrderBias ? 0.0f : float(k.zbias);
+        rs.depthBiasConstantFactor = float(k.zbias);
         rs.depthBiasSlopeFactor = k.zslope;
         rs.lineWidth = 1.0f;
         VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
@@ -2276,7 +2264,6 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
                                 VK_DYNAMIC_STATE_STENCIL_REFERENCE, VK_DYNAMIC_STATE_LINE_WIDTH};
         VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
         dy.dynamicStateCount = Lines(k) ? 5 : 4;
-        if (k.zbias == kOrderBias) dyn[dy.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BIAS;   // not a line pipeline
         dy.pDynamicStates = dyn;
         VkFormat cf = kColorFormat;
         VkPipelineRenderingCreateInfo pr{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
@@ -2602,10 +2589,6 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (a.topology == Topology::Triangles && SimpleState(s, kMSolidOffsetEnable)) {
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
-        } else if (OrderBiasStep() > 0 && a.topology == Topology::Triangles && k.zen && k.zwrite && !k.blend &&
-                   k.zfunc == 0x203) {
-            k.zbias = kOrderBias;
-            k.zslope = 0;
         } else if (a.topology == Topology::Triangles && k.zen && k.zfunc == 0x203 && (!k.zwrite || k.blend) &&
                    ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT) {
             // A layer over a surface already drawn, testing LESSEQUAL: a pass that does not write depth (a second
@@ -3112,8 +3095,6 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     Color(SimpleState(s, kMBlendColor), bf);
     d_.vkCmdSetBlendConstants(cmd_, bf);
     d_.vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, SimpleState(s, kMStencilRef) & 0xFF);
-    if (k.zbias == kOrderBias)   // NGB_D3D_ORDER_BIAS: each such draw nearer than the last
-        d_.vkCmdSetDepthBias(cmd_, -OrderBiasStep() * float(++order_draws_), 0.0f, 0.0f);
     if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale
         d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx, 1.0f, line_max_) : 1.0f);
 
@@ -3597,7 +3578,6 @@ void VulkanBackend::TraceFrame(Target& t) {
 
 void VulkanBackend::Present(const Surface& front) {
     presents_++;
-    order_draws_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
         static const char* tf = std::getenv("NGB_TRACE_FILE");
         if (tf && access(tf, F_OK) == 0) {
