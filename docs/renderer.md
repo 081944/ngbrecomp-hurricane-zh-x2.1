@@ -113,7 +113,10 @@ debug knobs out once it is the default.
   (share/NinjaGaidenBlack/d3d-seed.bin; NGB_D3D_SEED_RECORD=<file> records one, vertex programs as
   default.xbe offsets). First chapter-1 combat went from 24 compile hitches (300 ms in all, up to 83 ms
   in one frame) to none. NGB_D3D_HITCHLOG=1 logs frames held up by compiling. xemu's own pipeline
-  prewarm is off while it draws nothing (NV2A_NO_PREWARM).
+  prewarm is off while it draws nothing (NV2A_NO_PREWARM). recipes.bin and spirv.bin are appended to as
+  the game runs, so a record cut short (the game killed or the disk full while writing) is cut off at the
+  next start, with everything after it: read past it, everything recorded later was never known and was
+  made late at every start (spirv.bin crashed the driver).
 - Two frames in flight (EndFrame): the game records frame N+1 while the GPU draws N; Submit() is the
   full sync for callers that destroy or read back; replaced textures are retired to a graveyard until
   no frame in flight can use them; the presenter waits on the frame with a barrier (same queue). At 10x
@@ -124,6 +127,33 @@ debug knobs out once it is the default.
   instead of the frame waiting for them (a hitch: 10-80 ms each on a first sight). `NGB_D3D_SYNC_COMPILE=1`
   makes them at once as before. The pipelines warmed at startup are also made for the anti-aliasing in use
   (and again when it changes): each holds one sample count, and the seed's were recorded without MSAA.
+  A pipeline that only adds a depth bias set at the draw (the drawbridge towers, below) is drawn by the
+  plain one meanwhile, so it never drops out.
+
+- Textures the game hasn't used for 30 s are retired (EvictTextures), and an image that can't be made for
+  lack of memory first retires what the last two frames didn't use (#81): each texture the game streams
+  to a new address made an image that stayed for the session. `NGB_D3D_NO_EVICT=1` keeps them (comparing),
+  `NGB_D3D_TEXSTATS=1` logs the count and size once a second.
+
+- 2D quads above 1x (QuadSnap, QuadHlsl): an axis-aligned pretransformed 4-vertex quad (corners within a
+  hundredth of a pixel: the pause menu's dagger has one at 181.4999) has its edges moved to the console's
+  pixel boundaries, its texture coordinates moved with them, and each stage's coordinates clamped to the
+  range the console's pixel centres sample -- strips of a full screen fade left uncovered, lines over the
+  scrolling 2D backgrounds (#83). Also at 1x with MSAA. Its linearly filtered textures are weighted by their
+  alpha (qsnap.y), so a transparent texel's colour doesn't fringe an opaque one, and an on-or-off mask keeps
+  the nearest texel's alpha. Left: a faint light line across the pause menu's dagger above 1x, where the
+  sheen quad's soft alpha ramps up inside the crossbar quad's last console row (at 1x that row takes half of
+  it at once); taking the alpha at the console pixel's centre removes it but steps soft edges and text.
+  `NGB_D3D_NO_QUADSNAP=1` turns all of it off.
+
+- The Tairon drawbridge towers (chapter 8): two map sections lay rubble and blocks in one plane, cut into
+  different triangles, and their depths tie within a few steps either way -- in xemu's renderer too, the
+  game's own data. The towers' meshes (a vertex buffer whose header is in their chunk: "KMD", size 0x4FF470
+  at +0xC) are pulled nearer by half a console pixel's worth of depth slope and 2 steps, as a depth bias set
+  at the draw (the pipeline key's has_ds bit 2), so every pass over the same mesh -- the depth pre-pass,
+  Ryu's shadow laid over it -- moves with it. Chosen by texture instead, the shadow pass wasn't and broke
+  up; a rule for every overlapping section put a seam down a chapter 1 cliff. `NGB_D3D_SECTION_PULL=n`
+  (steps, 0 off), `NGB_D3D_SECTION_SLOPE=f`, `NGB_D3D_SECTION_LOG=1` (draws pulled per frame).
 
 - The gamma ramp (D3DDevice_SetGammaRamp: the game's Screen Adjustment -- gamma, brightness, contrast) is
   applied as the front buffer is copied for the presenter, through a 256-entry table per channel; at the
@@ -159,5 +189,9 @@ debug knobs out once it is the default.
   sampler state and every mip level's value range; `NGB_D3D_BUMPLEVEL=n` reads the ripple texture at
   level n everywhere. `NGB_D3D_PSCLOG=1` logs each pixel shader's combiner constants, `NGB_D3D_BIASLOG=1`
   each LOD bias used; on xemu's side `NV2A_PSC_LOG=1`, `NV2A_BUMP_FILTER_LOG=1` (the ripple map's
-  TEXFILTER0) and `NGB_NV2A_FOGLOG=1` (the fog registers) give the hardware's view of the same state. F7 traces carry each point draw's state (`pt`: sprite, scaling, size, min, max, A B C,
+  TEXFILTER0) and `NGB_NV2A_FOGLOG=1` (the fog registers) give the hardware's view of the same state.
+  For z-fighting: `NGB_D3D_IDVIEW=1` tints each opaque 3D surface by its draw, `=2` writes each draw's
+  number exactly on the frames `dump_dir/burst.now` dumps, with `dump_dir/ids_<frame>.txt` naming each
+  draw's map piece, chunk and texture; a stepped frame (`NGB_D3D_STEP`) also writes
+  `dump_dir/vertices_<frame>.txt`, every fixed-function draw's matrices, positions and guest call stack. F7 traces carry each point draw's state (`pt`: sprite, scaling, size, min, max, A B C,
   the vertex's attribute bits).
