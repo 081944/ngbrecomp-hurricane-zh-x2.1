@@ -991,18 +991,29 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
     return n;
 }
 
-// NGB_D3D_SECTION_PULL=n (testing): Ninja Gaiden Black's levels load in chunks (the game's table at 0x9504C0, 0x14
-// bytes a slot; a map piece object -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the
-// slot's address + 4). A section loaded over the base map (the Tairon hill, the cathedral square, over the town)
-// repeats some of the base map's walls in the same plane, cut into other triangles, and the game draws both: their
-// depths tie within a few steps, either way, and the two textures flicker (the drawbridge walls). A piece of a chunk
-// is pulled nearer by n depth steps for each slot it is above the lowest drawn, two at most: chunks load into slots in
-// order, so of two copies the later-loaded section's wins the ties (within 12 steps at the drawbridge); real gaps of
-// tens of steps and more stay as the game has them, and nothing moves by more than 2n.
+// Overlapping map pieces (NGB_D3D_SECTION_PULL=n, default 12; 0 turns it off). Ninja Gaiden Black's levels load in
+// chunks (the game's table at 0x9504C0, 0x14 bytes a slot: +0 the chunk's data, +4 1 while loaded; a map piece object
+// -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the slot's address + 4). Where a
+// rubble face is laid over a wall the game draws both in the same plane, cut into different triangles: the town's own
+// piece 0 over its block walls, the drawbridge hill section's copy of them. Their depths tie within a few steps either
+// way and the two textures flicker -- by the Tairon drawbridge, in either renderer, where the Xbox shows the rubble
+// steadily. The laid-over surface wins the ties here: a piece pulled n depth steps nearer for each slot its chunk is
+// above the lowest drawn (two at most: a section loaded over the base map), and n more when its texture is another
+// chunk's (a texture's chunk: the loaded chunk whose data holds its address). Real gaps, tens of steps and more, stay
+// as the game has them; nothing moves by more than 3n.
 constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
 int SectionPull() {
-    static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 0;
+    static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 12;
     return n;
+}
+// the loaded chunk whose data holds the guest address a (its data address), or 0
+uint32_t ChunkDataOf(uint32_t a) {
+    uint32_t best = 0;
+    for (uint32_t i = 0; i < kChunkSlots; i++) {
+        uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
+        if (kernel::R32(e + 4) == 1 && base <= a && base > best) best = base;
+    }
+    return best;
 }
 // the chunk slot of the map piece being drawn, or ~0u
 uint32_t DrawChunkSlot() {
@@ -2620,10 +2631,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             uint32_t slot = DrawChunkSlot();
             if (slot != ~0u) {
                 section_min_ = std::min(section_min_, slot);
-                if (section_base_ != ~0u && slot > section_base_) {
-                    // by load order: a chunk loaded later (a later slot) one step of n nearer than the one before,
-                    // two steps at most -- the near-ties of two copies are within 12 depth steps
-                    k.zbias -= SectionPull() * int32_t(std::min<uint32_t>(slot - section_base_, 2));
+                int32_t steps = section_base_ != ~0u && slot > section_base_ ? int32_t(std::min<uint32_t>(slot - section_base_, 2)) : 0;
+                uint32_t own = kernel::R32(kChunkTable - 4 + slot * kChunkSlot);
+                // a texture of another chunk's (its header in that chunk's data): a surface laid over
+                if (s.textures[0] && own && ChunkDataOf(s.textures[0]) != own) steps++;
+                if (steps) {
+                    k.zbias -= SectionPull() * steps;
                     section_pulled_++;
                 }
             }
