@@ -1004,8 +1004,8 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
 // renderer, as xemu's model of the console's depth gives the same ties -- where the Xbox shows the rubble steadily.
 // The towers' pieces are pulled nearer here, and only theirs: a rule for every overlapping section (by load order)
 // settled other places the other way round (a seam down a chapter 1 cliff). The towers' chunk is known by its header
-// ("KMD", its size 0x4FF470 at +0xC: the same wherever it loads), a piece's chunk by its texture's (the loaded chunk
-// whose data holds the texture's address: the piece the render list names is not always the one drawing).
+// ("KMD", its size 0x4FF470 at +0xC: the same wherever it loads), a draw's by its vertex buffer's header (the loaded
+// chunk whose data holds it).
 constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
 int SectionPull() {
     static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 2;
@@ -2646,7 +2646,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
         if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen && k.has_ds) {   // a pull of 0 turns it off
-            if (DrawChunkSlot() != ~0u && s.textures[0] && InTowersChunk(s.textures[0])) {
+            // by the vertex buffer (its header in the towers' chunk), not the texture: every pass over the same mesh -- the
+            // depth pre-pass, untextured, and Ryu's shadow laid over it -- then moves with it, or the shadow breaks up
+            if (s.streams[0].vb && InTowersChunk(s.streams[0].vb)) {
                 k.has_ds |= kDsDynamicBias;   // the pull set at the draw: any setting without a pipeline of its own
                 {
                     // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
