@@ -202,20 +202,19 @@ std::atomic<bool> g_before_idle[D3DF_COUNT];
 bool Before(int fn, Call c) {
     if (unsigned(fn) < D3DF_COUNT && g_before_idle[fn].load(std::memory_order_relaxed)) return false;
     std::lock_guard<std::recursive_mutex> lock(g_lock);
-    // the guest's stack at the call: what code addresses it holds, innermost first (the vertex dump's callers)
-    {
+    // a draw's guest stack: the code addresses on it, innermost first, and the map piece object being drawn when
+    // the render list walk (sub_00308D50, returning to 0x308D6F) called it (the vertex dump, the section pull)
+    if (fn == D3DF_D3DDevice_DrawIndexedVertices || fn == D3DF_D3DDevice_DrawVertices ||
+        fn == D3DF_D3DDevice_DrawVerticesUP) {
         int n = 0;
-        for (uint32_t o = 0; o < 0x400 && n < 8; o += 4) {
+        gpu::g_draw_node = 0;
+        for (uint32_t o = 0; o < 0x400; o += 4) {
             uint32_t v = R32(c.r[ESP] + o);
-            if (v >= 0x11000 && v < 0x37A480) gpu::g_draw_stack[n++] = v;
+            if (v == 0x00308D6Fu && !gpu::g_draw_node) gpu::g_draw_node = R32(c.r[ESP] + o + 4);
+            if (v >= 0x11000 && v < 0x37A480 && n < 8) gpu::g_draw_stack[n++] = v;
+            if (gpu::g_draw_node && n >= 8) break;
         }
         gpu::g_draw_stack_n = n;
-        gpu::g_draw_node = 0;
-        for (uint32_t o = 0; o < 0x400; o += 4)
-            if (R32(c.r[ESP] + o) == 0x00308D6Fu) {
-                gpu::g_draw_node = R32(c.r[ESP] + o + 4);
-                break;
-            }
     }
     switch (fn) {
     // render states

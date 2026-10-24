@@ -476,6 +476,7 @@ private:
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
     void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples, DrawConstants& c);
     bool recording_ = false;
+    uint32_t section_base_ = ~0u, section_min_ = ~0u, section_pulled_ = 0;   // the lowest map chunk slot drawn last frame, and this one
     void Begin();
     void Submit();
     uint32_t frame_ = 0;
@@ -985,6 +986,27 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
         }
     }
     return n;
+}
+
+// NGB_D3D_SECTION_PULL=n (testing): Ninja Gaiden Black's levels load in chunks (the game's table at 0x9504C0, 0x14
+// bytes a slot; a map piece object -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the
+// slot's address + 4). A section loaded over the base map (the Tairon hill, the cathedral square, over the town)
+// repeats some of the base map's walls in the same plane, cut into other triangles, and the game draws both: their
+// depths tie within a few steps, either way, and the two textures flicker (the drawbridge walls). A piece of a chunk
+// is pulled nearer by n depth steps for each slot it is above the lowest drawn, two at most: chunks load into slots in
+// order, so of two copies the later-loaded section's wins the ties (within 12 steps at the drawbridge); real gaps of
+// tens of steps and more stay as the game has them, and nothing moves by more than 2n.
+constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
+int SectionPull() {
+    static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 0;
+    return n;
+}
+// the chunk slot of the map piece being drawn, or ~0u
+uint32_t DrawChunkSlot() {
+    if (g_draw_node < 0x10000 || g_draw_node >= 0x4000000) return ~0u;
+    uint32_t g = kernel::R32(g_draw_node + 8);
+    if (g < kChunkTable || g >= kChunkTable + kChunkSlot * kChunkSlots || (g - kChunkTable) % kChunkSlot) return ~0u;
+    return (g - kChunkTable) / kChunkSlot;
 }
 
 // A 2D quad above 1x drawn as the console covers and samples it (gpu::QuadHlsl, the pixel shader's clamp): for an
@@ -2590,6 +2612,18 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
+        if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen) {
+            uint32_t slot = DrawChunkSlot();
+            if (slot != ~0u) {
+                section_min_ = std::min(section_min_, slot);
+                if (section_base_ != ~0u && slot > section_base_) {
+                    // by load order: a chunk loaded later (a later slot) one step of n nearer than the one before,
+                    // two steps at most -- the near-ties of two copies are within 12 depth steps
+                    k.zbias -= SectionPull() * int32_t(std::min<uint32_t>(slot - section_base_, 2));
+                    section_pulled_++;
+                }
+            }
+        }
     }
     // the console culls the CULLMODE winding (D3DCULL_CW 0x900, CCW 0x901); FRONTFACE says which
     // winding is the front, so the culled side is the front when the two agree
@@ -3604,6 +3638,12 @@ void VulkanBackend::TraceFrame(Target& t) {
 
 void VulkanBackend::Present(const Surface& front) {
     presents_++;
+    if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
+        std::fprintf(stderr, "[SECTION] base slot %d, %u draws pulled (last node %08X +8 %08X)\n", int(section_min_),
+                     section_pulled_, g_draw_node, g_draw_node >= 0x10000 && g_draw_node < 0x4000000 ? kernel::R32(g_draw_node + 8) : 0);
+    section_base_ = section_min_;
+    section_min_ = ~0u;
+    section_pulled_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
         static const char* tf = std::getenv("NGB_TRACE_FILE");
         if (tf && access(tf, F_OK) == 0) {
