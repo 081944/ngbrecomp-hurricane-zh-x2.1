@@ -13,6 +13,7 @@
 #include <vk_mem_alloc.h>
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -2499,6 +2500,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         pk.sprite = 1;
     }
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
+    if (IdView()) pkey ^= 0x1D1D1D1D1D1D1D1Dull;   // other shaders: other modules in the cache
     if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
     static const char* psdbg = std::getenv("NGB_D3D_PSDEBUG");
@@ -3060,6 +3062,31 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
     }
     QuadSnap(s, a, count, quad, rt ? rt->samples : ds ? ds->samples : 1, c);
+    if (IdView() && !a.pretransformed && k.zen && k.zwrite && !k.blend && a.topology == Topology::Triangles) {
+        // NGB_D3D_IDVIEW: one of 24 hues by the map piece and texture (or the draw's vertex buffer), the same every
+        // frame; the legend, each colour's draws, goes to the log every 5 s
+        uint32_t piece = g_draw_node, tex = s.textures[0];
+        uint32_t key = piece ? piece * 2654435761u ^ tex * 40503u : uint32_t(s.streams[0].vb) * 2654435761u ^ tex;
+        uint32_t idx = (key >> 7) % 24;
+        c.qsnap[2] = float(idx + 1);
+        static std::map<uint32_t, std::string> legend;
+        static uint32_t last = 0;
+        char line[160];
+        std::snprintf(line, sizeof line, "piece %08X chunk %d tex %08X n %u", piece, int(DrawChunkSlot()), tex, count);
+        std::string& e = legend[idx];
+        if (e.find(line) == std::string::npos && e.size() < 600) e += std::string(e.empty() ? "" : "; ") + line;
+        if (presents_ - last >= 300) {
+            last = presents_;
+            static const char* names[24] = {"red", "red-orange", "orange", "amber", "yellow", "lime", "yellow-green",
+                                            "green", "green2", "spring", "mint", "teal", "cyan", "sky", "azure",
+                                            "blue", "deep blue", "indigo", "violet", "purple", "magenta", "pink",
+                                            "rose", "crimson"};
+            std::fprintf(stderr, "[IDVIEW] frame %u legend:\n", presents_);
+            for (auto& [i, t] : legend) std::fprintf(stderr, "[IDVIEW]   %2u %-12s %s\n", i + 1, names[i], t.c_str());
+            std::fflush(stderr);
+            legend.clear();
+        }
+    }
     VkDeviceSize dc = Upload(&c, sizeof(c), ringAlign_);
 
     // the vertices and indices

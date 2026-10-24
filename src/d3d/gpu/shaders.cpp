@@ -863,6 +863,11 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
     return s;
 }
 
+bool IdView() {
+    static const bool on = std::getenv("NGB_D3D_IDVIEW") && *std::getenv("NGB_D3D_IDVIEW") == '1';
+    return on;
+}
+
 std::string PixelHlsl(const PixelKey& k) {
     std::string s = Common();
     s += PsHelpers();
@@ -1042,7 +1047,15 @@ std::string PixelHlsl(const PixelKey& k) {
         body += "cur.rgb = saturate(cur.rgb + v1.rgb);\n";
         body += "float4 outc = float4(lerp(fogin.rgb, cur.rgb, fogin.a), cur.a);\n";
     }
-    body += "alphatest(outc.a);\n" + Hooks().Output() + "return outc;\n}\n";
+    body += "alphatest(outc.a);\n" + Hooks().Output();
+    // NGB_D3D_IDVIEW=1 (debugging): an opaque 3D surface tinted by its draw's colour (qsnap.z: 1 + a palette
+    // index), its own shading kept -- two surfaces fighting over pixels show as two colours speckling
+    if (IdView())
+        body += "if (qsnap.z > 0) { float h = (qsnap.z - 1) / 24.0;\n"
+                "  float3 hue = saturate(abs(frac(h + float3(0, 2.0/3, 1.0/3)) * 6 - 3) - 1);\n"
+                "  float l = dot(outc.rgb, float3(0.3, 0.59, 0.11));\n"
+                "  outc.rgb = hue * (0.35 + 0.9 * l); }\n";
+    body += "return outc;\n}\n";
     s += body;
     return k.quad ? QuadHlsl(std::move(s)) : s;
 }
