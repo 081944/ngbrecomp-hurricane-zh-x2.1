@@ -835,7 +835,7 @@ static void *guest_main(void *unused)
                 g_apu_state ? "up" : "FAILED to initialise");
         extern int ngb_pc_setting(int which);
         extern void mcpx_apu_set_hrtf(int on);
-        mcpx_apu_set_hrtf(ngb_pc_setting(23));   /* Positional Audio (#30), on unless turned off */
+        mcpx_apu_set_hrtf(ngb_pc_setting(23));   /* Positional Audio (#30, #86): panning unless chosen otherwise */
     }
 
     xbox_kernel_init();

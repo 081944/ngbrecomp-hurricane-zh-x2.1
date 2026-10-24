@@ -54,9 +54,10 @@ Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
 
 Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
 
-### macOS (experimental)
+### macOS (unsupported)
 
-Build the Apple Silicon app using the commands below, extract the resulting zip, and open
+The macOS code is a community contribution (#49) that I can't build or test, so there are no
+official macOS packages and macOS bugs may go unfixed. Build the Apple Silicon app using the commands below, extract the resulting zip, and open
 `Ninja Gaiden Black.app`. Choose your own disc image or extracted game folder on first start.
 Current dependencies require macOS 26. Intel Macs and the xemu renderer are unsupported;
 packages are signed ad hoc, without Developer ID signing or notarization.
@@ -84,8 +85,8 @@ of the pause menu. Changes apply at once and are saved.
   bright lights; off is the console's look)
 - **Display & Audio**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off,
-  Positional Audio (3D sounds placed left and right through the console sound chip's filters, on by
-  default; off, they are centred)
+  Positional Audio (3D sounds placed left and right: Panning, the default; Console, through the sound
+  chip's filters as on the Xbox, a little duller; Off, centred)
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open

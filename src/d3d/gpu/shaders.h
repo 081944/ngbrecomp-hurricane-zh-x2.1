@@ -106,6 +106,12 @@ struct DrawConstants {
     float wvb[4][16];
     float wvbn[4][16];
     float pv[16];
+    // a 2D quad above 1x (backend QuadSnap): each stage's texture coordinates kept to what the console's pixel
+    // centres sample (min xy, max zw, in the vertices' own units); their gradients du/dx du/dy dv/dx dv/dy in
+    // console pixels; qsnap.x 1 when they apply. Other draws: qsnap.x 0.
+    float uvc[4][4];
+    float uvg[4][4];
+    float qsnap[4];
 };
 
 }  // namespace gpu

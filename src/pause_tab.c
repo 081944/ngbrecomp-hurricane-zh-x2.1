@@ -112,7 +112,7 @@ static const char *const s_help[S_COUNT] = {
     "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
     "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only.",
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
-    "Places sounds left and right, as the console's sound chip does. Off: all sounds centred.",
+    "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer.",
     "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.",
 };
 
@@ -181,6 +181,7 @@ static void value_text(int row, char *out, size_t n)
     }
     case S_ASPECT:  snprintf(out, n, "%s", v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
+    case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
     case S_SKIP:
     case S_ALLDIFF:
     case S_ALLCOST:
@@ -229,6 +230,9 @@ static void change(int row, int step)
         break;
     case S_QUICKSCALE:
         ngb_pc_set_setting(row, ngb_quick_scale_step(v, step));
+        break;
+    case S_POSAUDIO:
+        ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
     case S_ASPECT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 3)) % 4);

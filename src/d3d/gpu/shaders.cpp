@@ -61,6 +61,9 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4x4 wvb[4];
     float4x4 wvbn[4];
     float4x4 pv;
+    float4 uvc[4];
+    float4 uvg[4];
+    float4 qsnap;
 };
 )";
 
@@ -558,6 +561,29 @@ bool PixelKey::operator==(const PixelKey& o) const { return std::memcmp(this, &o
 std::string ShaderHooks::Constants() const { return "    float4 ext;\n"; }
 
 std::string ShaderHooks::Shadow(int i) const {
+    // NGB_D3D_SHADOW_MODE=manual (#50, a test): the four texels read and compared here, texel OP reference with the
+    // console's function (misc.z), then blended bilinearly -- no comparison sampler, whatever the driver does there
+    static const char* mode = std::getenv("NGB_D3D_SHADOW_MODE");
+    if (mode && !std::strcmp(mode, "manual"))
+        return F("float shadowcmp%d(float t, float r) {\n"
+                 "    int c = int(misc.z);\n"
+                 "    bool p = c == 1 ? t < r : c == 2 ? t == r : c == 3 ? t <= r : c == 4 ? t > r : c == 5 ? t != r : c == 6 ? t >= r : c == 7;\n"
+                 "    return p ? 1.0 : 0.0;\n"
+                 "}\n"
+                 "float4 shadow%d(float2 uv, float z, int fmt, float2 px, float2 size) {\n"
+                 "    float mx = fmt == 2 ? 65535.0 : 16777215.0;\n"
+                 "    float r = clamp(z, 0, mx) / mx;\n"
+                 "    uint dw, dh; tex%d.GetDimensions(dw, dh); size = float2(dw, dh);   // the map as drawn (Shadow Resolution)\n"
+                 "    float2 t = uv * size - 0.5;\n"
+                 "    int2 b = int2(floor(t));\n"
+                 "    float2 f = t - floor(t);\n"
+                 "    int2 hi = int2(size) - 1;\n"
+                 "    float s00 = shadowcmp%d(tex%d.Load(int3(clamp(b, 0, hi), 0)), r);\n"
+                 "    float s10 = shadowcmp%d(tex%d.Load(int3(clamp(b + int2(1, 0), 0, hi), 0)), r);\n"
+                 "    float s01 = shadowcmp%d(tex%d.Load(int3(clamp(b + int2(0, 1), 0, hi), 0)), r);\n"
+                 "    float s11 = shadowcmp%d(tex%d.Load(int3(clamp(b + int2(1, 1), 0, hi), 0)), r);\n"
+                 "    return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y).xxxx;\n"
+                 "}\n", i, i, i, i, i, i, i, i, i, i, i);
     return F("// the sampler compares, a linear filter blends the four results like the console does\n"
              "float4 shadow%d(float2 uv, float z, int fmt, float2 px, float2 size) {\n"
              "    float mx = fmt == 2 ? 65535.0 : 16777215.0;\n"
@@ -964,7 +990,12 @@ std::string PixelHlsl(const PixelKey& k) {
             if (!t.kind && (reads_tex(0) || reads_tex(4)))
                 break;
             std::string norm = (t.rect ? F(" / texsize[%d].xy", i) : "") + F(" + texsize[%d].zw", i);
-            std::string uv = (k.proj >> i) & 1 ? F("(tc%d.xy / tc%d.w)%s", i, i, norm.c_str()) : F("tc%d.xy%s", i, norm.c_str());
+            // a 2D quad above 1x: its coordinates kept to what the console's pixel centres sample, in the vertices'
+            // own units (before a render target's texel scale): no nearer a font cell's or a tile's edge than the
+            // console reads (the line around an area name's letters, the seams of a scrolling background, #83)
+            std::string tcxy = k.quad ? F("(qsnap.x > 0 ? clamp(tc%d.xy, uvc[%d].xy, uvc[%d].zw) : tc%d.xy)", i, i, i, i)
+                                      : F("tc%d.xy", i);
+            std::string uv = (k.proj >> i) & 1 ? F("(tc%d.xy / tc%d.w)%s", i, i, norm.c_str()) : F("%s%s", tcxy.c_str(), norm.c_str());
             std::string cube;
             if (t.shadow)
                 body += F("float4 t%d = shadow%d((tc%d.xy / tc%d.w)%s, tc%d.z / tc%d.w, %d, i.pos.xy, texsize[%d].xy);\n", i, i, i, i,
@@ -1037,8 +1068,23 @@ std::string SpriteHlsl(std::string s) {
 }
 
 std::string QuadHlsl(std::string s) {
-    // Full screen passes once had their far edges pulled out half a pixel, and their texture coordinates
-    // put back; with the console's pixel centres kept (the vertex epilogue) they cover the target as drawn.
+    // A 2D quad above 1x (qsnap.x, set by the backend for an axis-aligned pretransformed quad): its edges go to
+    // the console's pixel boundaries -- the pixels the console covers, whose centres are inside -- and its
+    // texture coordinates move with them along their gradients. Shifted half a console pixel as everything is,
+    // an edge at a whole coordinate left a strip of the target uncovered above 1x (the top and left of a full
+    // screen fade, #83). At 1x the same pixels and coordinates as before.
+    const std::string shift = "    p.xy += 0.5;\n";
+    size_t at = s.find(shift);
+    if (at != std::string::npos)
+        s.insert(at, "    if (qsnap.x > 0) {\n"
+                     "        float2 sp = ceil(p.xy - 0.0001) - 0.5;\n"
+                     "        float2 dq = (sp - p.xy) / float2(ext.x > 0 ? ext.x : 1, ext.z > 0 ? ext.z : 1);\n"
+                     "        oT0.xy += float2(dot(uvg[0].xy, dq), dot(uvg[0].zw, dq));\n"
+                     "        oT1.xy += float2(dot(uvg[1].xy, dq), dot(uvg[1].zw, dq));\n"
+                     "        oT2.xy += float2(dot(uvg[2].xy, dq), dot(uvg[2].zw, dq));\n"
+                     "        oT3.xy += float2(dot(uvg[3].xy, dq), dot(uvg[3].zw, dq));\n"
+                     "        p.xy = sp;\n"
+                     "    }\n");
     return s;
 }
 }  // namespace gpu

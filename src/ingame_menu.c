@@ -85,7 +85,7 @@ void ngb_menu_set_running(const NgbSettings *s)
  * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved), 18 Smoother
  * Glow (src/d3d/vk/glow_options.h), 19 quick-menu pause, 20 quick-menu scale (100..0
  * percent, in tens), 21 infinite items, 22 infinite projectiles (cheats, src/cheats.c), 23 positional
- * audio (the APU's HRTF filters, #30), 24 the HUD (src/hud.c, #80). A change
+ * audio (0 off, 1 the APU's HRTF filters, 2 panning only; #30, #86), 24 the HUD (src/hud.c, #80). A change
  * applies at once (8 and 9 at the next start) and is saved, the cheats'
  * not. */
 int ngb_cheat(int which);
@@ -159,7 +159,7 @@ void ngb_pc_set_setting(int which, int value)
     case 8: s_running.skip_intro = value; break;        /* both at the next start */
     case 9: s_running.show_launcher = value; break;
     case 18: s_running.smooth_glow = !!value; break;
-    case 23: s_running.positional_audio = !!value; mcpx_apu_set_hrtf(value); break;
+    case 23: s_running.positional_audio = value < 0 ? 0 : value > 2 ? 2 : value; mcpx_apu_set_hrtf(s_running.positional_audio); break;
     case 24: s_running.show_hud = !!value; break;
     case 6:
         if (value / 8 == s_running.aspect && value % 8 < ngb_settings_size_count(value / 8)) {

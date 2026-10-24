@@ -47,7 +47,9 @@ ctx	en	zh	use
 	HUD	界面显示	E
 	The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.	游戏中叠加在画面上的体力与忍法条、武器等。关：画面干净	E
 	Positional Audio	立体声定位	E
-	Places sounds left and right, as the console's sound chip does. Off: all sounds centred.	像主机的音效芯片一样把声音分到左右。关：所有声音居中	E
+	Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer.	把声音分到左右。主机原版：经过音效芯片的滤波。声像：只保留定位，声音更清晰	E
+	Console	主机原版	E
+	Panning	声像	E
 	Toggle HUD	切换界面显示	P
 	Shows or hides the HUD (Display & Audio > HUD). Not bound unless chosen.	显示或隐藏界面（显示与音效 → 界面显示）。默认不绑定	P
 	What the game shows when it starts, and the difficulties New Game offers.	启动时的画面，以及新游戏可选的难度	E
