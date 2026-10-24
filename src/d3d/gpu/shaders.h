@@ -8,6 +8,8 @@
 // HLSL for the title's shaders and for its fixed function state, per the XDK's definitions of both
 namespace gpu {
 
+bool Depth24Quantize();   // NGB_D3D_DEPTH24Q: pixel shaders round their depth to 24-bit steps
+
 enum TexKind : uint8_t { kTexNone, kTex2D, kTex3D, kTexCube };
 
 struct TexInfo {

@@ -863,6 +863,11 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
     return s;
 }
 
+bool Depth24Quantize() {
+    static const bool on = std::getenv("NGB_D3D_DEPTH24Q") && *std::getenv("NGB_D3D_DEPTH24Q") == '1';
+    return on;
+}
+
 std::string PixelHlsl(const PixelKey& k) {
     std::string s = Common();
     s += PsHelpers();
@@ -917,7 +922,14 @@ std::string PixelHlsl(const PixelKey& k) {
                "    return r;\n"
                "}\n", i, i, i, i, i, i, i, i, i, i, lod.c_str(), i, i);
     }
-    s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
+    // NGB_D3D_DEPTH24Q=1 (testing): each pixel's depth rounded to the console's 24-bit z-buffer steps, so two
+    // surfaces the console stores at one depth are equal here too and LESSEQUAL lets the later through, as there;
+    // float depth (AMD has no 24-bit format) kept them a fraction of a step apart either way, and they flickered.
+    if (Depth24Quantize())
+        s += F("float4 main(VOut i, bool front : SV_IsFrontFace, out float odepth : SV_Depth) : SV_Target {\n"
+               "odepth = floor(i.pos.z * 16777215.0 + 0.5) / 16777215.0;\n");
+    else
+        s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
     s += "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
     s += k.two_sided ? "    float4 v0 = front ? i.d0 : i.b0, v1 = front ? i.d1 : i.b1;\n" : "    float4 v0 = i.d0, v1 = i.d1;\n";
     s += "    if (misc.w == 0) v1 = float4(0, 0, 0, 1);\n";
