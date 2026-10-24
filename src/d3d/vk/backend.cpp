@@ -483,8 +483,7 @@ private:
     bool recording_ = false;
     uint32_t id_count_ = 0, id_file_frame_ = ~0u;   // NGB_D3D_IDVIEW=2
     FILE* id_file_ = nullptr;
-    uint64_t section_drawn_ = 0, section_last_ = 0;   // the chunk slots whose map pieces were drawn this frame, and last
-    uint32_t section_pulled_ = 0;
+    uint32_t section_pulled_ = 0;   // the drawbridge towers' draws pulled this frame (NGB_D3D_SECTION_LOG)
     void Begin();
     void Submit();
     uint32_t frame_ = 0;
@@ -996,23 +995,24 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
     return n;
 }
 
-// Overlapping map pieces (NGB_D3D_SECTION_PULL=n depth steps, default 2, and NGB_D3D_SECTION_SLOPE=f console pixels'
-// worth of depth slope, default 0.25, a step; NGB_D3D_SECTION_PULL=0 turns it off). Ninja Gaiden Black's levels load in
+// The Tairon drawbridge's towers (NGB_D3D_SECTION_PULL=n depth steps, default 2, and NGB_D3D_SECTION_SLOPE=f console
+// pixels' worth of depth slope, default 0.5; NGB_D3D_SECTION_PULL=0 turns it off). Ninja Gaiden Black's levels load in
 // chunks (the game's table at 0x9504C0, 0x14 bytes a slot: +0 the chunk's data, +4 1 while loaded; a map piece object
-// -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the slot's address + 4). Where a
-// rubble face of one section covers another section's block walls the game draws both in the same plane, cut into
-// different triangles (by the Tairon drawbridge: chunk 3's towers over chunk 2's walls). Their depths tie within a few
-// steps either way, so the two textures flicker -- in either renderer, as xemu's model of the console's depth gives the
-// same ties -- where the Xbox shows the rubble steadily. The later chunk's surface wins the ties here: each map piece
-// draw is ranked by its texture's chunk (the loaded chunk whose data holds the texture's address: the piece the render
-// list names is not always the one drawing) among the chunks drawn last frame, and pulled nearer a step a rank.
+// -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the slot's address + 4). By the
+// drawbridge the towers' section lays its rubble faces over the town section's block walls in the same plane, cut into
+// different triangles; their depths tie within a few steps either way and the two textures flicker -- in either
+// renderer, as xemu's model of the console's depth gives the same ties -- where the Xbox shows the rubble steadily.
+// The towers' pieces are pulled nearer here, and only theirs: a rule for every overlapping section (by load order)
+// settled other places the other way round (a seam down a chapter 1 cliff). The towers' chunk is known by its header
+// ("KMD", its size 0x4FF470 at +0xC: the same wherever it loads), a piece's chunk by its texture's (the loaded chunk
+// whose data holds the texture's address: the piece the render list names is not always the one drawing).
 constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
 int SectionPull() {
     static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 2;
     return n;
 }
-float SectionSlope() {   // NGB_D3D_SECTION_SLOPE=f: console pixels' worth of depth slope a step (0.25)
-    static const float f = std::getenv("NGB_D3D_SECTION_SLOPE") ? float(std::atof(std::getenv("NGB_D3D_SECTION_SLOPE"))) : 0.25f;
+float SectionSlope() {   // NGB_D3D_SECTION_SLOPE=f: console pixels' worth of depth slope (0.5)
+    static const float f = std::getenv("NGB_D3D_SECTION_SLOPE") ? float(std::atof(std::getenv("NGB_D3D_SECTION_SLOPE"))) : 0.5f;
     return f;
 }
 // the loaded chunk whose data holds the guest address a (its data address), or 0
@@ -1024,17 +1024,10 @@ uint32_t ChunkDataOf(uint32_t a) {
     }
     return best;
 }
-// the loaded chunk slot whose data holds the guest address a, or ~0u -- also when that data is loaded in more than
-// one slot: a model the level places copies of (props, set dressing), not a section of the map
-uint32_t ChunkSlotOf(uint32_t a) {
-    uint32_t best = 0, slot = ~0u, copies = 0;
-    for (uint32_t i = 0; i < kChunkSlots; i++) {
-        uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
-        if (kernel::R32(e + 4) != 1 || base > a || base < best) continue;
-        if (base == best) { copies++; continue; }
-        best = base, slot = i, copies = 1;
-    }
-    return copies == 1 ? slot : ~0u;
+// whether the guest address a is in the drawbridge towers' chunk
+bool InTowersChunk(uint32_t a) {
+    uint32_t base = ChunkDataOf(a);
+    return base && kernel::R32(base) == 0x00444D4B && kernel::R32(base + 0xC) == 0x004FF470;   // "KMD", its size
 }
 // the chunk slot of the map piece being drawn, or ~0u
 uint32_t DrawChunkSlot() {
@@ -2653,22 +2646,18 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
         if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen && k.has_ds) {   // a pull of 0 turns it off
-            uint32_t slot = DrawChunkSlot() != ~0u && s.textures[0] ? ChunkSlotOf(s.textures[0]) : ~0u;
-            if (slot < 64) {
-                section_drawn_ |= uint64_t(1) << slot;
-                // three at most: no more than the sections need over one another
-                int32_t steps = std::min(std::popcount(section_last_ & ((uint64_t(1) << slot) - 1)), 3);
-                k.has_ds |= kDsDynamicBias;   // any pull, or none, without a pipeline of its own
-                if (steps) {
+            if (DrawChunkSlot() != ~0u && s.textures[0] && InTowersChunk(s.textures[0])) {
+                k.has_ds |= kDsDynamicBias;   // the pull set at the draw: any setting without a pipeline of its own
+                {
                     // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
                     // where their vertices land on screen, so they grow with how steeply the depth changes across
-                    // a pixel -- at the drawbridge all within 0.15 of a console pixel's worth (6 to 600 steps a
-                    // pixel there). A quarter of a console pixel's worth for each step covers them on an edge-on
-                    // wall and is next to nothing on a surface facing the camera, where a constant pull brought
-                    // things behind a facade through it; 2 depth steps more for the flattest ties.
+                    // a pixel -- at the drawbridge within 0.15 of a console pixel's worth (6 to 600 steps a pixel
+                    // there). Half a console pixel's worth covers them on an edge-on wall and is next to nothing on
+                    // a surface facing the camera, where a constant pull brought things behind a facade through it;
+                    // 2 depth steps more for the flattest ties.
                     float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
-                    pull_slope = -SectionSlope() * float(steps) * std::max(scale, 1.0f);
-                    pull_steps = -SectionPull() * steps;
+                    pull_slope = -SectionSlope() * std::max(scale, 1.0f);
+                    pull_steps = -SectionPull();
                     section_pulled_++;
                 }
             }
@@ -3749,10 +3738,7 @@ void VulkanBackend::Present(const Surface& front) {
     id_count_ = 0;
     if (id_file_) std::fflush(id_file_);
     if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
-        std::fprintf(stderr, "[SECTION] chunks drawn %016llX, %u draws pulled\n", (unsigned long long)section_drawn_,
-                     section_pulled_);
-    section_last_ = section_drawn_;
-    section_drawn_ = 0;
+        std::fprintf(stderr, "[SECTION] %u draws pulled\n", section_pulled_);
     section_pulled_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
         static const char* tf = std::getenv("NGB_TRACE_FILE");
