@@ -124,9 +124,17 @@ static void icall_hist(uint32_t va)
     }
 }
 
+#ifndef TRILOGY_XBE
+void ngb_gpu_frame_reached(void);   /* src/d3d/d3d.c: the GPU's end-of-frame callback (#50) */
+#endif
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
     icall_hist(xbox_va);
+#ifndef TRILOGY_XBE
+    if (xbox_va == 0x0030E060)
+        return ngb_gpu_frame_reached;
+#endif
     /*
      * TODO: Add your overrides here. Examples:
      *

@@ -278,6 +278,12 @@ FPS counter to stderr, and `NV2A_FPS_LOG=/path/to/file` appends it to that file 
 (a refresh less latency); off by default, because on a busy frame it made the rate fall to 40-50.
 `NV2A_REFRESH_HZ=n` runs the emulated display at n Hz (testing only: the game steps its logic
 once a frame, so at 120 it plays at double speed).
+The game measures its own GPU load: a callback it puts at the end of each frame's push buffer (0x30E060)
+records how far into the frame the GPU got there, and over 94% the game lowers its quality level, which
+swaps Ryu's shadow map for the round shadow under him (sub_001D5E30). The emulated GPU only reads the
+push buffer while the renderer draws, so that callback reports no GPU time (`ngb_gpu_frame_reached`,
+src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
+`NGB_GPU_LOAD=1` keeps the game's measurement.
 
 ## The renderer
 
