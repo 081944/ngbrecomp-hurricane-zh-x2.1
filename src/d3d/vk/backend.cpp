@@ -3066,7 +3066,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     QuadSnap(s, a, count, quad, rt ? rt->samples : ds ? ds->samples : 1, c);
     bool id_opaque = !a.pretransformed && k.zen && k.zwrite && !k.blend && a.topology == Topology::Triangles &&
                      rt && rt->gw >= 640;
-    if (IdViewMode() == 2) {
+    bool id_dumping = !dump_dir_.empty() && presents_ + 1 >= dump_from_ && presents_ + 1 < dump_from_ + dump_count_;
+    if (IdViewMode() == 2 && id_dumping) {   // only while a burst dumps: the game looks as usual otherwise
         // NGB_D3D_IDVIEW=2: only the opaque 3D draws, each writing its number (the frame's opaque draws counted
         // from 1); the rest skipped, so nothing blends over the numbers. With a dump running, each number's draw
         // goes to dump_dir/ids_<frame>.txt.
@@ -3074,7 +3075,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         uint32_t n = ++id_count_;
         c.qsnap[2] = -1.0f;
         c.qsnap[3] = float(n);
-        if (!dump_dir_.empty() && presents_ + 1 >= dump_from_ && presents_ + 1 < dump_from_ + dump_count_) {
+        {
             if (id_file_frame_ != presents_ + 1) {
                 if (id_file_) std::fclose(id_file_);
                 id_file_ = std::fopen((dump_dir_ + "/ids_" + std::to_string(presents_ + 1) + ".txt").c_str(), "w");
