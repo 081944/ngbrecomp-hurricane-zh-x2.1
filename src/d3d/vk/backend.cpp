@@ -4015,8 +4015,38 @@ void VulkanBackend::CacheOpen() {
             std::remove((dir + "/spirv.bin").c_str());
         }
         std::vector<uint8_t> rec = ReadFile(dir + "/recipes.bin");
-        if (!rec.empty() && (rec.size() < 8 || std::memcmp(rec.data(), kCacheMagic, 8)))
+        if (!rec.empty() && (rec.size() < 8 || std::memcmp(rec.data(), kCacheMagic, 8))) {
             std::remove((dir + "/recipes.bin").c_str());
+        } else if (!rec.empty()) {
+            // The same for the recipes: past a record cut short the reading stops, so everything recorded after it
+            // -- each launch appending again what it had to make -- was never known, and made late at every start
+            // (a draw left out until then: walls and effects popping in). Kept up to the last whole record.
+            size_t o = 8;
+            while (o + 13 <= rec.size()) {
+                if (!std::memcmp(&rec[o], kCacheMagic, 8)) {
+                    o += 8;
+                    continue;
+                }
+                uint32_t n;
+                std::memcpy(&n, &rec[o + 9], 4);
+                if (!std::strchr("VWFPK", char(rec[o])) || !rec[o] || o + 13 + size_t(n) > rec.size()) break;
+                o += 13 + size_t(n);
+            }
+            if (o < rec.size()) {
+                std::fprintf(stderr, "[D3D] shader cache: recipes.bin damaged at %zu of %zu bytes, kept up to there\n",
+                             o, rec.size());
+                std::string tmp = dir + "/recipes.bin.tmp", dst = dir + "/recipes.bin";
+                if (FILE* f = std::fopen(tmp.c_str(), "wb")) {
+                    bool ok = std::fwrite(rec.data(), 1, o, f) == o;
+                    ok = std::fclose(f) == 0 && ok;
+#if defined(_WIN32)
+                    if (ok) std::remove(dst.c_str());
+#endif
+                    if (ok) std::rename(tmp.c_str(), dst.c_str());
+                    else std::remove(dst.c_str());
+                }
+            }
+        }
         recipes_ = OpenAppend(dir + "/recipes.bin");
         spirv_ = OpenAppend(dir + "/spirv.bin");
     }
