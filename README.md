@@ -55,6 +55,14 @@ Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
 
 Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
 
+**Antivirus warnings:** the program isn't code-signed, and a new unsigned program is sometimes
+flagged by one antivirus's heuristics (McAfee quarantined it in #88; VirusTotal shows no other
+detections). That's a false positive. Each release lists the SHA-256 hash of both downloads in its
+notes and in `SHA256SUMS.txt`, so you can check that your download is the one published here: in
+PowerShell, `Get-FileHash NinjaGaidenBlack-windows-x64.zip`; on Linux, `sha256sum -c SHA256SUMS.txt`.
+If you'd rather not run a prebuilt program, you can build it yourself from your own disc
+([Building from source](#building-from-source)).
+
 ### macOS (unsupported)
 
 The macOS code is a community contribution (#49) that I can't build or test, so there are no
