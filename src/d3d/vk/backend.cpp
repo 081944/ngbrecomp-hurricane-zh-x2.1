@@ -476,8 +476,7 @@ private:
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
     void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples, DrawConstants& c);
     bool recording_ = false;
-    uint32_t order_draws_ = 0;   // LESSEQUAL draws so far in this run of one pair of shaders (NGB_D3D_ORDER_BIAS)
-    uint64_t order_vs_ = 0, order_ps_ = 0;
+    uint32_t order_draws_ = 0;   // this frame's LESSEQUAL draws so far (NGB_D3D_ORDER_BIAS)
     void Begin();
     void Submit();
     uint32_t frame_ = 0;
@@ -3113,18 +3112,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     Color(SimpleState(s, kMBlendColor), bf);
     d_.vkCmdSetBlendConstants(cmd_, bf);
     d_.vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, SimpleState(s, kMStencilRef) & 0xFF);
-    if (k.cullfront & kDynBias) {   // NGB_D3D_ORDER_BIAS: each such draw nearer than the last, over its own offset
-        // counted within a run of draws of one pair of shaders (the same kind of surface: the two meshes of a wall
-        // in one plane are drawn so), from 0 again at the next run. Counted over the whole frame the pull reached
-        // hundreds of steps, enough to bring far geometry meant to stay behind a facade through it (the railing
-        // above the Tairon cathedral's gate, popping with the distance).
-        if (k.vs != order_vs_ || k.ps != order_ps_) {
-            order_vs_ = k.vs;
-            order_ps_ = k.ps;
-            order_draws_ = 0;
-        }
-        d_.vkCmdSetDepthBias(cmd_, float(k.zbias) - OrderBiasStep() * float(order_draws_++), 0.0f, k.zslope);
-    }
+    if (k.cullfront & kDynBias)   // NGB_D3D_ORDER_BIAS: each such draw nearer than the last, over its own offset
+        d_.vkCmdSetDepthBias(cmd_, float(k.zbias) - OrderBiasStep() * float(++order_draws_), 0.0f, k.zslope);
     if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale
         d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx, 1.0f, line_max_) : 1.0f);
 
@@ -3609,7 +3598,6 @@ void VulkanBackend::TraceFrame(Target& t) {
 void VulkanBackend::Present(const Surface& front) {
     presents_++;
     order_draws_ = 0;
-    order_vs_ = order_ps_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
         static const char* tf = std::getenv("NGB_TRACE_FILE");
         if (tf && access(tf, F_OK) == 0) {
