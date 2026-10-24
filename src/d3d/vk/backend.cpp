@@ -2589,25 +2589,19 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (a.topology == Topology::Triangles && SimpleState(s, kMSolidOffsetEnable)) {
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
-        } else if (a.topology == Topology::Triangles && k.zen && k.zfunc == 0x203 && (!k.zwrite || k.blend) &&
+        } else if (a.topology == Topology::Triangles && k.zen && !k.zwrite && k.zfunc == 0x203 &&
                    ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT) {
-            // A layer over a surface already drawn, testing LESSEQUAL: a pass that does not write depth (a second
-            // texture over a wall, the shadows' second pass) or a blended one that does (terrain layers over rock).
-            // Its vertices can come from another transform or another mesh lying in the plane, and land a hair
-            // behind the surface here and there; 24-bit depth rounds that away, float depth (AMD has no 24-bit)
-            // keeps it, and the layer flickers in and out -- most where a surface is seen nearly edge-on (the
-            // walls by the Tairon drawbridge). A pull toward the camera of one console pixel's depth change plus a
-            // few steps keeps such a layer on top, as the old renderer did for the rocks (9 October); one render
-            // pixel's change was too little above 1x. NGB_D3D_OVERLAY_BIAS=0: none; NGB_D3D_OVERLAY_SLOPE=n and
-            // NGB_D3D_OVERLAY_CONST=n: n console pixels and n steps instead of 1 and 4 (comparing).
+            // A pass over a surface already drawn, testing LESSEQUAL without writing depth (a second texture
+            // layer blended over a wall, the shadows' second pass): its vertices can come from another transform
+            // (a vertex program over a fixed-function first pass) and land a hair behind the surface here and
+            // there. The console's 24-bit depth rounds that away; float depth (AMD has no 24-bit) keeps it, and the
+            // layer flickers in and out -- the walls by the Tairon drawbridge. A small pull toward the camera
+            // keeps such passes on their surface. NGB_D3D_OVERLAY_BIAS=0: none, to compare.
             static const bool overlay_bias =
                 !(std::getenv("NGB_D3D_OVERLAY_BIAS") && !std::strcmp(std::getenv("NGB_D3D_OVERLAY_BIAS"), "0"));
-            static const float slope = std::getenv("NGB_D3D_OVERLAY_SLOPE") ? std::atof(std::getenv("NGB_D3D_OVERLAY_SLOPE")) : 1.0f;
-            static const int steps = std::getenv("NGB_D3D_OVERLAY_CONST") ? std::atoi(std::getenv("NGB_D3D_OVERLAY_CONST")) : 4;
             if (overlay_bias) {
-                float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
-                k.zbias = -steps;
-                k.zslope = -slope * std::max(scale, 1.0f);
+                k.zbias = -4;
+                k.zslope = -1.0f;
             }
         }
     }
