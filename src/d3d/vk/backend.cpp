@@ -991,7 +991,8 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
     return n;
 }
 
-// Overlapping map pieces (NGB_D3D_SECTION_PULL=n, default 12; 0 turns it off). Ninja Gaiden Black's levels load in
+// Overlapping map pieces (NGB_D3D_SECTION_PULL=n depth steps, default 2, and NGB_D3D_SECTION_SLOPE=f console pixels'
+// worth of depth slope, default 0.25, a step; NGB_D3D_SECTION_PULL=0 turns it off). Ninja Gaiden Black's levels load in
 // chunks (the game's table at 0x9504C0, 0x14 bytes a slot: +0 the chunk's data, +4 1 while loaded; a map piece object
 // -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the slot's address + 4). Where a
 // rubble face is laid over a wall the game draws both in the same plane, cut into different triangles: the town's own
@@ -1003,8 +1004,12 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
 // as the game has them; nothing moves by more than 3n.
 constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
 int SectionPull() {
-    static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 12;
+    static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 2;
     return n;
+}
+float SectionSlope() {   // NGB_D3D_SECTION_SLOPE=f: console pixels' worth of depth slope a step (0.25)
+    static const float f = std::getenv("NGB_D3D_SECTION_SLOPE") ? float(std::atof(std::getenv("NGB_D3D_SECTION_SLOPE"))) : 0.25f;
+    return f;
 }
 // the loaded chunk whose data holds the guest address a (its data address), or 0
 uint32_t ChunkDataOf(uint32_t a) {
@@ -2627,7 +2632,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
-        if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen) {
+        if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen) {   // a pull of 0 turns it off
             uint32_t slot = DrawChunkSlot();
             if (slot != ~0u) {
                 section_min_ = std::min(section_min_, slot);
@@ -2636,6 +2641,14 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 // a texture of another chunk's (its header in that chunk's data): a surface laid over
                 if (s.textures[0] && own && ChunkDataOf(s.textures[0]) != own) steps++;
                 if (steps) {
+                    // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
+                    // where their vertices land on screen, so they grow with how steeply the depth changes across
+                    // a pixel -- at the drawbridge all within 0.15 of a console pixel's worth (6 to 600 steps a
+                    // pixel there). A quarter of a console pixel's worth for each step covers them on an edge-on
+                    // wall and is next to nothing on a surface facing the camera, where a constant pull brought
+                    // things behind a facade through it; 2 depth steps more for the flattest ties.
+                    float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
+                    k.zslope -= SectionSlope() * float(steps) * std::max(scale, 1.0f);
                     k.zbias -= SectionPull() * steps;
                     section_pulled_++;
                 }
