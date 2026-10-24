@@ -2931,6 +2931,45 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         ngb_frame_3d_draws++;
         last3d_now_ = st_.drawn;
     }
+    if (int(presents_) == g_step_frame && !dump_dir_.empty() && !prog && !a.pretransformed) {
+        // the stepped frame (NGB_D3D_STEP): each fixed-function draw's matrices and raw positions, to compare two
+        // meshes' depths the console's way and this renderer's (dump_dir/vertices.txt)
+        static FILE* vf = nullptr;
+        static int vf_frame = -1;
+        if (vf_frame != g_step_frame) {
+            if (vf) std::fclose(vf);
+            vf = std::fopen((dump_dir_ + "/vertices_" + std::to_string(presents_) + ".txt").c_str(), "w");
+            vf_frame = g_step_frame;
+        }
+        const VertexElement& pe = a.elements[0];
+        if (vf && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src && a.buffers[pe.buffer].stride) {
+            const auto& pb = a.buffers[pe.buffer];
+            uint32_t nv = pb.bytes / pb.stride;
+            std::fprintf(vf, "draw %u tex0 %08X n %u verts %u fmt %u zen %u zw %u zf %X\n", st_.drawn + 1, s.textures[0],
+                         count, nv, pe.format, uint32_t(s.rs[kRsZEnable]), SimpleState(s, kMZWriteEnable),
+                         SimpleState(s, kMZFunc));
+            for (int m : {256, 2, 3}) {
+                std::fprintf(vf, "m%d", m);
+                for (float x : s.transforms[size_t(m)]) std::fprintf(vf, " %.9g", x);
+                std::fprintf(vf, "\n");
+            }
+            std::fprintf(vf, "vp %u %u %u %u %.9g %.9g zscale %.9g\n", s.viewport.x, s.viewport.y, s.viewport.w,
+                         s.viewport.h, s.viewport.min_z, s.viewport.max_z, s.zscale);
+            for (uint32_t v = 0; v < nv; v++) {
+                float p[3];
+                std::memcpy(p, pb.src + size_t(v) * pb.stride + pe.offset, 12);
+                std::fprintf(vf, "v %.9g %.9g %.9g\n", p[0], p[1], p[2]);
+            }
+            if (a.index_src && a.index_count) {
+                std::fprintf(vf, "i %u %d", a.index_count, a.base_vertex);
+                for (uint32_t k2 = 0; k2 < a.index_count; k2++)
+                    std::fprintf(vf, " %u", a.index16 ? uint32_t(reinterpret_cast<const uint16_t*>(a.index_src)[k2])
+                                                       : reinterpret_cast<const uint32_t*>(a.index_src)[k2]);
+                std::fprintf(vf, "\n");
+            }
+            std::fflush(vf);
+        }
+    }
     if (!prog && !a.pretransformed) {
         float wv[16], wvp[16], full[16];
         MatMul(s.transforms[256].data(), s.transforms[2].data(), wv);
