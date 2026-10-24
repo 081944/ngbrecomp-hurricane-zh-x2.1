@@ -13,6 +13,7 @@
 #include <vk_mem_alloc.h>
 
 #include <algorithm>
+#include <bit>
 #include <map>
 #include <cmath>
 #include <cstdio>
@@ -479,7 +480,8 @@ private:
     bool recording_ = false;
     uint32_t id_count_ = 0, id_file_frame_ = ~0u;   // NGB_D3D_IDVIEW=2
     FILE* id_file_ = nullptr;
-    uint32_t section_base_ = ~0u, section_min_ = ~0u, section_pulled_ = 0;   // the lowest map chunk slot drawn last frame, and this one
+    uint64_t section_drawn_ = 0, section_last_ = 0;   // the chunk slots whose map pieces were drawn this frame, and last
+    uint32_t section_pulled_ = 0;
     void Begin();
     void Submit();
     uint32_t frame_ = 0;
@@ -995,13 +997,12 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
 // worth of depth slope, default 0.25, a step; NGB_D3D_SECTION_PULL=0 turns it off). Ninja Gaiden Black's levels load in
 // chunks (the game's table at 0x9504C0, 0x14 bytes a slot: +0 the chunk's data, +4 1 while loaded; a map piece object
 // -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the slot's address + 4). Where a
-// rubble face is laid over a wall the game draws both in the same plane, cut into different triangles: the town's own
-// piece 0 over its block walls, the drawbridge hill section's copy of them. Their depths tie within a few steps either
-// way and the two textures flicker -- by the Tairon drawbridge, in either renderer, where the Xbox shows the rubble
-// steadily. The laid-over surface wins the ties here: a piece pulled n depth steps nearer for each slot its chunk is
-// above the lowest drawn (two at most: a section loaded over the base map), and n more when its texture is another
-// chunk's (a texture's chunk: the loaded chunk whose data holds its address). Real gaps, tens of steps and more, stay
-// as the game has them; nothing moves by more than 3n.
+// rubble face of one section covers another section's block walls the game draws both in the same plane, cut into
+// different triangles (by the Tairon drawbridge: chunk 3's towers over chunk 2's walls). Their depths tie within a few
+// steps either way, so the two textures flicker -- in either renderer, as xemu's model of the console's depth gives the
+// same ties -- where the Xbox shows the rubble steadily. The later chunk's surface wins the ties here: each map piece
+// draw is ranked by its texture's chunk (the loaded chunk whose data holds the texture's address: the piece the render
+// list names is not always the one drawing) among the chunks drawn last frame, and pulled nearer a step a rank.
 constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
 int SectionPull() {
     static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 2;
@@ -1019,6 +1020,18 @@ uint32_t ChunkDataOf(uint32_t a) {
         if (kernel::R32(e + 4) == 1 && base <= a && base > best) best = base;
     }
     return best;
+}
+// the loaded chunk slot whose data holds the guest address a, or ~0u -- also when that data is loaded in more than
+// one slot: a model the level places copies of (props, set dressing), not a section of the map
+uint32_t ChunkSlotOf(uint32_t a) {
+    uint32_t best = 0, slot = ~0u, copies = 0;
+    for (uint32_t i = 0; i < kChunkSlots; i++) {
+        uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
+        if (kernel::R32(e + 4) != 1 || base > a || base < best) continue;
+        if (base == best) { copies++; continue; }
+        best = base, slot = i, copies = 1;
+    }
+    return copies == 1 ? slot : ~0u;
 }
 // the chunk slot of the map piece being drawn, or ~0u
 uint32_t DrawChunkSlot() {
@@ -2633,13 +2646,11 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
         if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen) {   // a pull of 0 turns it off
-            uint32_t slot = DrawChunkSlot();
-            if (slot != ~0u) {
-                section_min_ = std::min(section_min_, slot);
-                int32_t steps = section_base_ != ~0u && slot > section_base_ ? int32_t(std::min<uint32_t>(slot - section_base_, 2)) : 0;
-                uint32_t own = kernel::R32(kChunkTable - 4 + slot * kChunkSlot);
-                // a texture of another chunk's (its header in that chunk's data): a surface laid over
-                if (s.textures[0] && own && ChunkDataOf(s.textures[0]) != own) steps++;
+            uint32_t slot = DrawChunkSlot() != ~0u && s.textures[0] ? ChunkSlotOf(s.textures[0]) : ~0u;
+            if (slot < 64) {
+                section_drawn_ |= uint64_t(1) << slot;
+                // three at most: no more than the sections need over one another
+                int32_t steps = std::min(std::popcount(section_last_ & ((uint64_t(1) << slot) - 1)), 3);
                 if (steps) {
                     // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
                     // where their vertices land on screen, so they grow with how steeply the depth changes across
@@ -3721,10 +3732,10 @@ void VulkanBackend::Present(const Surface& front) {
     id_count_ = 0;
     if (id_file_) std::fflush(id_file_);
     if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
-        std::fprintf(stderr, "[SECTION] base slot %d, %u draws pulled (last node %08X +8 %08X)\n", int(section_min_),
-                     section_pulled_, g_draw_node, g_draw_node >= 0x10000 && g_draw_node < 0x4000000 ? kernel::R32(g_draw_node + 8) : 0);
-    section_base_ = section_min_;
-    section_min_ = ~0u;
+        std::fprintf(stderr, "[SECTION] chunks drawn %016llX, %u draws pulled\n", (unsigned long long)section_drawn_,
+                     section_pulled_);
+    section_last_ = section_drawn_;
+    section_drawn_ = 0;
     section_pulled_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
         static const char* tf = std::getenv("NGB_TRACE_FILE");
