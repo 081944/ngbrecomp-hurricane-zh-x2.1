@@ -266,6 +266,9 @@ struct Tex {
     std::vector<uint8_t> check;   // NGB_D3D_BUMPCHECK: a bump map's top level as uploaded, to read back against
 };
 
+// PipeKey::has_ds: 1 a depth target; kDsDynamicBias the depth bias set at the draw (the map pieces' pull, below):
+// a bit of an existing field, so the key -- and every pipeline the caches and the seed keep -- stays as it was
+constexpr uint32_t kDsDynamicBias = 2;
 struct PipeKey {
     uint64_t vs, ps;
     uint32_t regs, elements[16], strides[16];
@@ -2288,7 +2291,7 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
         // Direct3D's winding is in its y-down screen space, Vulkan's in the framebuffer after the
         // viewport transform: with the flipped viewport the two agree, so no inversion
         rs.frontFace = k.ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
-        rs.depthBiasEnable = k.zbias || k.zslope;
+        rs.depthBiasEnable = k.zbias || k.zslope || (k.has_ds & kDsDynamicBias);
         rs.depthBiasConstantFactor = float(k.zbias);
         rs.depthBiasSlopeFactor = k.zslope;
         rs.lineWidth = 1.0f;
@@ -2314,10 +2317,12 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
         cbs.attachmentCount = k.has_rt ? 1 : 0;
         cbs.pAttachments = &cb;
         // the line width only on the line pipelines: the others, nearly all, stay as the caches have them
-        VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
-                                VK_DYNAMIC_STATE_STENCIL_REFERENCE, VK_DYNAMIC_STATE_LINE_WIDTH};
+        VkDynamicState dyn[6] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+                                 VK_DYNAMIC_STATE_STENCIL_REFERENCE};
         VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-        dy.dynamicStateCount = Lines(k) ? 5 : 4;
+        dy.dynamicStateCount = 4;
+        if (Lines(k)) dyn[dy.dynamicStateCount++] = VK_DYNAMIC_STATE_LINE_WIDTH;
+        if (k.has_ds & kDsDynamicBias) dyn[dy.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
         dy.pDynamicStates = dyn;
         VkFormat cf = kColorFormat;
         VkPipelineRenderingCreateInfo pr{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
@@ -2603,6 +2608,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
 
     // the pipeline
     PipeKey k;
+    int32_t pull_steps = 0;   // the map pieces' pull: depth steps and slope added to the game's own bias
+    float pull_slope = 0.0f;
     std::memset(&k, 0, sizeof(k));
     k.vs = vkey;
     k.ps = pkey;
@@ -2645,12 +2652,13 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
-        if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen) {   // a pull of 0 turns it off
+        if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen && k.has_ds) {   // a pull of 0 turns it off
             uint32_t slot = DrawChunkSlot() != ~0u && s.textures[0] ? ChunkSlotOf(s.textures[0]) : ~0u;
             if (slot < 64) {
                 section_drawn_ |= uint64_t(1) << slot;
                 // three at most: no more than the sections need over one another
                 int32_t steps = std::min(std::popcount(section_last_ & ((uint64_t(1) << slot) - 1)), 3);
+                k.has_ds |= kDsDynamicBias;   // any pull, or none, without a pipeline of its own
                 if (steps) {
                     // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
                     // where their vertices land on screen, so they grow with how steeply the depth changes across
@@ -2659,8 +2667,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     // wall and is next to nothing on a surface facing the camera, where a constant pull brought
                     // things behind a facade through it; 2 depth steps more for the flattest ties.
                     float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
-                    k.zslope -= SectionSlope() * float(steps) * std::max(scale, 1.0f);
-                    k.zbias -= SectionPull() * steps;
+                    pull_slope = -SectionSlope() * float(steps) * std::max(scale, 1.0f);
+                    pull_steps = -SectionPull() * steps;
                     section_pulled_++;
                 }
             }
@@ -2673,7 +2681,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     k.ccw = front == 0x901;              // front faces counter clockwise (in Direct3D's y-down screen)
     k.cullfront = k.cull && cull == front;
     k.fill = s.rs[kRsFillMode];
-    if (spark_quad) { k.cull=0;k.fill=0x1B02;k.zbias=0;k.zslope=0; }
+    if (spark_quad) { k.cull=0;k.fill=0x1B02;k.zbias=0;k.zslope=0;k.has_ds&=~kDsDynamicBias; }
     static bool nocull = std::getenv("NGB_D3D_NOCULL") != nullptr;    // debugging
     static bool nodepth = std::getenv("NGB_D3D_NODEPTH") != nullptr;  // debugging
     static bool cullinv = std::getenv("NGB_D3D_CULLINV") != nullptr;  // debugging: the other side
@@ -3246,6 +3254,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     Color(SimpleState(s, kMBlendColor), bf);
     d_.vkCmdSetBlendConstants(cmd_, bf);
     d_.vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, SimpleState(s, kMStencilRef) & 0xFF);
+    if (k.has_ds & kDsDynamicBias)
+        d_.vkCmdSetDepthBias(cmd_, float(k.zbias + pull_steps), 0.0f, k.zslope + pull_slope);
     if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale
         d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx, 1.0f, line_max_) : 1.0f);
 
