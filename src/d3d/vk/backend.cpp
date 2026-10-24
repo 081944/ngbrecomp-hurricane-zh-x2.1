@@ -2493,7 +2493,6 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         pk.sprite = 1;
     }
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
-    if (Depth24Quantize()) pkey ^= 0x24D24D24D24D24DFull;   // other shaders: other modules in the cache
     if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
     static const char* psdbg = std::getenv("NGB_D3D_PSDEBUG");
