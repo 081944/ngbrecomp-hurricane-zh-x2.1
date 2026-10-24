@@ -8,7 +8,8 @@
 // HLSL for the title's shaders and for its fixed function state, per the XDK's definitions of both
 namespace gpu {
 
-bool IdView();   // NGB_D3D_IDVIEW: pixel shaders tint opaque 3D draws by their colour (debugging)
+bool IdView();
+int IdViewMode();   // NGB_D3D_IDVIEW: pixel shaders tint opaque 3D draws by their colour (debugging)
 
 enum TexKind : uint8_t { kTexNone, kTex2D, kTex3D, kTexCube };
 

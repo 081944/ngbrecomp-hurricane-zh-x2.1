@@ -477,6 +477,8 @@ private:
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
     void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples, DrawConstants& c);
     bool recording_ = false;
+    uint32_t id_count_ = 0, id_file_frame_ = ~0u;   // NGB_D3D_IDVIEW=2
+    FILE* id_file_ = nullptr;
     uint32_t section_base_ = ~0u, section_min_ = ~0u, section_pulled_ = 0;   // the lowest map chunk slot drawn last frame, and this one
     void Begin();
     void Submit();
@@ -2500,7 +2502,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         pk.sprite = 1;
     }
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
-    if (IdView()) pkey ^= 0x1D1D1D1D1D1D1D1Dull;   // other shaders: other modules in the cache
+    if (IdView()) pkey ^= 0x1D1D1D1D1D1D1D1Dull * uint64_t(IdViewMode());   // other shaders: other modules in the cache
     if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
     static const char* psdbg = std::getenv("NGB_D3D_PSDEBUG");
@@ -3062,7 +3064,31 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
     }
     QuadSnap(s, a, count, quad, rt ? rt->samples : ds ? ds->samples : 1, c);
-    if (IdView() && !a.pretransformed && k.zen && k.zwrite && !k.blend && a.topology == Topology::Triangles) {
+    bool id_opaque = !a.pretransformed && k.zen && k.zwrite && !k.blend && a.topology == Topology::Triangles &&
+                     rt && rt->gw >= 640;
+    if (IdViewMode() == 2) {
+        // NGB_D3D_IDVIEW=2: only the opaque 3D draws, each writing its number (the frame's opaque draws counted
+        // from 1); the rest skipped, so nothing blends over the numbers. With a dump running, each number's draw
+        // goes to dump_dir/ids_<frame>.txt.
+        if (!id_opaque) return;
+        uint32_t n = ++id_count_;
+        c.qsnap[2] = -1.0f;
+        c.qsnap[3] = float(n);
+        if (!dump_dir_.empty() && presents_ + 1 >= dump_from_ && presents_ + 1 < dump_from_ + dump_count_) {
+            if (id_file_frame_ != presents_ + 1) {
+                if (id_file_) std::fclose(id_file_);
+                id_file_ = std::fopen((dump_dir_ + "/ids_" + std::to_string(presents_ + 1) + ".txt").c_str(), "w");
+                id_file_frame_ = presents_ + 1;
+            }
+            if (id_file_) {
+                std::fprintf(id_file_, "%u piece %08X chunk %d tex %08X n %u", n, g_draw_node, int(DrawChunkSlot()),
+                             s.textures[0], count);
+                if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000)
+                    for (uint32_t o = 0; o < 0x20; o += 4) std::fprintf(id_file_, " %08X", kernel::R32(g_draw_node + o));
+                std::fprintf(id_file_, "\n");
+            }
+        }
+    } else if (IdView() && id_opaque) {
         // NGB_D3D_IDVIEW: one of 24 hues by the map piece and texture (or the draw's vertex buffer), the same every
         // frame; the legend, each colour's draws, goes to the log every 5 s
         uint32_t piece = g_draw_node, tex = s.textures[0];
@@ -3665,6 +3691,8 @@ void VulkanBackend::TraceFrame(Target& t) {
 
 void VulkanBackend::Present(const Surface& front) {
     presents_++;
+    id_count_ = 0;
+    if (id_file_) std::fflush(id_file_);
     if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
         std::fprintf(stderr, "[SECTION] base slot %d, %u draws pulled (last node %08X +8 %08X)\n", int(section_min_),
                      section_pulled_, g_draw_node, g_draw_node >= 0x10000 && g_draw_node < 0x4000000 ? kernel::R32(g_draw_node + 8) : 0);
