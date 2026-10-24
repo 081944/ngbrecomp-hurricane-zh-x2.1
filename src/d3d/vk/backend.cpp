@@ -2945,9 +2945,16 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (vf && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src && a.buffers[pe.buffer].stride) {
             const auto& pb = a.buffers[pe.buffer];
             uint32_t nv = pb.bytes / pb.stride;
-            std::fprintf(vf, "draw %u tex0 %08X n %u verts %u fmt %u zen %u zw %u zf %X\n", st_.drawn + 1, s.textures[0],
-                         count, nv, pe.format, uint32_t(s.rs[kRsZEnable]), SimpleState(s, kMZWriteEnable),
+            std::fprintf(vf, "draw %u tex0 %08X n %u verts %u fmt %u zen %u zw %u zf %X stack", st_.drawn + 1,
+                         s.textures[0], count, nv, pe.format, uint32_t(s.rs[kRsZEnable]), SimpleState(s, kMZWriteEnable),
                          SimpleState(s, kMZFunc));
+            for (int k2 = 0; k2 < g_draw_stack_n; k2++) std::fprintf(vf, " %08X", g_draw_stack[k2]);
+            std::fprintf(vf, "\n");
+            if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000) {
+                std::fprintf(vf, "node %08X", g_draw_node);
+                for (uint32_t o = 0; o < 0x60; o += 4) std::fprintf(vf, " %08X", kernel::R32(g_draw_node + o));
+                std::fprintf(vf, "\n");
+            }
             for (int m : {256, 2, 3}) {
                 std::fprintf(vf, "m%d", m);
                 for (float x : s.transforms[size_t(m)]) std::fprintf(vf, " %.9g", x);

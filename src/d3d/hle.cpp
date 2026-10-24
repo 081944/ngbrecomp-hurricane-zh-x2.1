@@ -202,6 +202,21 @@ std::atomic<bool> g_before_idle[D3DF_COUNT];
 bool Before(int fn, Call c) {
     if (unsigned(fn) < D3DF_COUNT && g_before_idle[fn].load(std::memory_order_relaxed)) return false;
     std::lock_guard<std::recursive_mutex> lock(g_lock);
+    // the guest's stack at the call: what code addresses it holds, innermost first (the vertex dump's callers)
+    {
+        int n = 0;
+        for (uint32_t o = 0; o < 0x400 && n < 8; o += 4) {
+            uint32_t v = R32(c.r[ESP] + o);
+            if (v >= 0x11000 && v < 0x37A480) gpu::g_draw_stack[n++] = v;
+        }
+        gpu::g_draw_stack_n = n;
+        gpu::g_draw_node = 0;
+        for (uint32_t o = 0; o < 0x400; o += 4)
+            if (R32(c.r[ESP] + o) == 0x00308D6Fu) {
+                gpu::g_draw_node = R32(c.r[ESP] + o + 4);
+                break;
+            }
+    }
     switch (fn) {
     // render states
     case D3DF_D3DDevice_SetRenderState_Simple:
