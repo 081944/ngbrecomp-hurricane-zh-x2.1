@@ -2723,6 +2723,13 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         pmod=Module(pkey,[&] {return GlowStrengthHlsl(PixelHlsl(pk));},false);
     }
     VkPipeline pipe = vmod && pmod ? Pipeline(k) : VK_NULL_HANDLE;
+    if (!pipe && vmod && pmod && (k.has_ds & kDsDynamicBias)) {
+        // the map piece's pipeline with the bias at the draw still being made: drawn meanwhile without the pull,
+        // by the pipeline it had before (the caches have it), rather than left out
+        PipeKey plain = k;
+        plain.has_ds &= ~kDsDynamicBias;
+        if ((pipe = Pipeline(plain))) k = plain;
+    }
     async_now_ = false;
     if (!pipe) {
         st_.nopipe++;
