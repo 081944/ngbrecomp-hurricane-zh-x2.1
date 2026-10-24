@@ -1064,8 +1064,15 @@ void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count,
         x0 = std::min(x0, xy[v][0]); x1 = std::max(x1, xy[v][0]);
         y0 = std::min(y0, xy[v][1]); y1 = std::max(y1, xy[v][1]);
     }
-    for (int v = 0; v < 4; v++)   // axis-aligned: every corner on the box
-        if (!((xy[v][0] == x0 || xy[v][0] == x1) && (xy[v][1] == y0 || xy[v][1] == y1))) return;
+    // axis-aligned: every corner on the box, within a hundredth of a pixel (the pause menu's dagger has a corner at
+    // 181.4999 beside 181.5, and its body was left out, #83); each corner taken as the box's
+    constexpr float kEps = 0.01f;
+    auto on = [](float a, float b) { return std::abs(a - b) <= kEps; };
+    for (int v = 0; v < 4; v++) {
+        if (!((on(xy[v][0], x0) || on(xy[v][0], x1)) && (on(xy[v][1], y0) || on(xy[v][1], y1)))) return;
+        xy[v][0] = on(xy[v][0], x0) ? x0 : x1;
+        xy[v][1] = on(xy[v][1], y0) ? y0 : y1;
+    }
     if (x1 - x0 < 1.0f || y1 - y0 < 1.0f) return;
     // the corners at (x0,y0), (x1,y0), (x0,y1)
     int c00 = -1, c10 = -1, c01 = -1;
