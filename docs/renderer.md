@@ -123,9 +123,12 @@ debug knobs out once it is the default.
   with 8x MSAA (GPU bound): 31 -> 36 fps; 10x with 4x MSAA holds 60.
 
 - Shaders and pipelines a draw needs that nothing has made yet (not in the cache, the seed or the startup
-  warm-up) are made on a thread of their own and the draw is left out until they are, a frame or two,
-  instead of the frame waiting for them (a hitch: 10-80 ms each on a first sight). `NGB_D3D_SYNC_COMPILE=1`
-  makes them at once as before. The pipelines warmed at startup are also made for the anti-aliasing in use
+  warm-up) are made at once while the frame has spent less than 4 ms making them; past that they go to a
+  thread of their own and the draw is left out until they are, a frame or two, instead of the frame waiting
+  for all of them (a hitch: 10-80 ms each on a first sight, dozens when an area brings many). On a cold cache
+  into chapter 9 that left out 3 draws instead of 21 (#94), for about 25 ms spent over four frames.
+  `NGB_D3D_COMPILE_BUDGET_MS` sets the budget (0: always on the thread), `NGB_D3D_SYNC_COMPILE=1` makes
+  every one at once. The pipelines warmed at startup are also made for the anti-aliasing in use
   (and again when it changes): each holds one sample count, and the seed's were recorded without MSAA.
   A pipeline that only adds a depth bias set at the draw (the drawbridge towers, below) is drawn by the
   plain one meanwhile, so it never drops out.
