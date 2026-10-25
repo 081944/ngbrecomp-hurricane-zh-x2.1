@@ -1878,15 +1878,17 @@ class FunctionTranslator:
         # become a block leader, so it gets no label and its `goto` is dropped
         # as dead code. Re-decode at every newly discovered leader and refresh
         # the computed-edge census until both describe the same instruction set.
+        # Every leader goes in, decoded already or not: the decode follows
+        # branches only from its roots, and an arm the linear pass had is still
+        # reached through the table alone -- its jump to a tail past the tables
+        # (disassemble_function) is only seen with the arm as a root.
         if recovered is None:
             resync = set()
             while True:
-                missing = switch_leaders - {
-                    insn.address for insn in instructions}
-                new_missing = missing - resync
-                if not new_missing:
+                wanted = switch_leaders - resync
+                if not wanted:
                     break
-                resync.update(new_missing)
+                resync.update(wanted)
                 instructions = self.disasm.disassemble_function(
                     raw_bytes, start, end, resync=resync)
                 if not instructions:
