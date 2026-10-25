@@ -92,14 +92,14 @@ of the pause menu. Changes apply at once and are saved.
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
   bright lights; off is the console's look)
-- **Display & Audio**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
-  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off,
-  Positional Audio (3D sounds placed left and right: Panning, the default; Console, through the sound
-  chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo or 5.1; Auto
-  is 5.1 on a 5.1 or 7.1 output)
-- **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
+- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
+  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
+  warnings and intro movies
+- **Sound**: Positional Audio (3D sounds placed left and right: Panning, the default; Console, through
+  the sound chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo
+  or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
-  and items, and whether the game pauses while it is open
+  and items, and whether the game pauses while it is open; all difficulties from the start; all costumes
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
   inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The

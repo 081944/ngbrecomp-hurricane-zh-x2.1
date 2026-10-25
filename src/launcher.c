@@ -472,7 +472,7 @@ static void draw(SDL_Renderer *r, const NgbSettings *s, int sel)
     /* only the graphics are here: say where the rest is (#100) */
     draw_text(r, "More in the game: RECOMP SETTINGS on the main menu, or the pause menu's Settings tab --",
               LW / 2, LH - 36, 15, grey, 1);
-    draw_text(r, "Display & Audio, Gameplay, Cheats and Controls. F11 toggles fullscreen, F10 the FPS counter.",
+    draw_text(r, "Display, Sound, Gameplay, Cheats and Controls. F11 toggles fullscreen, F10 the FPS counter.",
               LW / 2, LH - 16, 15, grey, 1);
     SDL_RenderPresent(r);
 }

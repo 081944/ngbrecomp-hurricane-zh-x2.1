@@ -47,7 +47,7 @@ I3DL2 reverb on the send bin 10 with the room the game sets per area. The sound 
 Positional Audio places a mono 3D sound through the library's own HRTF tables (0x395430 the filter per
 direction, 0x383E70 the filters: 31 sign and magnitude taps per ear, the far ear's delay in its last
 byte): "Console" filters it as the chip does, "Panning" takes only each ear's level from its filter, "Off"
-plays it centred. Audio Output (Display & Audio; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
+plays it centred. Audio Output (Sound; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
 Stereo, 5.1, or Auto: 5.1 when the default output device has six channels or more. On 5.1 the program is
 told its speakers are surround (with Dolby Digital) and mixes for them, and the output is FL FR C LFE BL
 BR; on stereo the centre is folded into the front pair. `NGB_AUDIO_CHANNELS=2|6` overrides it,
@@ -88,12 +88,12 @@ mailbox, like Nvidia's Fast sync, now and then shows a frame twice, #17); Off is
 ## Settings, menus and features
 
 The settings are in the game's own menus, in its style: the main menu's RECOMP SETTINGS
-(where Ranking was) opens the Options screen on them -- Graphics, Display and Startup
-Settings and Cheats, each a page of rows like Video Settings', and Controls (the bindings' panel,
+(where Ranking was) opens the Options screen on them -- Graphics, Display, Sound, Gameplay
+and Cheats, each a page of rows like Video Settings', and Controls (the bindings' panel,
 below), under a SETTINGS header (`src/pc_menu.c`;
 the header and category words are drawn in Liberation Serif in the game's pictures' style,
 `src/pause_tab.c`) -- and the pause menu has a Settings tab before Exit (A to enter its page,
-left/right on the category strip at its top for Graphics, Display, Startup, Cheats or Controls,
+left/right on the category strip at its top for Graphics, Display, Sound, Gameplay, Cheats or Controls,
 up/down for the rows, left/right or A to change one -- or a click: on a value's left half back,
 anywhere else on the row on -- B to leave; L and R go on to the next tab, as on the
 game's own pages; `NGB_NO_SETTINGS_TAB=1` leaves the game's six tabs). They are: aspect ratio
@@ -116,7 +116,7 @@ the New Game prologue and the story movies play, and Start, A or B ends any of t
 next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
 `--settings` shows the old settings screen before the game.
 
-All Difficulties (Startup, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
+All Difficulties (Gameplay, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
 without clearing the one before (or dying for Ninja Dog). The game's menus ask one function (sub_001DB520, now in
 `src/cheats.c`) for their unlock flags -- 7-9 are those three, read from the system data --
 and with the setting on it answers yes for them; nothing is written, so the player's own record
@@ -131,7 +131,7 @@ Infinite Essence (0x589570, the game's cap of 99,999) and Golden Scarabs (enough
 inventory slots at 0x5891D0, item 0x59 -- to make 50 with those already given to Muramasa,
 0x589574: every one of his rewards at the next visit). The game guards its state with 24
 checksums (sub_00164E50) and returns to the title when one changes without the flag its own
-code sets (0x7F1A94 + n); a cheat that writes sets them all. Startup Settings also has All
+code sets (0x7F1A94 + n); a cheat that writes sets them all. Gameplay also has All
 Costumes (saved): the Costume Selection at New Game offers every costume, as after clearing
 the game, through the same flag function as All Difficulties (flags 1-4). The game has eight costumes (chr_ryu.afs, chr_ryua-g.afs) and its Costume Selection
 lists five (0 and 4-7, the table at 0x3E9D10), the locked ones as white shapes; here it lists only
