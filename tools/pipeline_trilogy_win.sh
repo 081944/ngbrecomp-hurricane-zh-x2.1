@@ -31,7 +31,9 @@ echo "== abi";     "$py" -m tools.abi_analysis "$xbe" --disasm-dir "$out/disasm"
                       --output-dir "$out/abi" >/dev/null
 echo "== recomp"
 mkdir -p "$gen" && find "$gen" -name "*.[ch]" -delete
+# The DirectSound functions src/audio has by hand (tools/take_dsound.py): the generator leaves them out.
 "$py" -m tools.recomp "$xbe" --all --split 250 --game-name "$name" \
+    --manual-functions "$here/src/manual_functions_arcade.json" \
     --disasm-dir "$out/disasm" --func-id-dir "$out/func_id" --abi-dir "$out/abi" \
     -o "$out/recomp" --gen-dir "$gen" > "$out/recomp_log.txt" 2>&1 \
     || { tail -20 "$out/recomp_log.txt"; exit 1; }

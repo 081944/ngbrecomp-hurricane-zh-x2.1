@@ -124,6 +124,10 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camera.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/d3d/d3d_hooks.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/d3d/d3d_orig.c
+    # The DirectSound hooks (src/audio, tools/take_dsound.py).
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_hooks.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_orig.c
     ${NGB_FONT_SOURCES})
 target_include_directories(ngb_gen PRIVATE
     ${XBOXRECOMP_DIR}/third_party/stb
@@ -180,6 +184,15 @@ if(NGB_NV2A_VK)
     target_compile_options(ngb_d3d PRIVATE -O2 -fno-strict-aliasing)
 endif()
 
+# ── DirectSound on a host mixer (src/audio, src/audio/NOTICE) ────
+
+find_package(SDL2 REQUIRED)
+add_library(ngb_audio OBJECT src/audio/dsound_hle.cpp)
+target_include_directories(ngb_audio PRIVATE src/audio src/d3d/compat
+    $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_features(ngb_audio PRIVATE cxx_std_20)
+target_compile_options(ngb_audio PRIVATE -O2 -fno-strict-aliasing)
+
 # ── Executable ──────────────────────────────────────────────────
 
 add_executable(${PROJECT_NAME}
@@ -195,6 +208,7 @@ add_executable(${PROJECT_NAME}
     src/launch.c
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
+    $<TARGET_OBJECTS:ngb_audio>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
@@ -240,13 +254,18 @@ endif()
 # voices are set to Japanese): one program each, from tools/pipeline_trilogy.sh [tomoe]. Each is built
 # when its code has been generated. They draw with the GPU model's own NV2A renderer, so they need it.
 
-function(ngb_arcade_program target output gen_dir xbe)
+function(ngb_arcade_program target output gen_dir xbe dsound)
     file(GLOB gen_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}/*.c")
     if(NOT gen_sources OR NOT NGB_NV2A_VK)
         return()
     endif()
-    add_library(${target}_gen OBJECT ${gen_sources})
+    # with its DirectSound hooks (src/audio, tools/take_dsound.py trilogy|tomoe)
+    add_library(${target}_gen OBJECT ${gen_sources}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_hooks_arcade.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/dsound_orig_${dsound}.c)
     target_include_directories(${target}_gen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/audio
         ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}
         ${XBOXRECOMP_DIR}/include
         ${XBOXRECOMP_DIR}/src
@@ -271,6 +290,7 @@ function(ngb_arcade_program target output gen_dir xbe)
         src/fps_text.c              # Show FPS (handed over by the game) in the game's lettering
         ${NGB_FONT_SOURCES}
         $<TARGET_OBJECTS:${target}_gen>
+        $<TARGET_OBJECTS:ngb_audio>
         $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>)
     target_link_libraries(${target} PRIVATE xboxrecomp xbox_nv2a_vk)
     target_compile_definitions(${target} PRIVATE NGB_NV2A_VK TRILOGY_XBE="${xbe}")
@@ -293,8 +313,8 @@ function(ngb_arcade_program target output gen_dir xbe)
     endif()
     message(STATUS "${output}: ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}")
 endfunction()
-ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe)
-ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe)
+ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe trilogy)
+ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe tomoe)
 
 if(NOT WIN32)
     find_package(Qt6 QUIET COMPONENTS Widgets)

@@ -24,7 +24,8 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
   controller, mouse support in the menus
 - Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
-- Positional sound (3D sounds placed left and right as on the console), an optional HUD-free view
+- Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
+  7.1 output; an optional HUD-free view
 - Smooth frame pacing and low input latency; shaders prepared in the background (no first-time
   stutter)
 
@@ -53,6 +54,14 @@ Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
 2. Run `NinjaGaidenBlack.exe` and choose your disc image as above.
 
 Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
+
+**Antivirus warnings:** the program isn't code-signed, and a new unsigned program is sometimes
+flagged by one antivirus's heuristics (McAfee quarantined it in #88; VirusTotal shows no other
+detections). That's a false positive. Each release lists the SHA-256 hash of both downloads in its
+notes and in `SHA256SUMS.txt`, so you can check that your download is the one published here: in
+PowerShell, `Get-FileHash NinjaGaidenBlack-windows-x64.zip`; on Linux, `sha256sum -c SHA256SUMS.txt`.
+If you'd rather not run a prebuilt program, you can build it yourself from your own disc
+([Building from source](#building-from-source)).
 
 ### macOS (unsupported)
 
@@ -86,7 +95,8 @@ of the pause menu. Changes apply at once and are saved.
 - **Display & Audio**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off,
   Positional Audio (3D sounds placed left and right: Panning, the default; Console, through the sound
-  chip's filters as on the Xbox, a little duller; Off, centred)
+  chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo or 5.1; Auto
+  is 5.1 on a 5.1 or 7.1 output)
 - **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open
@@ -200,7 +210,7 @@ and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
   LGPL-2.1-or-later, its shader generators GPL-2.0 or 3.0; xemu as a whole is GPL-2.0)
 - TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) and
   [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp): the renderer's shader, vertex and
-  texture code (MIT)
+  texture code, and the sound mixer's model (MIT)
 - Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
 - Keyboard and mouse prompts: Xelu's Free Controller & Key Prompts (CC0)
 - Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)

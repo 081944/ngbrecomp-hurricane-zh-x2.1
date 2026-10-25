@@ -78,7 +78,7 @@ void ngb_pc_set_setting(int which, int value);
 /* The settings, numbered as ngb_pc_setting has them. */
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
-       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_COUNT };
+       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT, S_COUNT };
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
@@ -87,6 +87,7 @@ static const char *const s_label[S_COUNT] = {
     "Infinite Health", "Infinite Ninpo", "Infinite Essence", "All Difficulties",
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
+    "Audio Output",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -114,11 +115,12 @@ static const char *const s_help[S_COUNT] = {
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
     "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer.",
     "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.",
+    "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. From the next start.",
 };
 
 /* The categories: the strip's words, their rows. */
 #define CATS 6
-#define CAT_ROWS 7
+#define CAT_ROWS 8
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 /* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display & Audio", "Startup", "Gameplay", "Cheats", "Controls" };
@@ -130,7 +132,7 @@ static const char *cat_name(int c)
 }
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
-    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_POSAUDIO },
+    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_POSAUDIO, S_AUDIOOUT },
     { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
     { S_QUICKSCALE, S_QUICKFREEZE, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, -1 },
@@ -182,6 +184,7 @@ static void value_text(int row, char *out, size_t n)
     case S_ASPECT:  snprintf(out, n, "%s", v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
+    case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
     case S_SKIP:
     case S_ALLDIFF:
     case S_ALLCOST:
@@ -232,6 +235,7 @@ static void change(int row, int step)
         ngb_pc_set_setting(row, ngb_quick_scale_step(v, step));
         break;
     case S_POSAUDIO:
+    case S_AUDIOOUT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
     case S_ASPECT:
@@ -792,6 +796,8 @@ static void page_text(uint32_t *px, uint8_t *m, const char *s, float x, float ba
 
 #define ROW_Y0 50
 #define ROW_H  27
+#define SET_ROW_H 24                    /* the settings' rows: eight in the room of seven */
+#define SET_HELP_Y (ROW_Y0 + 217)       /* their help, clear of the prompts below */
 #define STRIP_Y 6                 /* the categories' strip */
 #define STRIP_H 26
 #define STRIP_X0 14               /* where its first word starts, and the gap */
@@ -955,20 +961,20 @@ static void draw_page(int focused, int cat, int row)
     int n = cat_count(cat);
     for (int i = 0; i < n; i++) {
         int set = s_cat_rows[cat][i];
-        float y = ROW_Y0 + i * ROW_H;
+        float y = ROW_Y0 + i * SET_ROW_H;
         int sel = focused && i == row;
         char val[48];
         if (sel) {
-            page_fill(px, 0, y + 2, 10, ROW_H - 4, 0xE6E4FF, 0.95f, 0.85f);
-            page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
+            page_fill(px, 0, y + 2, 10, SET_ROW_H - 4, 0xE6E4FF, 0.95f, 0.85f);
+            page_fill(px, 10, y + 2, 440, SET_ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
         }
         value_text(set, val, sizeof val);
-        page_text(px, m, s_label[set], 20, y + 19, 19,
+        page_text(px, m, s_label[set], 20, y + 18, 19,
                   sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0);
-        page_text(px, m, val, 350, y + 19, 19, sel ? 0xFFFFFF : 0xB4B4BC, 1);
+        page_text(px, m, val, 350, y + 18, 19, sel ? 0xFFFFFF : 0xB4B4BC, 1);
         if (sel) {
-            page_text(px, m, "<", 272, y + 18, 17, 0xFFFFFF, 1);
-            page_text(px, m, ">", 428, y + 18, 17, 0xFFFFFF, 1);
+            page_text(px, m, "<", 272, y + 17, 17, 0xFFFFFF, 1);
+            page_text(px, m, ">", 428, y + 17, 17, 0xFFFFFF, 1);
         }
     }
     if (focused && row >= 0 && row < n)
@@ -978,10 +984,10 @@ static void draw_page(int focused, int cat, int row)
             if (nl && (size_t)(nl - h) < sizeof first) {
                 memcpy(first, h, (size_t)(nl - h));
                 first[nl - h] = 0;
-                page_text_fit(px, m, first, 445, ROW_Y0 + CAT_ROWS * ROW_H + 28, 15, 0xFFFFFF, 2, 440);
-                page_text_fit(px, m, nl + 1, 445, ROW_Y0 + CAT_ROWS * ROW_H + 46, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, first, 445, SET_HELP_Y, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, nl + 1, 445, SET_HELP_Y + 18, 15, 0xFFFFFF, 2, 440);
             } else {
-                page_text_fit(px, m, h, 445, ROW_Y0 + CAT_ROWS * ROW_H + 28, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, h, 445, SET_HELP_Y, 15, 0xFFFFFF, 2, 440);
             }
         }
 
@@ -1823,11 +1829,11 @@ int ngb_pause_tab_hit(float x, float y, int *zone)
     }
     if (s_cat == CAT_CTL)
         return ctl_hit(x, y);
-    if (x < 0 || x >= PAGE_W || y < ROW_Y0 || y >= ROW_Y0 + cat_count(s_cat) * ROW_H)
+    if (x < 0 || x >= PAGE_W || y < ROW_Y0 || y >= ROW_Y0 + cat_count(s_cat) * SET_ROW_H)
         return -1;
     if (x >= 262)
         *zone = x < 350 ? -1 : 1;
-    return (int)((y - ROW_Y0) / ROW_H);
+    return (int)((y - ROW_Y0) / SET_ROW_H);
 }
 
 /* A key on Controls' list (row its row); strip: up from the first row and down

@@ -863,6 +863,12 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
     return s;
 }
 
+int IdViewMode() {
+    static const int m = std::getenv("NGB_D3D_IDVIEW") ? std::atoi(std::getenv("NGB_D3D_IDVIEW")) : 0;
+    return m;
+}
+bool IdView() { return IdViewMode() > 0; }
+
 std::string PixelHlsl(const PixelKey& k) {
     std::string s = Common();
     s += PsHelpers();
@@ -1002,6 +1008,32 @@ std::string PixelHlsl(const PixelKey& k) {
                           norm.c_str(), i, i, t.shadow, i);
             else if (t.kind == kTex2D && (t.flags & kTexWide))
                 body += F("float4 t%d = spreadtap%d(%s, spread[%d], %s);\n", i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
+            else if (t.kind == kTex2D && k.quad && (t.flags & kTexLinear)) {
+                // the four texels around, weighted by their alpha when the backend asks (qsnap.y, QuadSnap)
+                std::string tap =
+                    "float4 t$;\n"
+                    "if (qsnap.y > 0) {\n"
+                    "    float2 sz$; tex$.GetDimensions(sz$.x, sz$.y);\n"
+                    "    float2 f$ = (UV) * sz$ - 0.5;\n"
+                    "    float2 b$ = floor(f$), w$ = f$ - b$, c$ = (b$ + 0.5) / sz$, d$ = 1 / sz$;\n"
+                    "    float4 q0$ = tex$.SampleLevel(smp$, c$, 0), q1$ = tex$.SampleLevel(smp$, c$ + float2(d$.x, 0), 0);\n"
+                    "    float4 q2$ = tex$.SampleLevel(smp$, c$ + float2(0, d$.y), 0), q3$ = tex$.SampleLevel(smp$, c$ + d$, 0);\n"
+                    "    float4 wq$ = float4((1 - w$.x) * (1 - w$.y), w$.x * (1 - w$.y), (1 - w$.x) * w$.y, w$.x * w$.y);\n"
+                    "    float4 aw$ = wq$ * float4(q0$.a, q1$.a, q2$.a, q3$.a);\n"
+                    "    float sa$ = aw$.x + aw$.y + aw$.z + aw$.w;\n"
+                    "    float3 rgb$ = sa$ > 0 ? (q0$.rgb * aw$.x + q1$.rgb * aw$.y + q2$.rgb * aw$.z + q3$.rgb * aw$.w) / sa$\n"
+                    "                          : q0$.rgb * wq$.x + q1$.rgb * wq$.y + q2$.rgb * wq$.z + q3$.rgb * wq$.w;\n"
+                    // an on-or-off mask (a cut-out's 0 and 255): the nearest texel's alpha, its edge as sharp and
+                    // where the console's is -- a blend would let what is behind show along it; soft alpha (text)
+                    // stays filtered
+                    "    float4 qa$ = float4(q0$.a, q1$.a, q2$.a, q3$.a);\n"
+                    "    if (all(qa$ < 0.02 || qa$ > 0.98)) sa$ = w$.y < 0.5 ? (w$.x < 0.5 ? q0$.a : q1$.a) : (w$.x < 0.5 ? q2$.a : q3$.a);\n"
+                    "    t$ = float4(rgb$, sa$);\n"
+                    "} else t$ = tex$.Sample(smp$, UV);\n";
+                for (size_t at; (at = tap.find("UV")) != std::string::npos;) tap.replace(at, 2, uv);
+                for (size_t at; (at = tap.find('$')) != std::string::npos;) tap.replace(at, 1, std::to_string(i));
+                body += tap;
+            }
             else if (t.kind == kTex2D) body += F("float4 t%d = tex%d.Sample(smp%d, %s);\n", i, i, i, uv.c_str());
             else if (t.kind == kTexCube && !(cube = Hooks().Cube(t, i, F("tc%d.xyz", i))).empty()) body += F("float4 t%d = %s;\n", i, cube.c_str());
             else if (t.kind) body += F("float4 t%d = tex%d.Sample(smp%d, tc%d.xyz);\n", i, i, i, i);
@@ -1016,7 +1048,19 @@ std::string PixelHlsl(const PixelKey& k) {
         body += "cur.rgb = saturate(cur.rgb + v1.rgb);\n";
         body += "float4 outc = float4(lerp(fogin.rgb, cur.rgb, fogin.a), cur.a);\n";
     }
-    body += "alphatest(outc.a);\n" + Hooks().Output() + "return outc;\n}\n";
+    body += "alphatest(outc.a);\n" + Hooks().Output();
+    // NGB_D3D_IDVIEW=1 (debugging): an opaque 3D surface tinted by its draw's colour (qsnap.z: 1 + a palette
+    // index), its own shading kept -- two surfaces fighting over pixels show as two colours speckling
+    // mode 2: the draw's number exactly, in red (low byte) and green (high byte, times 16), blue 200
+    if (IdViewMode() == 2)
+        body += "if (qsnap.z < 0) outc = float4(fmod(qsnap.w, 256.0) / 255.0, floor(qsnap.w / 256.0) * 16.0 / 255.0,"
+                " 200.0 / 255.0, 1);\n";
+    else if (IdView())
+        body += "if (qsnap.z > 0) { float h = (qsnap.z - 1) / 24.0;\n"
+                "  float3 hue = saturate(abs(frac(h + float3(0, 2.0/3, 1.0/3)) * 6 - 3) - 1);\n"
+                "  float l = dot(outc.rgb, float3(0.3, 0.59, 0.11));\n"
+                "  outc.rgb = hue * (0.35 + 0.9 * l); }\n";
+    body += "return outc;\n}\n";
     s += body;
     return k.quad ? QuadHlsl(std::move(s)) : s;
 }

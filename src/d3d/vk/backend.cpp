@@ -13,6 +13,8 @@
 #include <vk_mem_alloc.h>
 
 #include <algorithm>
+#include <bit>
+#include <map>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -264,6 +266,9 @@ struct Tex {
     std::vector<uint8_t> check;   // NGB_D3D_BUMPCHECK: a bump map's top level as uploaded, to read back against
 };
 
+// PipeKey::has_ds: 1 a depth target; kDsDynamicBias the depth bias set at the draw (the map pieces' pull, below):
+// a bit of an existing field, so the key -- and every pipeline the caches and the seed keep -- stays as it was
+constexpr uint32_t kDsDynamicBias = 2;
 struct PipeKey {
     uint64_t vs, ps;
     uint32_t regs, elements[16], strides[16];
@@ -474,8 +479,11 @@ private:
     std::set<uint32_t> told_size_;    // textures logged as reading a target of another size (#16), or their own (| 1)
     void Retire(Image& img, VkImageView extra = VK_NULL_HANDLE);
     size_t EvictTextures(uint32_t idle_frames);   // textures unused that many frames: retired (#81)
-    void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, DrawConstants& c);
+    void QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples, DrawConstants& c);
     bool recording_ = false;
+    uint32_t id_count_ = 0, id_file_frame_ = ~0u;   // NGB_D3D_IDVIEW=2
+    FILE* id_file_ = nullptr;
+    uint32_t section_pulled_ = 0;   // the drawbridge towers' draws pulled this frame (NGB_D3D_SECTION_LOG)
     void Begin();
     void Submit();
     uint32_t frame_ = 0;
@@ -972,6 +980,8 @@ void VulkanBackend::EndFrame() {
 // black, which nothing but a restart cleared (the game's soft reset keeps the renderer). Retired, not destroyed:
 // a frame still in flight may read it. Returns how many went.
 size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
+    static const bool off = std::getenv("NGB_D3D_NO_EVICT") != nullptr;   // NGB_D3D_NO_EVICT=1: kept, as before 0.9.29
+    if (off) return 0;
     size_t n = 0;
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (it->second.img.image && frame_ - it->second.used > idle_frames) {
@@ -985,16 +995,65 @@ size_t VulkanBackend::EvictTextures(uint32_t idle_frames) {
     return n;
 }
 
+// The Tairon drawbridge's towers (NGB_D3D_SECTION_PULL=n depth steps, default 2, and NGB_D3D_SECTION_SLOPE=f console
+// pixels' worth of depth slope, default 0.5; NGB_D3D_SECTION_PULL=0 turns it off). Ninja Gaiden Black's levels load in
+// chunks (the game's table at 0x9504C0, 0x14 bytes a slot: +0 the chunk's data, +4 1 while loaded; a map piece object
+// -- 0x54 bytes, drawn through the render list walk -- names its chunk at +8 as the slot's address + 4). By the
+// drawbridge the towers' section lays its rubble faces over the town section's block walls in the same plane, cut into
+// different triangles; their depths tie within a few steps either way and the two textures flicker -- in either
+// renderer, as xemu's model of the console's depth gives the same ties -- where the Xbox shows the rubble steadily.
+// The towers' pieces are pulled nearer here, and only theirs: a rule for every overlapping section (by load order)
+// settled other places the other way round (a seam down a chapter 1 cliff). The towers' chunk is known by its header
+// ("KMD", its size 0x4FF470 at +0xC: the same wherever it loads), a draw's by its vertex buffer's header (the loaded
+// chunk whose data holds it).
+constexpr uint32_t kChunkTable = 0x9504C4, kChunkSlot = 0x14, kChunkSlots = 64;
+int SectionPull() {
+    static const int n = std::getenv("NGB_D3D_SECTION_PULL") ? std::atoi(std::getenv("NGB_D3D_SECTION_PULL")) : 2;
+    return n;
+}
+float SectionSlope() {   // NGB_D3D_SECTION_SLOPE=f: console pixels' worth of depth slope (0.5)
+    static const float f = std::getenv("NGB_D3D_SECTION_SLOPE") ? float(std::atof(std::getenv("NGB_D3D_SECTION_SLOPE"))) : 0.5f;
+    return f;
+}
+// the loaded chunk whose data holds the guest address a (its data address), or 0
+uint32_t ChunkDataOf(uint32_t a) {
+    uint32_t best = 0;
+    for (uint32_t i = 0; i < kChunkSlots; i++) {
+        uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
+        if (kernel::R32(e + 4) == 1 && base <= a && base > best) best = base;
+    }
+    return best;
+}
+// whether the guest address a is in the drawbridge towers' chunk
+bool InTowersChunk(uint32_t a) {
+    uint32_t base = ChunkDataOf(a);
+    return base && kernel::R32(base) == 0x00444D4B && kernel::R32(base + 0xC) == 0x004FF470;   // "KMD", its size
+}
+// the chunk slot of the map piece being drawn, or ~0u
+uint32_t DrawChunkSlot() {
+    if (g_draw_node < 0x10000 || g_draw_node >= 0x4000000) return ~0u;
+    uint32_t g = kernel::R32(g_draw_node + 8);
+    if (g < kChunkTable || g >= kChunkTable + kChunkSlot * kChunkSlots || (g - kChunkTable) % kChunkSlot) return ~0u;
+    return (g - kChunkTable) / kChunkSlot;
+}
+
 // A 2D quad above 1x drawn as the console covers and samples it (gpu::QuadHlsl, the pixel shader's clamp): for an
 // axis-aligned pretransformed 4-vertex quad, each stage's texture coordinate gradients in console pixels and the
 // range the console's pixel centres sample -- the quad's own range less half a console pixel's worth at each side.
 // Off (qsnap.x 0) at 1x, for other draws, and for a quad whose coordinates are generated or transformed.
-void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, DrawConstants& c) {
+void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count, bool quad, uint32_t samples,
+                             DrawConstants& c) {
     std::memset(c.uvc, 0, sizeof(c.uvc));
     std::memset(c.uvg, 0, sizeof(c.uvg));
     std::memset(c.qsnap, 0, sizeof(c.qsnap));
     static const bool off = std::getenv("NGB_D3D_NO_QUADSNAP") != nullptr;
-    if (off || !quad || !a.pretransformed || count != 4 || c.surf[3] <= 1.0f) return;
+    // above 1x, or at 1x with MSAA (whose samples an edge between pixel centres covers in part: the same strips)
+    if (off || !quad || !a.pretransformed || count != 4 || (c.surf[3] <= 1.0f && samples <= 1)) return;
+    // a linearly filtered texture weighted by its alpha (qsnap.y, the pixel shader's kTexLinear stages): between
+    // texels, as an upscaled picture samples, a transparent texel's colour is not blended into its opaque
+    // neighbour's -- the light fringe where a sprite's picture meets the clear part of its texture (the pause
+    // menu's dagger above 1x, #83). At the console's pixel centres it is the same texel as before.
+    c.qsnap[1] = 1.0f;
     const VertexElement& pe = a.elements[0];
     if (pe.buffer >= a.buffer_count || !a.buffers[pe.buffer].src || !a.buffers[pe.buffer].stride) return;
     const auto& pb = a.buffers[pe.buffer];
@@ -2225,7 +2284,7 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
         // Direct3D's winding is in its y-down screen space, Vulkan's in the framebuffer after the
         // viewport transform: with the flipped viewport the two agree, so no inversion
         rs.frontFace = k.ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
-        rs.depthBiasEnable = k.zbias || k.zslope;
+        rs.depthBiasEnable = k.zbias || k.zslope || (k.has_ds & kDsDynamicBias);
         rs.depthBiasConstantFactor = float(k.zbias);
         rs.depthBiasSlopeFactor = k.zslope;
         rs.lineWidth = 1.0f;
@@ -2251,10 +2310,12 @@ VkPipeline VulkanBackend::MakePipeline(const PipeKey& k, VkShaderModule vs, VkSh
         cbs.attachmentCount = k.has_rt ? 1 : 0;
         cbs.pAttachments = &cb;
         // the line width only on the line pipelines: the others, nearly all, stay as the caches have them
-        VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
-                                VK_DYNAMIC_STATE_STENCIL_REFERENCE, VK_DYNAMIC_STATE_LINE_WIDTH};
+        VkDynamicState dyn[6] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+                                 VK_DYNAMIC_STATE_STENCIL_REFERENCE};
         VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-        dy.dynamicStateCount = Lines(k) ? 5 : 4;
+        dy.dynamicStateCount = 4;
+        if (Lines(k)) dyn[dy.dynamicStateCount++] = VK_DYNAMIC_STATE_LINE_WIDTH;
+        if (k.has_ds & kDsDynamicBias) dyn[dy.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
         dy.pDynamicStates = dyn;
         VkFormat cf = kColorFormat;
         VkPipelineRenderingCreateInfo pr{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
@@ -2435,6 +2496,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     draw_rt_ = rt;
     for (int i = 0; i < 4; i++) views[i] = BindTexture(s, i, info[i], from_target[i]);
     draw_rt_ = nullptr;
+    for (int i = 0; i < 4 && quad; i++)   // a screen quad's linearly filtered textures (QuadSnap's alpha weighting)
+        if (info[i].kind == kTex2D && !info[i].shadow && (s.tss[size_t(i)][kTssMagFilter] >= 2 || aniso_level_ > 0))
+            info[i].flags |= kTexLinear;
     if ((info[0].flags & kTexSigned) && std::getenv("NGB_D3D_BUMPLOG")) {   // the water's stage 0 sampling (#16)
         static int n;
         if (n++ < 6) {
@@ -2465,6 +2529,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         pk.sprite = 1;
     }
     uint64_t pkey = Hash(&pk, sizeof(pk)) ^ 0x9E3779B97F4A7C15ull;
+    if (IdView()) pkey ^= 0x1D1D1D1D1D1D1D1Dull * uint64_t(IdViewMode());   // other shaders: other modules in the cache
     if (sprite) pkey ^= 0x51D5;
     // debugging: NGB_D3D_PSDEBUG=flat (solid red) | tex (stage 0's texture) | uv | diffuse
     static const char* psdbg = std::getenv("NGB_D3D_PSDEBUG");
@@ -2536,6 +2601,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
 
     // the pipeline
     PipeKey k;
+    int32_t pull_steps = 0;   // the map pieces' pull: depth steps and slope added to the game's own bias
+    float pull_slope = 0.0f;
     std::memset(&k, 0, sizeof(k));
     k.vs = vkey;
     k.ps = pkey;
@@ -2578,6 +2645,25 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             k.zbias = int32_t(std::lround(Bits(SimpleState(s, kMDepthOffset)) * 16777215.0f / s.zscale));
             k.zslope = Bits(SimpleState(s, kMSlopeScale));
         }
+        if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen && k.has_ds) {   // a pull of 0 turns it off
+            // by the vertex buffer (its header in the towers' chunk), not the texture: every pass over the same mesh -- the
+            // depth pre-pass, untextured, and Ryu's shadow laid over it -- then moves with it, or the shadow breaks up
+            if (s.streams[0].vb && InTowersChunk(s.streams[0].vb)) {
+                k.has_ds |= kDsDynamicBias;   // the pull set at the draw: any setting without a pipeline of its own
+                {
+                    // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
+                    // where their vertices land on screen, so they grow with how steeply the depth changes across
+                    // a pixel -- at the drawbridge within 0.15 of a console pixel's worth (6 to 600 steps a pixel
+                    // there). Half a console pixel's worth covers them on an edge-on wall and is next to nothing on
+                    // a surface facing the camera, where a constant pull brought things behind a facade through it;
+                    // 2 depth steps more for the flattest ties.
+                    float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
+                    pull_slope = -SectionSlope() * std::max(scale, 1.0f);
+                    pull_steps = -SectionPull();
+                    section_pulled_++;
+                }
+            }
+        }
     }
     // the console culls the CULLMODE winding (D3DCULL_CW 0x900, CCW 0x901); FRONTFACE says which
     // winding is the front, so the culled side is the front when the two agree
@@ -2586,7 +2672,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     k.ccw = front == 0x901;              // front faces counter clockwise (in Direct3D's y-down screen)
     k.cullfront = k.cull && cull == front;
     k.fill = s.rs[kRsFillMode];
-    if (spark_quad) { k.cull=0;k.fill=0x1B02;k.zbias=0;k.zslope=0; }
+    if (spark_quad) { k.cull=0;k.fill=0x1B02;k.zbias=0;k.zslope=0;k.has_ds&=~kDsDynamicBias; }
     static bool nocull = std::getenv("NGB_D3D_NOCULL") != nullptr;    // debugging
     static bool nodepth = std::getenv("NGB_D3D_NODEPTH") != nullptr;  // debugging
     static bool cullinv = std::getenv("NGB_D3D_CULLINV") != nullptr;  // debugging: the other side
@@ -2628,6 +2714,13 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         pmod=Module(pkey,[&] {return GlowStrengthHlsl(PixelHlsl(pk));},false);
     }
     VkPipeline pipe = vmod && pmod ? Pipeline(k) : VK_NULL_HANDLE;
+    if (!pipe && vmod && pmod && (k.has_ds & kDsDynamicBias)) {
+        // the map piece's pipeline with the bias at the draw still being made: drawn meanwhile without the pull,
+        // by the pipeline it had before (the caches have it), rather than left out
+        PipeKey plain = k;
+        plain.has_ds &= ~kDsDynamicBias;
+        if ((pipe = Pipeline(plain))) k = plain;
+    }
     async_now_ = false;
     if (!pipe) {
         st_.nopipe++;
@@ -2920,6 +3013,52 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         ngb_frame_3d_draws++;
         last3d_now_ = st_.drawn;
     }
+    if (int(presents_) == g_step_frame && !dump_dir_.empty() && !prog && !a.pretransformed) {
+        // the stepped frame (NGB_D3D_STEP): each fixed-function draw's matrices and raw positions, to compare two
+        // meshes' depths the console's way and this renderer's (dump_dir/vertices.txt)
+        static FILE* vf = nullptr;
+        static int vf_frame = -1;
+        if (vf_frame != g_step_frame) {
+            if (vf) std::fclose(vf);
+            vf = std::fopen((dump_dir_ + "/vertices_" + std::to_string(presents_) + ".txt").c_str(), "w");
+            vf_frame = g_step_frame;
+        }
+        const VertexElement& pe = a.elements[0];
+        if (vf && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src && a.buffers[pe.buffer].stride) {
+            const auto& pb = a.buffers[pe.buffer];
+            uint32_t nv = pb.bytes / pb.stride;
+            std::fprintf(vf, "draw %u tex0 %08X n %u verts %u fmt %u zen %u zw %u zf %X stack", st_.drawn + 1,
+                         s.textures[0], count, nv, pe.format, uint32_t(s.rs[kRsZEnable]), SimpleState(s, kMZWriteEnable),
+                         SimpleState(s, kMZFunc));
+            for (int k2 = 0; k2 < g_draw_stack_n; k2++) std::fprintf(vf, " %08X", g_draw_stack[k2]);
+            std::fprintf(vf, "\n");
+            if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000) {
+                std::fprintf(vf, "node %08X", g_draw_node);
+                for (uint32_t o = 0; o < 0x60; o += 4) std::fprintf(vf, " %08X", kernel::R32(g_draw_node + o));
+                std::fprintf(vf, "\n");
+            }
+            for (int m : {256, 2, 3}) {
+                std::fprintf(vf, "m%d", m);
+                for (float x : s.transforms[size_t(m)]) std::fprintf(vf, " %.9g", x);
+                std::fprintf(vf, "\n");
+            }
+            std::fprintf(vf, "vp %u %u %u %u %.9g %.9g zscale %.9g\n", s.viewport.x, s.viewport.y, s.viewport.w,
+                         s.viewport.h, s.viewport.min_z, s.viewport.max_z, s.zscale);
+            for (uint32_t v = 0; v < nv; v++) {
+                float p[3];
+                std::memcpy(p, pb.src + size_t(v) * pb.stride + pe.offset, 12);
+                std::fprintf(vf, "v %.9g %.9g %.9g\n", p[0], p[1], p[2]);
+            }
+            if (a.index_src && a.index_count) {
+                std::fprintf(vf, "i %u %d", a.index_count, a.base_vertex);
+                for (uint32_t k2 = 0; k2 < a.index_count; k2++)
+                    std::fprintf(vf, " %u", a.index16 ? uint32_t(reinterpret_cast<const uint16_t*>(a.index_src)[k2])
+                                                       : reinterpret_cast<const uint32_t*>(a.index_src)[k2]);
+                std::fprintf(vf, "\n");
+            }
+            std::fflush(vf);
+        }
+    }
     if (!prog && !a.pretransformed) {
         float wv[16], wvp[16], full[16];
         MatMul(s.transforms[256].data(), s.transforms[2].data(), wv);
@@ -2968,7 +3107,57 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     } else {
         vc = Upload(s.vsc.data(), sizeof(s.vsc), ringAlign_);
     }
-    QuadSnap(s, a, count, quad, c);
+    QuadSnap(s, a, count, quad, rt ? rt->samples : ds ? ds->samples : 1, c);
+    bool id_opaque = !a.pretransformed && k.zen && k.zwrite && !k.blend && a.topology == Topology::Triangles &&
+                     rt && rt->gw >= 640;
+    bool id_dumping = !dump_dir_.empty() && presents_ + 1 >= dump_from_ && presents_ + 1 < dump_from_ + dump_count_;
+    if (IdViewMode() == 2 && id_dumping) {   // only while a burst dumps: the game looks as usual otherwise
+        // NGB_D3D_IDVIEW=2: only the opaque 3D draws, each writing its number (the frame's opaque draws counted
+        // from 1); the rest skipped, so nothing blends over the numbers. With a dump running, each number's draw
+        // goes to dump_dir/ids_<frame>.txt.
+        if (!id_opaque) return;
+        uint32_t n = ++id_count_;
+        c.qsnap[2] = -1.0f;
+        c.qsnap[3] = float(n);
+        {
+            if (id_file_frame_ != presents_ + 1) {
+                if (id_file_) std::fclose(id_file_);
+                id_file_ = std::fopen((dump_dir_ + "/ids_" + std::to_string(presents_ + 1) + ".txt").c_str(), "w");
+                id_file_frame_ = presents_ + 1;
+            }
+            if (id_file_) {
+                std::fprintf(id_file_, "%u piece %08X chunk %d tex %08X n %u", n, g_draw_node, int(DrawChunkSlot()),
+                             s.textures[0], count);
+                if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000)
+                    for (uint32_t o = 0; o < 0x20; o += 4) std::fprintf(id_file_, " %08X", kernel::R32(g_draw_node + o));
+                std::fprintf(id_file_, "\n");
+            }
+        }
+    } else if (IdView() && id_opaque) {
+        // NGB_D3D_IDVIEW: one of 24 hues by the map piece and texture (or the draw's vertex buffer), the same every
+        // frame; the legend, each colour's draws, goes to the log every 5 s
+        uint32_t piece = g_draw_node, tex = s.textures[0];
+        uint32_t key = piece ? piece * 2654435761u ^ tex * 40503u : uint32_t(s.streams[0].vb) * 2654435761u ^ tex;
+        uint32_t idx = (key >> 7) % 24;
+        c.qsnap[2] = float(idx + 1);
+        static std::map<uint32_t, std::string> legend;
+        static uint32_t last = 0;
+        char line[160];
+        std::snprintf(line, sizeof line, "piece %08X chunk %d tex %08X n %u", piece, int(DrawChunkSlot()), tex, count);
+        std::string& e = legend[idx];
+        if (e.find(line) == std::string::npos && e.size() < 600) e += std::string(e.empty() ? "" : "; ") + line;
+        if (presents_ - last >= 300) {
+            last = presents_;
+            static const char* names[24] = {"red", "red-orange", "orange", "amber", "yellow", "lime", "yellow-green",
+                                            "green", "green2", "spring", "mint", "teal", "cyan", "sky", "azure",
+                                            "blue", "deep blue", "indigo", "violet", "purple", "magenta", "pink",
+                                            "rose", "crimson"};
+            std::fprintf(stderr, "[IDVIEW] frame %u legend:\n", presents_);
+            for (auto& [i, t] : legend) std::fprintf(stderr, "[IDVIEW]   %2u %-12s %s\n", i + 1, names[i], t.c_str());
+            std::fflush(stderr);
+            legend.clear();
+        }
+    }
     VkDeviceSize dc = Upload(&c, sizeof(c), ringAlign_);
 
     // the vertices and indices
@@ -3064,6 +3253,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     Color(SimpleState(s, kMBlendColor), bf);
     d_.vkCmdSetBlendConstants(cmd_, bf);
     d_.vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, SimpleState(s, kMStencilRef) & 0xFF);
+    if (k.has_ds & kDsDynamicBias)
+        d_.vkCmdSetDepthBias(cmd_, float(k.zbias + pull_steps), 0.0f, k.zslope + pull_slope);
     if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale
         d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx, 1.0f, line_max_) : 1.0f);
 
@@ -3547,6 +3738,11 @@ void VulkanBackend::TraceFrame(Target& t) {
 
 void VulkanBackend::Present(const Surface& front) {
     presents_++;
+    id_count_ = 0;
+    if (id_file_) std::fflush(id_file_);
+    if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
+        std::fprintf(stderr, "[SECTION] %u draws pulled\n", section_pulled_);
+    section_pulled_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
         static const char* tf = std::getenv("NGB_TRACE_FILE");
         if (tf && access(tf, F_OK) == 0) {
@@ -3815,8 +4011,38 @@ void VulkanBackend::CacheOpen() {
             std::remove((dir + "/spirv.bin").c_str());
         }
         std::vector<uint8_t> rec = ReadFile(dir + "/recipes.bin");
-        if (!rec.empty() && (rec.size() < 8 || std::memcmp(rec.data(), kCacheMagic, 8)))
+        if (!rec.empty() && (rec.size() < 8 || std::memcmp(rec.data(), kCacheMagic, 8))) {
             std::remove((dir + "/recipes.bin").c_str());
+        } else if (!rec.empty()) {
+            // The same for the recipes: past a record cut short the reading stops, so everything recorded after it
+            // -- each launch appending again what it had to make -- was never known, and made late at every start
+            // (a draw left out until then: walls and effects popping in). Kept up to the last whole record.
+            size_t o = 8;
+            while (o + 13 <= rec.size()) {
+                if (!std::memcmp(&rec[o], kCacheMagic, 8)) {
+                    o += 8;
+                    continue;
+                }
+                uint32_t n;
+                std::memcpy(&n, &rec[o + 9], 4);
+                if (!std::strchr("VWFPK", char(rec[o])) || !rec[o] || o + 13 + size_t(n) > rec.size()) break;
+                o += 13 + size_t(n);
+            }
+            if (o < rec.size()) {
+                std::fprintf(stderr, "[D3D] shader cache: recipes.bin damaged at %zu of %zu bytes, kept up to there\n",
+                             o, rec.size());
+                std::string tmp = dir + "/recipes.bin.tmp", dst = dir + "/recipes.bin";
+                if (FILE* f = std::fopen(tmp.c_str(), "wb")) {
+                    bool ok = std::fwrite(rec.data(), 1, o, f) == o;
+                    ok = std::fclose(f) == 0 && ok;
+#if defined(_WIN32)
+                    if (ok) std::remove(dst.c_str());
+#endif
+                    if (ok) std::rename(tmp.c_str(), dst.c_str());
+                    else std::remove(dst.c_str());
+                }
+            }
+        }
         recipes_ = OpenAppend(dir + "/recipes.bin");
         spirv_ = OpenAppend(dir + "/spirv.bin");
     }

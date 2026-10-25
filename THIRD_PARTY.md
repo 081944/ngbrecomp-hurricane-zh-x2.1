@@ -10,6 +10,7 @@ its own license.
 | Component | Where | License |
 |---|---|---|
 | TGP482's [Xbox XBE Recomp SDK](https://github.com/TGP482/Xbox-XBERecomp) / [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) renderer code | `src/d3d/gpu`, and followed by `src/d3d/hle.cpp`, `src/d3d/vk/backend.cpp` | MIT — see `src/d3d/NOTICE` |
+| TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) DirectSound code | followed by `src/audio/dsound_hle.cpp` | MIT — see `src/audio/NOTICE` |
 | EB Garamond | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-EBGaramond.txt`) |
 | Liberation Serif | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-Liberation.txt`) |
 | Xelu's Free Controller & Key Prompts | `assets/prompts/keys` | CC0 (`assets/prompts/License-Xelu.txt`) |

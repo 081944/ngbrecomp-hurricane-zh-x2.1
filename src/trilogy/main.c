@@ -50,6 +50,8 @@ extern void xbox_kernel_init(void);
 extern void xbox_kernel_bridge_init(void);
 typedef struct MCPXAPUState MCPXAPUState;
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
+int dsound_host_mixer(void);              /* src/audio/dsound.c */
+void dsound_hle_set_output(int choice);   /* src/audio/dsound_hle.cpp */
 extern MCPXAPUState *g_apu_state;
 extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr, uint32_t fault_xbox_va, int is_write);
 #define APU_TRAP_BASE 0xFE800000u
@@ -167,7 +169,7 @@ static void *guest_main(void *unused)
         fprintf(stderr, "Cannot start the GPU.\n");
         exit(1);
     }
-    if (getenv("RECOMP_AC97_READY")) {
+    if (getenv("RECOMP_AC97_READY") && !dsound_host_mixer()) {
         g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
         fprintf(stderr, "[BOOT] emulated APU %s\n", g_apu_state ? "up" : "FAILED to initialise");
     }
@@ -341,7 +343,12 @@ int main(int argc, char **argv)
 #else
         unsetenv("NGB_RENDERER");
 #endif
-    set_default("RECOMP_AC97_READY", "1");
+    /* DirectSound on the host mixer (src/audio, as the game's; NGB_AUDIO_ENGINE=apu the emulated sound chip):
+     * the chip's registers stay plain memory. Audio Output comes from the game (NGB_AUDIO_OUTPUT). */
+    if (!dsound_host_mixer())
+        set_default("RECOMP_AC97_READY", "1");
+    if (getenv("NGB_AUDIO_OUTPUT"))
+        dsound_hle_set_output(atoi(getenv("NGB_AUDIO_OUTPUT")));
     set_default("RECOMP_USB", "1");
     set_default("NV2A_TEX_FILTER", "original");
     ngb_launch_init(s_game_dir, s_save_dir, ngb_launch_window_w(), ngb_launch_window_h(), ngb_launch_fullscreen());

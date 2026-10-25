@@ -10075,3 +10075,11 @@ void xbox_kernel_bridge_init(void)
             KERNEL_VA_BASE, KERNEL_VA_BASE + (resolved - 1) * 4);
 
 }
+
+/* xboxrecomp: a guest event (its handle, as NtCreateEvent gave it) set by host code on a guest thread -- a
+ * title's DirectSound position notifications, when the title's DirectSound runs on a host mixer. */
+int xbox_guest_set_event(uint32_t handle)
+{
+    HANDLE h = bridge_resolve_handle(handle);
+    return h && xbox_NtSetEvent(h, NULL) == STATUS_SUCCESS;
+}

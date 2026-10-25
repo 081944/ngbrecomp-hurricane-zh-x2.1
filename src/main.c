@@ -266,6 +266,7 @@ static void print_guest_stack(void)
 /* The emulated APU: its registers are unmapped when RECOMP_AC97_READY is set,
  * and every access arrives here to be decoded and serviced. */
 typedef struct MCPXAPUState MCPXAPUState;
+int dsound_host_mixer(void);   /* src/audio/dsound.c: DirectSound on the host mixer instead */
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
 extern MCPXAPUState *g_apu_state;
 extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
@@ -748,13 +749,17 @@ static void bringup_defaults(void)
     /* With the GPU model, vblank comes from its CRTC. */
     if (!s_use_gpu)
         set_default("RECOMP_VBLANK", "1");
-    set_default("RECOMP_AC97_READY", "1");
+    /* DirectSound on the host mixer (src/audio, the default) never touches the sound chip: its registers stay
+     * plain memory, as other code reads them (an interrupt routine polls one). */
+    if (!dsound_host_mixer()) {
+        set_default("RECOMP_AC97_READY", "1");
+        /* contiguous memory starts at 64 MB. Hurricane x2.1: the game's heap (its first contiguous
+         * allocation) is 0x70000 bytes bigger than retail's (0x24E2000), so every block after it -- the
+         * mailbox's (DirectSound, 49152 bytes) too -- sits 0x70000 higher: measured with
+         * RECOMP_CONTIG_LOG, 0x86BF8000 in retail, 0x86C68000 here. */
+        set_default("RECOMP_DSP_ACK", "0x86C68810");
+    }
     set_default("RECOMP_USB", "1");
-    /* contiguous memory starts at 64 MB. Hurricane x2.1: the game's heap (its first contiguous
-     * allocation) is 0x70000 bytes bigger than retail's (0x24E2000), so every block after it -- the
-     * mailbox's (DirectSound, 49152 bytes) too -- sits 0x70000 higher: measured with
-     * RECOMP_CONTIG_LOG, 0x86BF8000 in retail, 0x86C68000 here. */
-    set_default("RECOMP_DSP_ACK", "0x86C68810");
 }
 
 #if defined(RECOMP_ICALL_FEEDBACK)
@@ -828,14 +833,21 @@ static void *guest_main(void *unused)
     }
 
     /* The APU and its register trap are only useful together: a trap with no
-     * model declines every access, a model nothing traps into sees nothing. */
-    if (getenv("RECOMP_AC97_READY")) {
+     * model declines every access, a model nothing traps into sees nothing.
+     * DirectSound on the host mixer (src/audio, the default) needs neither. */
+    if (getenv("RECOMP_AC97_READY") && !dsound_host_mixer()) {
         g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
         fprintf(stderr, "[BOOT] emulated APU %s\n",
                 g_apu_state ? "up" : "FAILED to initialise");
+    }
+    {
         extern int ngb_pc_setting(int which);
-        extern void mcpx_apu_set_hrtf(int on);
-        mcpx_apu_set_hrtf(ngb_pc_setting(23));   /* Positional Audio (#30, #86): panning unless chosen otherwise */
+        extern void ngb_audio_set_positional(int mode);
+        extern void ngb_audio_set_output(int choice);
+        extern void dsound_hle_set_hrtf_tables(uint32_t index, uint32_t filters);
+        ngb_audio_set_positional(ngb_pc_setting(23));   /* Positional Audio (#30, #86): panning unless chosen otherwise */
+        ngb_audio_set_output(ngb_pc_setting(25));       /* Audio Output: auto unless chosen */
+        dsound_hle_set_hrtf_tables(0x395430, 0x383E70); /* DirectSound's full HRTF tables in this build */
     }
 
     xbox_kernel_init();

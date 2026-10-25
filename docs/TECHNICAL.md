@@ -19,7 +19,7 @@ console is xboxrecomp's runtime:
   signal, on Windows by suspending it and redirecting it into a yield (`vcpu_win_trampoline`).
 - **GPU**: xemu's NV2A model runs the game's command stream (fences, vertical blanks, flips); the
   drawing is done by a renderer of the game's Direct3D calls on Vulkan (below).
-- **Audio**: the MCPX APU's voice processor (from xemu) mixing into SDL2's output.
+- **Audio**: the game's DirectSound calls on a host mixer (below) into SDL2's output, stereo or 5.1.
 - **Input**: SDL2 controllers, keyboard and mouse, as the Xbox's USB pad through an OHCI model.
 
 The arcade Ninja Gaiden (#18) is another program on the disc that the Xbox reboots into
@@ -31,6 +31,30 @@ page, which it saves and passes on (`RECOMP_LAUNCH_PAGE`), then it starts the ot
 of this one -- exec on Linux and macOS, a new process on Windows -- with the window's current mode.
 The arcade is a 68000 emulator written in x86 that keeps the 68000's flags with setcc/daa/das and 16-bit
 mul/imul, which is what made the recompiler's overflow flag, decimal adjust and narrow multiplies matter.
+
+## Audio
+
+The game's 34 DirectSound calls (`tools/dsound_symbols.txt`, named by XbSymbolDatabase) and the arcade's 12
+(`tools/dsound_symbols_arcade.txt`, the same in NinjaTrilogy and NinjaTomoe) are hooked as Direct3D's are
+(`tools/take_dsound.py [trilogy|tomoe]`: `src/audio/dsound_hooks.c` and `dsound_hooks_arcade.c`, the recompiled
+bodies kept in `dsound_orig*.c`, the arcade's left out of its generation by `src/manual_functions_arcade.json`) and taken by a host mixer (`src/audio/dsound_hle.cpp`, after SCDA-XBERecomp's,
+`src/audio/NOTICE`): each sound buffer read from guest memory as it plays (PCM and Xbox ADPCM, its
+loop region, pitch, volume and mix bins -- a bin a buffer lists twice plays twice, as the chip adds every
+slot, and each bin takes its headroom, the library's one step unless the program sets it: the game sets
+none, the arcade leaves it), position notifications (the arcade's double buffer: set at its next
+`DirectSoundDoWork`, on its own thread), the library's 3D pass (distance, rolloff, the direction by its own octant estimate), and dsstdfx's
+I3DL2 reverb on the send bin 10 with the room the game sets per area. The sound chip is not emulated.
+Positional Audio places a mono 3D sound through the library's own HRTF tables (0x395430 the filter per
+direction, 0x383E70 the filters: 31 sign and magnitude taps per ear, the far ear's delay in its last
+byte): "Console" filters it as the chip does, "Panning" takes only each ear's level from its filter, "Off"
+plays it centred. Audio Output (Display & Audio; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
+Stereo, 5.1, or Auto: 5.1 when the default output device has six channels or more. On 5.1 the program is
+told its speakers are surround (with Dolby Digital) and mixes for them, and the output is FL FR C LFE BL
+BR; on stereo the centre is folded into the front pair. `NGB_AUDIO_CHANNELS=2|6` overrides it,
+`NGB_AUDIO_ENGINE=apu` goes back to the recompiled library on the emulated chip (xemu's voice
+processor, 0.9.29 and before: no reverb, no 5.1). `NGB_DSOUND_LOG=1` logs the calls (`=3` every Lock, `=2` every volume
+change too), `NGB_DSOUND_WAV=<file>` records what plays (either engine), `NGB_DSOUND_REVERB=0` leaves the
+reverb out.
 
 `kill -USR1 <pid>` (Linux) prints the guest thread's host backtrace, every lifted function a named
 `sub_XXXXXXXX`, and its guest registers -- use it instead of gdb, which swallows the TF single-steps

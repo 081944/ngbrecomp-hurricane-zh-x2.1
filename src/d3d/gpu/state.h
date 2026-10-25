@@ -143,6 +143,11 @@ struct PixelShader {
     uint32_t def[0xF0 / 4] = {};  // D3DPIXELSHADERDEF
 };
 
+// the guest stack's code addresses at the last hooked call (src/d3d/hle.cpp), for debugging dumps
+inline uint32_t g_draw_stack[8];
+inline int g_draw_stack_n = 0;
+inline uint32_t g_draw_node = 0;   // the render list node being drawn (the argument after the return to 0x308D6F)
+
 struct Viewport {
     uint32_t x = 0, y = 0, w = 640, h = 480;
     float min_z = 0, max_z = 1;

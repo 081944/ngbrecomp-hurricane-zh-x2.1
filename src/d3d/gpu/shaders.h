@@ -8,6 +8,9 @@
 // HLSL for the title's shaders and for its fixed function state, per the XDK's definitions of both
 namespace gpu {
 
+bool IdView();
+int IdViewMode();   // NGB_D3D_IDVIEW: pixel shaders tint opaque 3D draws by their colour (debugging)
+
 enum TexKind : uint8_t { kTexNone, kTex2D, kTex3D, kTexCube };
 
 struct TexInfo {
@@ -19,6 +22,7 @@ struct TexInfo {
 enum : uint8_t {
     kTexWide = 4,  // an upscaled target shrunk by the pass: each tap averaged over console texels
     kTexSigned = 8,  // a bump map (V8U8): its du dv decoded texel by texel in the shader (bumpduv)
+    kTexLinear = 16, // a screen quad's texture filtered linearly: weighted by alpha above 1x (QuadSnap, #83)
 };
 
 struct PixelKey {
