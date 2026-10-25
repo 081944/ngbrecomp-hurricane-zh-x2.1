@@ -49,9 +49,9 @@ int ngb_settings_size_count(int aspect);   /* src/launcher.c */
 void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 
 #define MENU_STATE 0xDA41D0       /* the Options menu: page, row, ... */
-#define PAGE_GFX   10             /* ours: Graphics, Display, Startup Settings, Gameplay, Cheats */
+#define PAGE_GFX   10             /* ours: Graphics, Display, Sound, Gameplay, Cheats, Controls */
 #define PAGE_DISP  11
-#define PAGE_START 12
+#define PAGE_SOUND 12
 #define PAGE_GAME  13             /* Gameplay: the optional changes to play (the Quick Menu) */
 #define PAGE_CHEAT 14
 #define PAGE_CTRL  15             /* Controls: the bindings' panel (src/pause_tab.c) over it */
@@ -74,16 +74,16 @@ static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OU
 static const uint8_t s_rows_ws[] = { ROW_SCREEN, ROW_MOVIE, ROW_DEFAULT, ROW_EXIT };
 static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
 static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_BACK };
-static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_HUD, ROW_POSAUDIO,
-                                       ROW_AUDIOOUT, ROW_BACK };
-static const uint8_t s_rows_start[] = { ROW_SKIP, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
+static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_HUD, ROW_SKIP,
+                                       ROW_BACK };
+static const uint8_t s_rows_sound[] = { ROW_POSAUDIO, ROW_AUDIOOUT, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
 static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
     { s_rows_gfx, (int)sizeof s_rows_gfx },
     { s_rows_disp, (int)sizeof s_rows_disp },
-    { s_rows_start, (int)sizeof s_rows_start },
+    { s_rows_sound, (int)sizeof s_rows_sound },
     { s_rows_game, (int)sizeof s_rows_game },
     { s_rows_cheat, (int)sizeof s_rows_cheat },
     { s_rows_ctrl, (int)sizeof s_rows_ctrl },
@@ -193,7 +193,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_POSAUDIO, "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer." },
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
-    { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen." },
+    { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen: the Quick Menu, every difficulty and costume." },
     { T_INFITEMS, "Infinite Items" },
     { T_INFAMMO,  "Infinite Projectiles" },
     { D_INFITEMS, "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only." },
@@ -249,8 +249,8 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_SKIP,    "Starts at the title screen, from the next start." },
     { D_LAUNCHER, "Shows the settings screen before the game, from the next start." },
     { D_CAT0 + 0, "Render resolution, texture filtering, anti-aliasing, shadows and the glow." },
-    { D_CAT0 + 1, "Aspect ratio, window size, display mode, V-Sync, the FPS counter, the HUD, positional audio and the speakers." },
-    { D_CAT0 + 2, "What the game shows when it starts, and the difficulties New Game offers." },
+    { D_CAT0 + 1, "Aspect ratio, window size, display mode, V-Sync, the FPS counter, the HUD and the intros." },
+    { D_CAT0 + 2, "Positional audio and the speakers." },
     { D_BACK,    "Returns to the Recomp Settings screen." },
     { T_HEALTH,  "Infinite Health" },
     { T_NINPO,   "Infinite Ninpo" },

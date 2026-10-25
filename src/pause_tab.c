@@ -122,12 +122,12 @@ static const char *const s_help[S_COUNT] = {
 #define CAT_ROWS 8
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 /* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
-static const char *const s_cat_name[CATS] = { "Graphics", "Display & Audio", "Startup", "Gameplay", "Cheats", "Controls" };
+static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Sound", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
-    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_POSAUDIO, S_AUDIOOUT },
-    { S_SKIP, S_ALLDIFF, S_ALLCOST, -1 },
-    { S_QUICKSCALE, S_QUICKFREEZE, -1 },
+    { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_SKIP, -1 },
+    { S_POSAUDIO, S_AUDIOOUT, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, S_ALLDIFF, S_ALLCOST, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, -1 },
     { -1 },
 };
@@ -971,7 +971,7 @@ static void draw_page(int focused, int cat, int row)
 /* While the main menu's RECOMP SETTINGS has the Options menu (src/pc_menu.c)
  * its pictures say so: the header ("OPTIONS", sprite 0x23D) reads SETTINGS
  * and the category words (sprites 0x248-0x24D, slices of one texture) are
- * Graphics Settings, Display & Audio, Startup Settings, Gameplay, Cheats and Controls. Each is a texture of
+ * Graphics Settings, Display Settings, Sound Settings, Gameplay, Cheats and Controls. Each is a texture of
  * ours put in the game's texture's place, the words drawn in the game's
  * pictures' style -- the size, the condensing and the colour of each row of
  * the letters measured from them, the shadow under them -- Liberation Serif
@@ -984,7 +984,7 @@ static uint32_t sprite_def(uint32_t id);
 #define RP_LABEL0 0x248
 #define RP_LABELS 6
 #define RP_WORDS 6
-static const char *const s_rp_word[RP_WORDS] = { "GRAPHICS SETTINGS", "DISPLAY & AUDIO", "STARTUP SETTINGS",
+static const char *const s_rp_word[RP_WORDS] = { "GRAPHICS SETTINGS", "DISPLAY SETTINGS", "SOUND SETTINGS",
                                                  "GAMEPLAY", "CHEATS", "CONTROLS" };
 
 static struct {
