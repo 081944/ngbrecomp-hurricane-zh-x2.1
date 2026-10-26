@@ -150,6 +150,35 @@ static void *watchdog(void *arg)
 
 void ngb_frame_tick(void);   /* src/cheats.c */
 
+/* The game's CPU load (#96). The title times its frame from its start (the cycle counter at 0xD21680)
+ * to the point it hands the frame to the GPU (sub_0030E140 -> 0xD21698, a percentage) and, over a
+ * limit, sheds work: its HUD and 2D pass are left out for frames and drawn all at once later. Here
+ * the renderer does its work inside the title's Direct3D calls, on the title's thread -- time the
+ * console's Direct3D never spends -- and on slower PCs a busy fight crossed the limit while the frame
+ * still made 60 fps. The time spent in the renderer is taken out: the frame's start moves on by it.
+ * NGB_CPU_LOAD=1 keeps the title's own measurement. */
+uint64_t xbox_ReadTimeStampCounter(void);
+static int s_cpu_load = -1;
+uint64_t ngb_load_exclude_begin(void);
+void ngb_load_exclude_end(uint64_t t0);
+static inline uint64_t host_start(void)
+{
+    if (s_cpu_load < 0) {
+        const char *e = getenv("NGB_CPU_LOAD");
+        s_cpu_load = e && atoi(e) != 0;
+    }
+    return s_cpu_load ? 0 : xbox_ReadTimeStampCounter();
+}
+static inline void host_end(uint64_t t0)
+{
+    if (!t0)
+        return;
+    uint64_t start = (uint64_t)MEM32(0xD21680) | (uint64_t)MEM32(0xD21684) << 32;
+    start += xbox_ReadTimeStampCounter() - t0;
+    MEM32(0xD21680) = (uint32_t)start;
+    MEM32(0xD21684) = (uint32_t)(start >> 32);
+}
+
 int d3d_hook(int fn)
 {
     if (fn == D3DF_D3DDevice_Swap)
@@ -171,9 +200,11 @@ int d3d_hook(int fn)
         push_dump();
     if (s_hle) {
         uint32_t regs[8] = { eax, ecx, edx, ebx, esp, g_ebp, esi, edi };
+        uint64_t t0 = host_start();
         compat_host_enter();
         int took = d3d_hle_call(fn, regs);
         compat_host_leave();
+        host_end(t0);
         if (took) {
             eax = regs[0];                       /* its return value */
             esp = regs[4];                       /* its stack (ret n) */
@@ -191,6 +222,11 @@ int d3d_hook(int fn)
     return d3d_handlers[fn] ? d3d_handlers[fn]() : 0;
 }
 
+/* The same for the title's wait for the GPU (D3D_BlockOnTime, src/d3d/d3d_orig.c): how long the
+ * emulated GPU takes to catch up is not the title's CPU time. */
+uint64_t ngb_load_exclude_begin(void) { return host_start(); }
+void ngb_load_exclude_end(uint64_t t0) { host_end(t0); }
+
 /* After the recompiled body ran (the call was not taken): its results. */
 void d3d_after(int fn)
 {
@@ -199,9 +235,11 @@ void d3d_after(int fn)
         s_in_fn = fn;
         if (s_watchdog)
             s_in_since = now_ms();
+        uint64_t t0 = host_start();
         compat_host_enter();
         d3d_hle_after(fn, regs);
         compat_host_leave();
+        host_end(t0);
         s_in_fn = -1;
     }
 }
