@@ -155,12 +155,10 @@ void ngb_frame_tick(void);   /* src/cheats.c */
  * limit, sheds work: its HUD and 2D pass are left out for frames and drawn all at once later. Here
  * the renderer does its work inside the title's Direct3D calls, on the title's thread -- time the
  * console's Direct3D never spends -- and on slower PCs a busy fight crossed the limit while the frame
- * still made 60 fps. The time spent in the renderer is taken out: the frame's start moves on by it.
- * NGB_CPU_LOAD=1 keeps the title's own measurement. */
+ * still made 60 fps. The time spent in its Direct3D calls is taken out (span_leave): the frame's start
+ * moves on by it. NGB_CPU_LOAD=1 keeps the title's own measurement. */
 uint64_t xbox_ReadTimeStampCounter(void);
 static int s_cpu_load = -1;
-uint64_t ngb_load_exclude_begin(void);
-void ngb_load_exclude_end(uint64_t t0);
 /* Timed with the CPU's own cycle counter, a few nanoseconds a read: the title's clock (a system clock call
  * and a division) read twice a call was a seventh of the title thread's time, some 250,000 calls a second.
  * Its cycles are turned into the title's clock by a ratio measured against it once a frame (load_calibrate). */
@@ -203,12 +201,37 @@ static inline void host_end(uint64_t t0)
     MEM32(0xD21680) = (uint32_t)start;
     MEM32(0xD21684) = (uint32_t)(start >> 32);
 }
+/* A Direct3D call, from its hook to the end of d3d_after, out of the title's CPU load: the renderer's
+ * work and the title's own Direct3D library -- the recompiled library, slower than the console's, and
+ * the wait for the emulated GPU in D3D_BlockOnTime inside it. A call the library makes to another hooked
+ * function counts once, in the outermost. */
+/* Per thread: a guest thread that waits inside a hooked call for good kept a shared count from ever
+ * reaching zero. Only the thread that presents (calls Swap) moves the frame's start. */
+static _Thread_local int s_span_depth;
+static _Thread_local uint64_t s_span_t0;
+static _Thread_local uint32_t s_span_frame;   /* the frame's start (low half) as the call began */
+static _Thread_local int s_frame_thread;
+static inline void span_enter(void)
+{
+    if (s_span_depth++ == 0 && s_frame_thread) {
+        s_span_t0 = host_start();
+        s_span_frame = MEM32(0xD21680);
+    }
+}
+static inline void span_leave(void)
+{
+    /* a call in which the title began its next frame (Swap and the waits around it): its time belongs to
+     * the frame before, and moving the new frame's start by it put the start after the end */
+    if (s_span_depth > 0 && --s_span_depth == 0 && s_frame_thread && s_span_t0 && MEM32(0xD21680) == s_span_frame)
+        host_end(s_span_t0);
+}
 
 int d3d_hook(int fn)
 {
     if (fn == D3DF_D3DDevice_Swap) {
         ngb_frame_tick();
         load_calibrate();
+        s_frame_thread = 1;
     }
     if (s_hle < 0) {
         const char *e = getenv("NGB_RENDERER");
@@ -227,15 +250,15 @@ int d3d_hook(int fn)
         push_dump();
     if (s_hle) {
         uint32_t regs[8] = { eax, ecx, edx, ebx, esp, g_ebp, esi, edi };
-        uint64_t t0 = host_start();
+        span_enter();
         compat_host_enter();
         int took = d3d_hle_call(fn, regs);
         compat_host_leave();
-        host_end(t0);
         if (took) {
             eax = regs[0];                       /* its return value */
             esp = regs[4];                       /* its stack (ret n) */
             s_in_fn = -1;
+            span_leave();
             return 1;
         }
     }
@@ -246,13 +269,11 @@ int d3d_hook(int fn)
     if (s_trace > 0)
         trace(fn);
     s_in_fn = -1;
-    return d3d_handlers[fn] ? d3d_handlers[fn]() : 0;
+    int taken = d3d_handlers[fn] ? d3d_handlers[fn]() : 0;
+    if (taken && s_hle)
+        span_leave();   /* no d3d_after for a call a handler took */
+    return taken;
 }
-
-/* The same for the title's wait for the GPU (D3D_BlockOnTime, src/d3d/d3d_orig.c): how long the
- * emulated GPU takes to catch up is not the title's CPU time. */
-uint64_t ngb_load_exclude_begin(void) { return host_start(); }
-void ngb_load_exclude_end(uint64_t t0) { host_end(t0); }
 
 /* After the recompiled body ran (the call was not taken): its results. */
 void d3d_after(int fn)
@@ -262,11 +283,10 @@ void d3d_after(int fn)
         s_in_fn = fn;
         if (s_watchdog)
             s_in_since = now_ms();
-        uint64_t t0 = host_start();
         compat_host_enter();
         d3d_hle_after(fn, regs);
         compat_host_leave();
-        host_end(t0);
+        span_leave();
         s_in_fn = -1;
     }
 }

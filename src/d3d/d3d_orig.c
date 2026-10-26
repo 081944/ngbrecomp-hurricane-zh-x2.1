@@ -10446,7 +10446,6 @@ void sub_003CAE80(void)
 void d3d_orig_003CAA10(void)
 {
     RECOMP_ENTRY(0x003CAA10u);
-    uint64_t gpu_wait_t0 = 0;   /* the GPU wait, out of the title's CPU load (#96) */
     uint32_t ebp = 0;
     ebp = g_ebp;  /* frameless: caller's frame */
     int _flags = 0; /* fallback flag var */
@@ -10656,8 +10655,6 @@ loc_003CAB35: ;
             const char *e = getenv("NGB_GPU_WAIT");
             sleep_wait = !(e && *e == '0');
         }
-        extern uint64_t ngb_load_exclude_begin(void);
-        gpu_wait_t0 = ngb_load_exclude_begin();   /* src/d3d/d3d.c (#96) */
         if (sleep_wait && g_ngb_gpu_model && edx == 0xFD800044u) nv2a_vk_wait_dma_get(esi, eax);
         else if (sleep_wait && g_ngb_gpu_model) nv2a_vk_wait_progress((const uint32_t *)XBOX_PTR(edx), esi, eax);
     }
@@ -10673,7 +10670,6 @@ loc_003CAB40: ;
     if (CMP_B(_fa, _fb)) { RECOMP_SPIN(0x003CAB40u); goto loc_003CAB40; } /* jb: below (unsigned <) */
 
 loc_003CAB4A: ;
-    { extern void ngb_load_exclude_end(uint64_t t0); ngb_load_exclude_end(gpu_wait_t0); }
     POP32(esp, ebx);
 
 loc_003CAB4B: ;
