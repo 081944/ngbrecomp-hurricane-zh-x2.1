@@ -159,8 +159,7 @@ the game was in.
 - At **10x render resolution with 8x anti-aliasing**, where the frame rate drops below 60, characters'
   shadows can flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
 - Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
-- On some PCs Ryu's shadow comes and goes, the game switching to its simpler round shadow under him
-  for a moment (#50); not seen yet on the PCs and areas it was tested on.
+- Opening a menu or the map can shift the whole picture by a few pixels until it closes (#99).
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 
