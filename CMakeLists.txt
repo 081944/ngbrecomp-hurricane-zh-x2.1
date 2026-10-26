@@ -183,7 +183,8 @@ endif()
 find_package(SDL2 REQUIRED)
 add_library(ngb_audio OBJECT src/audio/dsound_hle.cpp)
 target_include_directories(ngb_audio PRIVATE src/audio src/d3d/compat
-    $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
+    $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>
+    ${XBOXRECOMP_DIR}/src)
 target_compile_features(ngb_audio PRIVATE cxx_std_20)
 target_compile_options(ngb_audio PRIVATE -O2 -fno-strict-aliasing)
 

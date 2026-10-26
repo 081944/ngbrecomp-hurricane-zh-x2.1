@@ -22,6 +22,7 @@
 #include "nv2a_int.h"
 
 void nv2a_vk_progress(void);
+#include "../host/threadload.h"
 
 typedef struct RAMHTEntry {
     uint32_t handle;
@@ -554,8 +555,11 @@ void *pfifo_thread(void *arg)
     rcu_register_thread();
 
     qemu_mutex_lock(&d->pfifo.lock);
+    unsigned rounds = 0;
     while (true) {
         d->pfifo.fifo_kick = false;
+        if ((++rounds & 15) == 0)
+            recomp_load_sample(RECOMP_LOAD_GPU);   /* this thread's CPU time, for log.txt (host/threadload.h) */
 
         pgraph_process_pending(d);
 

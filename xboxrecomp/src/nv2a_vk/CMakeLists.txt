@@ -42,6 +42,7 @@ add_library(xbox_nv2a_vk OBJECT
     shim/util/fast-hash.c
     shim/util/vma.cc
     host/nv2a_host.c
+    host/threadload.c
     host/nv2a_dirty.c
     host/present_sdl.c
     host/nv2a_runtime.c

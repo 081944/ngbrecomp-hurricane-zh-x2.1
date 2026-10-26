@@ -109,6 +109,7 @@ static int s_hle = -1;
  * guest thread must not be parked by the runtime's scheduler while it
  * holds one (xboxrecomp win32_compat.h: a host section). */
 #include "platform/vcpu.h"
+#include "nv2a_vk/host/threadload.h"
 #if !XBOX_HAS_VCPU
 /* (the runtime's real Windows threads, without the virtual CPU, need no host/guest bracketing) */
 static inline void compat_host_enter(void) {}
@@ -232,6 +233,8 @@ int d3d_hook(int fn)
         ngb_frame_tick();
         load_calibrate();
         s_frame_thread = 1;
+        recomp_load_sample(RECOMP_LOAD_GAME);   /* the threads' CPU time in the log every five seconds */
+        recomp_load_report();
     }
     if (s_hle < 0) {
         const char *e = getenv("NGB_RENDERER");

@@ -30,6 +30,7 @@ extern "C" {
 uint32_t xbox_HeapAlloc(uint32_t size, uint32_t align);
 extern volatile int apu_host_paused;   // xboxrecomp/src/apu/apu_core.c: a menu holds the game
 int xbox_guest_set_event(uint32_t handle);   // xboxrecomp kernel_bridge.c
+#include "nv2a_vk/host/threadload.h"
 }
 
 using kernel::HostPtr;
@@ -688,6 +689,7 @@ void WriteWav(const float* frames, uint32_t n) {
 
 // the device's pull; held by a menu, silence and the voices stay where they are
 void Pull(float* out, uint32_t frames) {
+    recomp_load_sample(RECOMP_LOAD_AUDIO);   // this thread's CPU time, for log.txt
     if (apu_host_paused) {
         std::memset(out, 0, size_t(frames) * Channels() * sizeof(float));
         return;
