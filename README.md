@@ -74,9 +74,10 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.31`.
+updates on top of one add `-1`, `-2`, ... Releases taken over since 2026-10-26 add `t` after the number.
+The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.31t`.
 
-## Changes in 0.9.31
+## Changes in 0.9.31t
 
 - Ryu's shadow no longer comes and goes (#50): the game's own GPU-load measurement is reported as nothing, so it
   no longer lowers the quality level and swaps the shadow map for the round shadow.
