@@ -1396,7 +1396,7 @@ bool nv2a_overlay_wanted(void)
         s_tab_focus = 0;
         s_wait_release = true;
     }
-    if (s_wait_release && !(b & 0x3FFFF)) {
+    if (s_wait_release && !(b & 0x1FFFFF)) {   /* every bit of pad_bits: X (bit 20) too, or its press reached the game (#111) */
         s_wait_release = false;
         usb_gamepad_block = 0;
         if (s_back_pending) {

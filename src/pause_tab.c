@@ -1834,6 +1834,8 @@ static void pt_draw(void)
 {
     int was = s_focus, vals[S_COUNT], n = cat_count(s_cat);
     int key = ngb_pause_tab_key(&s_focus);
+    if (key == K_CLEAR && !(s_cat == CAT_CTL && s_row >= 0))
+        key = K_OK;                                   /* X chooses, as in the game's menus (#111); in Controls' list it clears */
     if (ngb_bind_capturing()) {                       /* waiting for the key to bind: nothing else */
         key = 0;
         if (!ngb_bind_capture_tick())
@@ -2049,6 +2051,8 @@ static int ngb_confirm_tick(void)
     if (!s_dlg_open)
         return 0;
     int key = ngb_pause_tab_key(&s_dlg_focus), r = -1;
+    if (key == K_CLEAR)
+        key = K_OK;                                    /* X chooses, as in the game's menus (#111) */
     s_dlg_back = key == K_BACK;
     if (key & K_ROW) {                                 /* the mouse */
         if ((key & 0xFFFF) < 2 && (key & 0xFFFF) != s_dlg_sel) {
@@ -2439,6 +2443,8 @@ static void pt_exit_draw(void)
     }
     int was = s_focus;
     int key = ngb_pause_tab_key(&s_focus);
+    if (key == K_CLEAR)
+        key = K_OK;                                   /* X chooses, as in the game's menus (#111) */
     if (key & K_ROW) {                                /* the mouse on a row */
         int r = key & 0xFFFF;
         if (r < EXIT_ROWS && r != s_exit_row) {
