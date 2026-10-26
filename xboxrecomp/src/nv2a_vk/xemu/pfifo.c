@@ -82,7 +82,10 @@ void pfifo_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         nv2a_update_irq(d);
         break;
     default:
+        /* xboxrecomp: the pusher works through a batch of methods holding only pgraph.lock (pfifo_run_pusher) */
+        qemu_mutex_lock(&d->pgraph.lock);
         d->pfifo.regs[addr] = val;
+        qemu_mutex_unlock(&d->pgraph.lock);
         break;
     }
 
@@ -124,36 +127,60 @@ static bool is_flip_stall_complete(NV2AState *d)
     return false;
 }
 
-static bool pfifo_stall_for_flip(NV2AState *d)
+static bool pfifo_stall_for_flip(NV2AState *d, bool graph_held)
 {
     bool should_stall = false;
 
     if (qatomic_read(&d->pgraph.waiting_for_flip)) {
-        qemu_mutex_lock(&d->pgraph.lock);
+        if (!graph_held)
+            qemu_mutex_lock(&d->pgraph.lock);
         if (!is_flip_stall_complete(d)) {
             should_stall = true;
         } else {
             d->pgraph.waiting_for_flip = false;
         }
-        qemu_mutex_unlock(&d->pgraph.lock);
+        if (!graph_held)
+            qemu_mutex_unlock(&d->pgraph.lock);
     }
 
     return should_stall;
 }
 
-static bool pfifo_puller_should_stall(NV2AState *d)
+static bool pfifo_puller_should_stall(NV2AState *d, bool graph_held)
 {
-    return pfifo_stall_for_flip(d) || qatomic_read(&d->pgraph.waiting_for_nop) ||
+    return pfifo_stall_for_flip(d, graph_held) || qatomic_read(&d->pgraph.waiting_for_nop) ||
            qatomic_read(&d->pgraph.waiting_for_context_switch) ||
            !can_fifo_access(d);
+}
+
+/* xboxrecomp: pfifo.lock is let go and pgraph.lock taken for a batch of methods (pfifo_run_pusher, *graph_held),
+ * not around each one: the swap per method was some 3 million lock operations a second. The order is xemu's,
+ * pfifo.lock before pgraph.lock, and never both: a batch ends by letting pgraph.lock go before pfifo.lock is
+ * taken again. */
+static void pfifo_graph_begin(NV2AState *d, bool *graph_held)
+{
+    if (!*graph_held) {
+        qemu_mutex_unlock(&d->pfifo.lock);
+        qemu_mutex_lock(&d->pgraph.lock);
+        *graph_held = true;
+    }
+}
+
+static void pfifo_graph_end(NV2AState *d, bool *graph_held)
+{
+    if (*graph_held) {
+        qemu_mutex_unlock(&d->pgraph.lock);
+        qemu_mutex_lock(&d->pfifo.lock);
+        *graph_held = false;
+    }
 }
 
 static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
                                 uint32_t parameter, uint32_t *parameters,
                                 size_t num_words_available,
-                                size_t max_lookahead_words)
+                                size_t max_lookahead_words, bool *graph_held)
 {
-    if (pfifo_puller_should_stall(d)) {
+    if (pfifo_puller_should_stall(d, *graph_held)) {
         return -1;
     }
 
@@ -186,9 +213,7 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
         SET_MASK(*engine_reg, 3 << (4*subchannel), entry.engine);
         SET_MASK(*pull1, NV_PFIFO_CACHE1_PULL1_ENGINE, entry.engine);
 
-        // TODO: this is fucked
-        qemu_mutex_unlock(&d->pfifo.lock);
-        qemu_mutex_lock(&d->pgraph.lock);
+        pfifo_graph_begin(d, graph_held);
 
         // Switch contexts if necessary
         if (can_fifo_access(d)) {
@@ -199,9 +224,6 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
                                   num_words_available, max_lookahead_words, inc);
             }
         }
-
-        qemu_mutex_unlock(&d->pgraph.lock);
-        qemu_mutex_lock(&d->pfifo.lock);
 
     } else if (method >= 0x100) {
         // method passed to engine
@@ -221,18 +243,13 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
         assert(engine == ENGINE_GRAPHICS);
         SET_MASK(*pull1, NV_PFIFO_CACHE1_PULL1_ENGINE, engine);
 
-        // TODO: this is fucked
-        qemu_mutex_unlock(&d->pfifo.lock);
-        qemu_mutex_lock(&d->pgraph.lock);
+        pfifo_graph_begin(d, graph_held);
 
         if (can_fifo_access(d)) {
             num_proc =
                 pgraph_method(d, subchannel, method, parameter, parameters,
                               num_words_available, max_lookahead_words, inc);
         }
-
-        qemu_mutex_unlock(&d->pgraph.lock);
-        qemu_mutex_lock(&d->pfifo.lock);
     } else {
         assert(!"Unrecognized pfifo puller method");
     }
@@ -293,9 +310,20 @@ static void pfifo_run_pusher(NV2AState *d)
     hwaddr dma_len;
     uint8_t *dma = nv_dma_map(d, dma_instance, &dma_len);
 
+    /* xboxrecomp: up to kBatch methods to a pgraph.lock (pfifo_graph_begin): long enough to make the locking
+     * cheap, short enough that a thread waiting for pgraph.lock (a register write, a surface download) waits
+     * little */
+    enum { kBatch = 64 };
+    bool graph_held = false;
+    unsigned batch = 0;
+
     while (!pfifo_pusher_should_stall(d)) {
+        if (graph_held && ++batch >= kBatch) {
+            pfifo_graph_end(d, &graph_held);
+            batch = 0;
+        }
         uint32_t dma_get_v = *dma_get;
-        uint32_t dma_put_v = *dma_put;
+        uint32_t dma_put_v = qatomic_read(dma_put);
         if (dma_get_v == dma_put_v) break;
         if (dma_get_v >= dma_len) {
             assert(!"Dma value is out of range in PFIFO pusher");
@@ -340,7 +368,7 @@ static void pfifo_run_pusher(NV2AState *d)
             ssize_t num_words_processed =
                 pfifo_run_puller(d, method_entry, word, word_ptr,
                                  MIN(method_count, num_words_available),
-                                 num_words_available);
+                                 num_words_available, &graph_held);
             if (num_words_processed < 0) {
                 break;
             }
@@ -436,6 +464,7 @@ static void pfifo_run_pusher(NV2AState *d)
             break;
         }
     }
+    pfifo_graph_end(d, &graph_held);
 
     // NV2A_DPRINTF("DMA pusher done: max 0x%" HWADDR_PRIx ", 0x%" HWADDR_PRIx " - 0x%" HWADDR_PRIx "\n",
     //      dma_len, control->dma_get, control->dma_put);

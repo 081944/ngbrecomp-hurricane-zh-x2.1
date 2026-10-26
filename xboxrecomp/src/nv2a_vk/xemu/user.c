@@ -93,11 +93,15 @@ void user_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
             case NV_USER_DMA_PUT:
                 d->pfifo.regs[NV_PFIFO_CACHE1_DMA_PUT] = val;
                 break;
-            case NV_USER_DMA_GET:
+            case NV_USER_DMA_GET:   /* xboxrecomp: with pgraph.lock, as the pusher's batch (pfifo.c) */
+                qemu_mutex_lock(&d->pgraph.lock);
                 d->pfifo.regs[NV_PFIFO_CACHE1_DMA_GET] = val;
+                qemu_mutex_unlock(&d->pgraph.lock);
                 break;
             case NV_USER_REF:
+                qemu_mutex_lock(&d->pgraph.lock);
                 d->pfifo.regs[NV_PFIFO_CACHE1_REF] = val;
+                qemu_mutex_unlock(&d->pgraph.lock);
                 break;
             default:
                 NV2A_DPRINTF(true, "Unsupported NV_USER write: channel=%u offset=0x%04x\n", channel_id, (unsigned)(addr & 0xFFFF));
