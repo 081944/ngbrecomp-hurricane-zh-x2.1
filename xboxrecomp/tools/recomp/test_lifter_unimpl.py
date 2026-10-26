@@ -43,12 +43,12 @@ def _reg(name):
 class UnimplementedMarkerTest(unittest.TestCase):
 
     def test_unknown_mnemonic_carries_the_runtime_marker(self):
-        # `daa` has no translation and no operands, so nothing about operand
+        # A mnemonic with no handler at all, so nothing about operand
         # formatting can interfere with what is being tested.
-        lifter, out = _lift("daa")
-        self.assertIn('RECOMP_UNIMPL("daa", 0x00012340u);', out)
-        self.assertIn("/* TODO: daa */", out)
-        self.assertEqual(lifter.unimplemented, {"daa": [0x00012340]})
+        lifter, out = _lift("xyz")
+        self.assertIn('RECOMP_UNIMPL("xyz", 0x00012340u);', out)
+        self.assertIn("/* TODO: xyz */", out)
+        self.assertEqual(lifter.unimplemented, {"xyz": [0x00012340]})
 
     def test_hlt_is_not_an_ignored_instruction(self):
         # The lifter's own comment says hlt is deliberately NOT in the ignored
