@@ -58,8 +58,7 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 #define PAGE_CTRL  15             /* Controls: the bindings' panel (src/pause_tab.c) over it */
 #define N_OURS     6
 #define UNL_ACTION 16             /* Cheats' row Unlocks: its rows in the page's place (unl_show), not a page */
-#define PC_RAISE   30             /* a page of more than seven rows: higher */
-#define PC_CLOSER  8              /* and closer, clear of the information line */
+#define PC_CLOSER  8              /* a page of more than seven rows: closer, clear of the information line */
 
 enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
@@ -1507,9 +1506,7 @@ loc_0021F14F: ;
     MEMF(esp + 0x5C) = xmm0.f[0]; /* movss */
     MEM32(0x43B47C) = eax;
     MEM32(0x43B480) = eax;
-    ebx = 0x70;
-    if ((int)MEM32(esp + 0x1C) > 7 || (s_recomp && page_now() == PAGE_CHEAT))
-        ebx = 0x70 - PC_RAISE;                   /* PC: more than seven rows, a little higher (Cheats' always: its Unlocks rows where its own were) */
+    ebx = 0x70;                                  /* PC: every page level with the categories' top */
     MEM32(esp + 0x10) = 0;
     if (CMP_LE(_fas, _fbs)) goto loc_0021F5E7; /* jle: less or equal (signed <=) */
 
@@ -1903,7 +1900,7 @@ loc_0021F5BC: ;
 loc_0021F5BF: ;
     esi = MEM32(0x43B478);
     if ((int)MEM32(esp + 0x1C) > 7 || (s_recomp && page_now() == PAGE_CHEAT))
-        esi -= PC_CLOSER;                        /* PC: and a little closer */
+        esi -= PC_CLOSER;                        /* PC: more than seven rows closer (Cheats' always: its Unlocks rows as its own) */
     eax = MEM32(esp + 0x10);
     ecx = MEM32(esp + 0x1C);
     _fb = (uint32_t)(esi) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
