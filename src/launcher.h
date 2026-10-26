@@ -24,6 +24,7 @@ typedef struct NgbSettings {
     int show_launcher;   /* show the settings screen at startup */
     int all_difficulties;
     int all_costumes;       /* every costume at New Game's Costume Selection */
+    int unlock[3];          /* the main menu's MISSIONS, ARCADE NINJA GAIDEN and MOVIE THEATER (src/cheats.c) */
     int movie_43;           /* the game's Movie Display Ratio 4:3 (kept here: src/pc_menu.c) */
     int positional_audio;   /* 3D sounds placed left and right (#30): 0 off, 1 the HRTF filters, 2 panning only (#86) */
     int show_hud;           /* the in-play HUD (src/hud.c, #80) */

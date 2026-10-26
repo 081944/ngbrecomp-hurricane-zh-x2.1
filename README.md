@@ -98,8 +98,10 @@ of the pause menu. Changes apply at once and are saved.
   the sound chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
-  and items, and whether the game pauses while it is open; all difficulties from the start; all costumes
-- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs
+  and items, and whether the game pauses while it is open
+- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs.
+  Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
+  Missions, Arcade Ninja Gaiden and Movie Theater without earning them
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
   inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The
   bindings follow the game's own Button Settings: an action keeps its key or button whatever the

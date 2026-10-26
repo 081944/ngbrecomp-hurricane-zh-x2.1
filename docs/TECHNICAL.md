@@ -116,12 +116,16 @@ the New Game prologue and the story movies play, and Start, A or B ends any of t
 next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
 `--settings` shows the old settings screen before the game.
 
-All Difficulties (Gameplay, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
+All Difficulties (Cheats > Unlocks, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
 without clearing the one before (or dying for Ninja Dog). The game's menus ask one function (sub_001DB520, now in
 `src/cheats.c`) for their unlock flags -- 7-9 are those three, read from the system data --
 and with the setting on it answers yes for them; nothing is written, so the player's own record
 is untouched and turning it off puts back what they have earned. Off, Ninja Dog is as the game
-has it: offered after dying in chapter 1.
+has it: offered after dying in chapter 1. Missions, Arcade Ninja Gaiden and Movie Theater (Cheats >
+Unlocks, saved) answer yes for flags 10-12 the same way: the main menu's MISSIONS, ARCADE NINJA GAIDEN
+and MOVIE THEATER, which the game shows once earned (the list's entries 2, 4 and 5); a change made in
+RECOMP SETTINGS shows or hides them at once (`src/main_menu.c`). Inside, the missions and movies are
+as the game offers them.
 
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
@@ -131,7 +135,7 @@ Infinite Essence (0x589570, the game's cap of 99,999) and Golden Scarabs (enough
 inventory slots at 0x5891D0, item 0x59 -- to make 50 with those already given to Muramasa,
 0x589574: every one of his rewards at the next visit). The game guards its state with 24
 checksums (sub_00164E50) and returns to the title when one changes without the flag its own
-code sets (0x7F1A94 + n); a cheat that writes sets them all. Gameplay also has All
+code sets (0x7F1A94 + n); a cheat that writes sets them all. Unlocks also has All
 Costumes (saved): the Costume Selection at New Game offers every costume, as after clearing
 the game, through the same flag function as All Difficulties (flags 1-4). The game has eight costumes (chr_ryu.afs, chr_ryua-g.afs) and its Costume Selection
 lists five (0 and 4-7, the table at 0x3E9D10), the locked ones as white shapes; here it lists only

@@ -85,7 +85,8 @@ void ngb_menu_set_running(const NgbSettings *s)
  * Glow (src/d3d/vk/glow_options.h), 19 quick-menu pause, 20 quick-menu scale (100..0
  * percent, in tens), 21 infinite items, 22 infinite projectiles (cheats, src/cheats.c), 23 positional
  * audio (0 off, 1 the HRTF filters, 2 panning only; #30, #86), 24 the HUD (src/hud.c, #80), 25 the audio
- * output (0 auto, 1 stereo, 2 5.1; src/audio). A change applies at once (8, 9 and 25 at the next start) and is saved, the cheats'
+ * output (0 auto, 1 stereo, 2 5.1; src/audio), 26-28 the main menu's MISSIONS, ARCADE NINJA GAIDEN and
+ * MOVIE THEATER unlocked (src/cheats.c, saved). A change applies at once (8, 9 and 25 at the next start) and is saved, the cheats'
  * not. */
 int ngb_cheat(int which);
 void ngb_cheat_set(int which, int on);
@@ -93,6 +94,7 @@ void ngb_audio_set_positional(int mode);  /* src/audio/dsound.c: positional audi
 void ngb_audio_set_output(int choice);    /* src/audio/dsound.c: the audio output (25) */
 void ngb_set_all_difficulties(int on);   /* src/cheats.c */
 void ngb_set_all_costumes(int on);
+void ngb_set_unlock(int which, int on);
 
 int ngb_pc_setting(int which)
 {
@@ -105,6 +107,10 @@ int ngb_pc_setting(int which)
     if (which == 14 || which == 16 || which == 17) {
         ngb_pc_setting(0);
         return which == 14 ? s_running.all_difficulties : which == 16 ? s_running.all_costumes : s_running.movie_43;
+    }
+    if (which >= 26 && which <= 28) {
+        ngb_pc_setting(0);
+        return s_running.unlock[which - 26];
     }
     if (!s_have_running) {
         ngb_settings_load(&s_running);
@@ -144,6 +150,7 @@ void ngb_pc_set_setting(int which, int value)
     switch (which) {
     case 14: s_running.all_difficulties = value; ngb_set_all_difficulties(value); break;
     case 16: s_running.all_costumes = value; ngb_set_all_costumes(value); break;
+    case 26: case 27: case 28: s_running.unlock[which - 26] = !!value; ngb_set_unlock(which - 26, !!value); break;
     case 17: s_running.movie_43 = !!value; break;   /* the next movie (src/pc_menu.c) */
     case 0: s_running.scale = value; break;
     case 1: s_running.anisotropy = value; break;
@@ -291,6 +298,14 @@ static uint64_t s_tab_rat;
  * Enter) gives its page the pad, B (Esc) gives it back; while the page has
  * it the game sees no pad, and the key for the page (KEY_UP .. KEY_BACK, the
  * back already acted on) is returned. */
+/* The page keeps the pad after a back it acted on itself (src/pause_tab.c: B on Cheats' Unlocks page
+ * goes back to Cheats, not out of the page). */
+void ngb_pause_tab_hold(void)
+{
+    s_tab_focus = 1;
+    s_wait_release = false;
+}
+
 int ngb_pause_tab_key(int *focus)
 {
     static const struct { uint32_t bit; int key; } map[] = {

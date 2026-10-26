@@ -538,6 +538,11 @@ void ngb_set_all_difficulties(int on) { s_all_difficulties = !!on; }
 /* Every costume (flags 1-4: the game's Costume Selection at New Game, as after clearing each
  * difficulty), the same way -- and the three it has but never offers (src/costume_menu.c). */
 void ngb_set_all_costumes(int on) { s_all_costumes = !!on; }
+/* The main menu's MISSIONS, ARCADE NINJA GAIDEN and MOVIE THEATER (flags 10, 11 and 12, set in the system
+ * data as the game earns them), the same way: read as set, nothing written. which 0-2 in that order. */
+static int s_unlock[3];
+void ngb_set_unlock(int which, int on) { if (which >= 0 && which < 3) s_unlock[which] = !!on; }
+int ngb_unlock(int which) { return which >= 0 && which < 3 ? s_unlock[which] : 0; }
 
 /**
  * sub_001DB520
@@ -651,7 +656,8 @@ void sub_001DB520(void)
 {
     if (ENV_ONCE("NGB_FLAG_LOG"))
         fprintf(stderr, "[FLAG] %u (all difficulties %d)\n", ecx, s_all_difficulties);
-    if ((s_all_difficulties && ecx >= 5 && ecx <= 9) || (s_all_costumes && ecx >= 1 && ecx <= 4)) {
+    if ((s_all_difficulties && ecx >= 5 && ecx <= 9) || (s_all_costumes && ecx >= 1 && ecx <= 4) ||
+        (ecx >= 10 && ecx <= 12 && s_unlock[ecx - 10])) {
         eax = 1;
         esp += 4;   /* ret */
         return;

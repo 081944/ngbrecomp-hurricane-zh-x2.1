@@ -77,7 +77,10 @@ void ngb_pc_set_setting(int which, int value);
 /* The settings, numbered as ngb_pc_setting has them. */
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
-       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT, S_COUNT };
+       S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT,
+       S_MISSIONS, S_ARCADE, S_MOVIES,
+       S_UNLOCKS,                 /* not a setting: Cheats' row opening the Unlocks page */
+       S_COUNT };
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
@@ -86,7 +89,7 @@ static const char *const s_label[S_COUNT] = {
     "Infinite Health", "Infinite Ninpo", "Infinite Essence", "All Difficulties",
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
-    "Audio Output",
+    "Audio Output", "Missions", "Arcade Ninja Gaiden", "Movie Theater", "Unlocks",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -115,21 +118,28 @@ static const char *const s_help[S_COUNT] = {
     "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer.",
     "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.",
     "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. From the next start.",
+    "MISSIONS in the main menu without earning it.",
+    "ARCADE NINJA GAIDEN in the main menu without earning it.",
+    "MOVIE THEATER in the main menu without earning it.",
+    "Difficulties, costumes and the main menu's extras, without earning them. Saved.",
 };
 
 /* The categories: the strip's words, their rows. */
 #define CATS 6
 #define CAT_ROWS 8
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
+#define CAT_CHEAT 4
+#define CAT_UNL CATS              /* Unlocks: a page of Cheats' (its row S_UNLOCKS), not on the strip */
 /* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Sound", "Gameplay", "Cheats", "Controls" };
-static const signed char s_cat_rows[CATS][CAT_ROWS] = {
+static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, -1 },   /* -1 ends a page shorter than CAT_ROWS */
     { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_SKIP, -1 },
     { S_POSAUDIO, S_AUDIOOUT, -1 },
-    { S_QUICKSCALE, S_QUICKFREEZE, S_ALLDIFF, S_ALLCOST, -1 },
-    { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, -1 },
+    { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, S_UNLOCKS, -1 },
     { -1 },
+    { S_ALLDIFF, S_ALLCOST, S_MISSIONS, S_ARCADE, S_MOVIES, -1 },
 };
 
 #include "bindings.h"
@@ -197,9 +207,13 @@ static void value_text(int row, char *out, size_t n)
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
     case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
+    case S_UNLOCKS: snprintf(out, n, "%s", ""); break;
     case S_SKIP:
     case S_ALLDIFF:
     case S_ALLCOST:
+    case S_MISSIONS:
+    case S_ARCADE:
+    case S_MOVIES:
     case S_LAUNCHER: snprintf(out, n, "%s", v ? "Yes" : "No"); break;
     default:        snprintf(out, n, "%s", v ? "On" : "Off"); break;
     }
@@ -914,7 +928,7 @@ static void draw_page(int focused, int cat, int row)
         gap = STRIP_GAP;
     for (int c = 0; c < CATS; c++) {
         float w = text_width(&s_font_body, s_cat_name[c], fs * k, 1.0f) / k;
-        int on = c == cat, sel = focused && row < 0 && on;
+        int on = c == (cat == CAT_UNL ? CAT_CHEAT : cat), sel = focused && row < 0 && on;
         if (sel)
             page_fill(px, x - 6, STRIP_Y + 3, w + 12, STRIP_H - 6, 0x6E64DC, 0.75f, 0.75f);
         page_text(px, m, s_cat_name[c], x, STRIP_Y + 19, fs,
@@ -943,7 +957,9 @@ static void draw_page(int focused, int cat, int row)
         page_text(px, m, s_label[set], 20, y + 18, 19,
                   sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0);
         page_text(px, m, val, 350, y + 18, 19, sel ? 0xFFFFFF : 0xB4B4BC, 1);
-        if (sel) {
+        if (sel && set == S_UNLOCKS)               /* a page, not a value */
+            page_text(px, m, ">", 428, y + 17, 17, 0xFFFFFF, 1);
+        else if (sel) {
             page_text(px, m, "<", 272, y + 17, 17, 0xFFFFFF, 1);
             page_text(px, m, ">", 428, y + 17, 17, 0xFFFFFF, 1);
         }
@@ -1702,6 +1718,7 @@ static void sprite(uint32_t id, int x, int y, int z, uint8_t anchor, float sx, f
 /* ---------- the page, each frame ---------- */
 
 int ngb_pause_tab_key(int *focus);   /* src/ingame_menu.c */
+void ngb_pause_tab_hold(void);
 void ngb_menu_mark(void);            /* src/menu_mouse.c */
 #include "menu_mouse.h"
 
@@ -1857,6 +1874,24 @@ static void pt_draw(void)
         }
         key = 0;
     }
+    if (key == K_BACK && s_cat == CAT_UNL) {         /* Unlocks: back to Cheats, on its row */
+        ngb_pause_tab_hold();
+        s_focus = 1;
+        s_cat = CAT_CHEAT;
+        for (s_row = 0; s_cat_rows[CAT_CHEAT][s_row] != S_UNLOCKS; s_row++)
+            ;
+        play_sound(3);
+        key = 0;
+    }
+    if ((key == K_OK || key == K_RIGHT || key == K_LEFT) && s_row >= 0 && s_row < n &&
+        s_cat_rows[s_cat][s_row] == S_UNLOCKS) {     /* Cheats' Unlocks row: its page */
+        if (key != K_LEFT) {
+            s_cat = CAT_UNL;
+            s_row = 0;
+            play_sound(6);
+        }
+        key = 0;
+    }
     if (s_focus && !was)
         s_row = -1;                                   /* in: on the strip */
     if (s_cat == CAT_CTL && s_row >= 0 && key)
@@ -1890,6 +1925,8 @@ static void pt_draw(void)
         play_sound(1);
         break;
     }
+    if (s_row < 0 && s_cat == CAT_UNL)
+        s_cat = CAT_CHEAT;                            /* up out of Unlocks: the strip, on Cheats */
     if (s_focus != was)
         play_sound(s_focus ? 6 : 3);                  /* in, as a tab's page; back */
     for (int i = 0; i < S_COUNT; i++)

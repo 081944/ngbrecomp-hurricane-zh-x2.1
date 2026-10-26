@@ -95,6 +95,38 @@ void ngb_general_page_init(void)
 
 int ngb_general_no_flag(void) { return s_no_flag; }
 
+/* The game's flag check (sub_001DB520, src/cheats.c), the registers kept. */
+static int game_flag_set(uint32_t flag)
+{
+    uint32_t sa = eax, sb = ebx, sc = ecx, sd = edx, ss = esi, sdi = edi;
+    ecx = flag;
+    PUSH32(esp, 0);
+    sub_001DB520();
+    int r = (eax & 0xFF) != 0;
+    eax = sa; ebx = sb; ecx = sc; edx = sd; esi = ss; edi = sdi;
+    return r;
+}
+
+/* The unlocks (RECOMP SETTINGS > Cheats > Unlocks): MISSIONS, ARCADE NINJA GAIDEN and MOVIE THEATER, the
+ * list's entries 2, 4 and 5. The game sets each entry from its flag as the main menu comes up; a setting
+ * changed since (in RECOMP SETTINGS, over this menu) shows or hides the entry at once, as the flag now
+ * reads -- set with the setting on, as earned with it off. */
+static void unlocks_tick(uint32_t list)
+{
+    extern int ngb_unlock(int which);                  /* src/cheats.c */
+    static const int entry[3] = { 2, 4, 5 };
+    static int last[3] = { -1, -1, -1 };
+    for (int i = 0; i < 3; i++) {
+        int on = ngb_unlock(i);
+        if (on == last[i])
+            continue;
+        uint32_t e = list + 8 * (uint32_t)entry[i];
+        if (on || last[i] >= 0)                        /* off from the start: the game's own */
+            MEM8(e + 4) = MEM8(e + 5) = (uint8_t)game_flag_set(MEM32(e));
+        last[i] = on;
+    }
+}
+
 void sub_0017A010(void)
 {
     uint32_t list = MEM32(ebx), n = MEM32(ebx + 4);
@@ -132,6 +164,8 @@ void sub_0017A010(void)
     if (n == 8 && ENV_ONCE("NGB_MENU_FORCE"))            /* a test: all unlocked */
         for (uint32_t i = 0; i < 8; i++)
             MEM8(list + 8 * i + 4) = MEM8(list + 8 * i + 5) = 1;
+    else if (n == 8)
+        unlocks_tick(list);
     if (n == 8 && !ENV_ONCE("NGB_KEEP_RANKING")) {
         MEM8(list + 8 * 3 + 4) = MEM8(list + 8 * 3 + 5) = 1;   /* "RECOMP SETTINGS": shown and chosen */
         MEM8(list + 8 * 6 + 4) = MEM8(list + 8 * 6 + 5) = 1;   /* OPTIONS, in COMING ATTRACTIONS' place */

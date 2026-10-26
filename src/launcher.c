@@ -121,7 +121,7 @@ void ngb_settings_load(NgbSettings *s)
     char path[1100], line[256];
     FILE *f;
 
-    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, 4:3 movies... */
+    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, the unlocks, 4:3 movies... */
     s->aspect = ASPECT_16_9;
     s->width = 1280;
     s->height = 720;
@@ -181,6 +181,12 @@ void ngb_settings_load(NgbSettings *s)
             s->all_difficulties = atoi(val) != 0;
         } else if (!strcmp(key, "unlock_all_costumes")) {
             s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_missions")) {
+            s->unlock[0] = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_arcade")) {
+            s->unlock[1] = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_movie_theater")) {
+            s->unlock[2] = atoi(val) != 0;
         } else if (!strcmp(key, "audio_output")) {
             s->audio_output = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 auto, 1 stereo, 2 5.1 */
         } else if (!strcmp(key, "show_hud")) {
@@ -229,6 +235,9 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "msaa = %d\n", s->msaa);
     fprintf(f, "unlock_all_difficulties = %d\n", s->all_difficulties);
     fprintf(f, "unlock_all_costumes = %d\n", s->all_costumes);
+    fprintf(f, "unlock_missions = %d\n", s->unlock[0]);
+    fprintf(f, "unlock_arcade = %d\n", s->unlock[1]);
+    fprintf(f, "unlock_movie_theater = %d\n", s->unlock[2]);
     fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
     fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
