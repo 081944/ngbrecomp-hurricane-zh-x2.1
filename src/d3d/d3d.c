@@ -157,7 +157,10 @@ void ngb_frame_tick(void);   /* src/cheats.c */
  * the renderer does its work inside the title's Direct3D calls, on the title's thread -- time the
  * console's Direct3D never spends -- and on slower PCs a busy fight crossed the limit while the frame
  * still made 60 fps. The time spent in its Direct3D calls is taken out (span_leave): the frame's start
- * moves on by it. NGB_CPU_LOAD=1 keeps the title's own measurement. */
+ * moves on by it. And what is left is kept under the limits (load_cap): the HUD still went for frames in
+ * the busiest fights on slower PCs with all of Direct3D out (0.9.33), the title's own code and its waits
+ * on other threads crossing 90% there, while shedding the HUD saves the port nothing. NGB_CPU_LOAD=1
+ * keeps the title's own measurement. */
 uint64_t xbox_ReadTimeStampCounter(void);
 static int s_cpu_load = -1;
 /* Timed with the CPU's own cycle counter, a few nanoseconds a read: the title's clock (a system clock call
@@ -227,9 +230,21 @@ static inline void span_leave(void)
         host_end(s_span_t0);
 }
 
+/* The title's CPU load as it ended the frame (sub_0030E140 writes it before presenting), at most 80%:
+ * under the limits it sheds work at (90 to 95%: the HUD, the shadow map's quality) -- as the GPU's
+ * share is reported as nothing (ngb_gpu_frame_reached). */
+static void load_cap(void)
+{
+    if (s_cpu_load < 0)
+        host_start();
+    if (!s_cpu_load && MEMF(0xD21698) > 80.0f)
+        MEMF(0xD21698) = 80.0f;
+}
+
 int d3d_hook(int fn)
 {
     if (fn == D3DF_D3DDevice_Swap) {
+        load_cap();
         ngb_frame_tick();
         load_calibrate();
         s_frame_thread = 1;
