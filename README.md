@@ -26,8 +26,7 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
 - Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
   7.1 output; an optional HUD-free view
-- Smooth frame pacing and low input latency; shaders prepared in the background (no first-time
-  stutter)
+- Smooth frame pacing and low input latency; shaders prepared in the background
 
 ## Getting started
 
