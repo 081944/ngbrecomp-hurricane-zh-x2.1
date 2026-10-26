@@ -213,7 +213,8 @@ class Disassembler:
         Decoding restarts at each such address and discards whatever instruction
         straddled it. The garbage decoded from the table itself is left alone:
         it is unreachable, because the block before it ends at the indirect
-        jump.
+        jump. The same restart then runs at every direct branch target the
+        decoded code does not contain (see below).
         """
         size = end_va - start_va
         if size <= 0 or size > len(raw_bytes):
@@ -223,9 +224,9 @@ class Disassembler:
         for cs_insn in self._cs.disasm(raw_bytes[:size], start_va):
             decoded[cs_insn.address] = self._decode_instruction(cs_insn)
 
-        for point in sorted(resync or ()):
+        def restart(point):
             if not (start_va <= point < end_va) or point in decoded:
-                continue
+                return
             for addr in [a for a, i in decoded.items()
                          if a < point < a + i.size]:
                 del decoded[addr]
@@ -242,7 +243,58 @@ class Disassembler:
                                cs_insn.address + cs_insn.size):
                     decoded.pop(a, None)
 
+        for point in sorted(resync or ()):
+            restart(point)
+
+        # The linear decode also ends early: capstone stops at the first byte
+        # sequence that is no instruction, and a switch's tables in the middle
+        # of a function are usually one. Code past them that only a direct
+        # branch reaches then never gets decoded, so its label is missing and
+        # the branch is dropped as dead code -- in Ninja Gaiden Black the
+        # particle-script getter 0x000FAA10 keeps a shared tail at 0x000FAB50,
+        # past its tables and a run of int3, that three of its switch cases
+        # jump to; without it they fell through into one another and the
+        # Gobdeck's fire breath never got its flames. Restart at every branch
+        # target the reachable code names but does not contain, until it names
+        # nothing new. Only the reachable code: the tables decode to garbage
+        # whose "branches" can point into the middle of a real instruction, and
+        # a restart there would throw that instruction away. A target no decode
+        # can start at is tried once.
+        tried = set()
+        while True:
+            missing = sorted(
+                target for target in self._branch_targets(
+                    decoded, start_va, end_va, resync)
+                if target not in decoded and target not in tried)
+            if not missing:
+                break
+            for point in missing:
+                tried.add(point)
+                restart(point)
+
         return [decoded[a] for a in sorted(decoded)]
+
+    @staticmethod
+    def _branch_targets(decoded, start_va, end_va, resync=None):
+        """Direct branch targets inside [start_va, end_va) of the instructions
+        reachable from the function's entry and its resync points, following
+        fall-through and direct branches through what is decoded so far."""
+        targets = set()
+        seen = set()
+        work = [start_va, *(p for p in (resync or ()) if p in decoded)]
+        while work:
+            addr = work.pop()
+            insn = decoded.get(addr)
+            if insn is None or addr in seen:
+                continue
+            seen.add(addr)
+            if insn.is_branch and insn.jump_target is not None:
+                if start_va <= insn.jump_target < end_va:
+                    targets.add(insn.jump_target)
+                    work.append(insn.jump_target)
+            if not insn.is_terminator:
+                work.append(insn.end_address)
+        return targets
 
     def disassemble_cfg(self, raw_bytes, start_va, end_va, entry_points,
                         stop_addresses=None, stop_mnemonics=()):

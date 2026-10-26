@@ -19,8 +19,10 @@ What the changes add, in short:
 - **Audio**: the MCPX APU's voices resampled to 48 kHz, a stereo downmix with reverb, an SDL2 sink
   paced by the output device.
 - **Kernel and lifter fixes** found running Ninja Gaiden Black: interrupt lines, thread objects,
-  events, file and video calls; lifter flag joins, conversions, switch tables; differential testing
-  tools (`tools/`).
+  events, file and video calls; lifter flag joins, conversions, switch tables, and the decode of
+  code that only a branch reaches past a switch's tables (a shared tail three cases jumped to was
+  never lifted, and the cases fell through into one another: the Gobdeck's fire breath, #91);
+  differential testing tools (`tools/`).
 
 Its third-party sources are not stored here: `third_party/fetch.sh` fetches them at pinned
 revisions.

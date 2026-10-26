@@ -216,3 +216,28 @@ void d3d_visibility_hook(void)
     d3d_visibility_begin();
     compat_host_leave();
 }
+
+/* The game's GPU load (#50). At the end of each frame the title puts a callback into the push buffer
+ * (sub_0030E140: methods 0x1D8C and NOP 7, the callback 0x30E060), and when the GPU reaches it the time
+ * since the frame began (0xD21680, the cycle counter) is the GPU's share of the frame (0xD21690 ->
+ * 0xD2169C, a percentage). sub_001D5E30 takes the larger of it and the CPU's (0xD21698): over 94% it
+ * lowers the quality level (0x8CDA5C) a step a frame -- Ryu's shadow map gives way to the round shadow
+ * under him -- and raises it again under 90%. Here the emulated GPU only reads the push buffer, the
+ * renderer draws, so how late it gets to the callback says nothing of the drawing: on some PCs it is
+ * late now and then, and the shadow came and went every second or so, in nearly every area. The GPU's
+ * share is reported as nothing; NGB_GPU_LOAD=1 keeps the title's own measurement. */
+void ngb_gpu_frame_reached(void)
+{
+    static int keep = -1;
+    if (keep < 0)
+        keep = getenv("NGB_GPU_LOAD") && atoi(getenv("NGB_GPU_LOAD")) != 0;
+    if (keep) {
+        sub_0030E060();
+        return;
+    }
+    MEM32(0xD21690) = 0;
+    MEM32(0xD21694) = 0;
+    eax = 0;
+    edx = 0;
+    esp += 4;   /* ret */
+}

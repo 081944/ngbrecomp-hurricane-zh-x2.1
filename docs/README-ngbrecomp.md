@@ -26,8 +26,7 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
 - Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
   7.1 output; an optional HUD-free view
-- Smooth frame pacing and low input latency; shaders prepared in the background (no first-time
-  stutter)
+- Smooth frame pacing and low input latency; shaders prepared in the background
 
 ## Getting started
 
@@ -92,14 +91,14 @@ of the pause menu. Changes apply at once and are saved.
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
   bright lights; off is the console's look)
-- **Display & Audio**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
-  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off,
-  Positional Audio (3D sounds placed left and right: Panning, the default; Console, through the sound
-  chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo or 5.1; Auto
-  is 5.1 on a 5.1 or 7.1 output)
-- **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
+- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
+  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
+  warnings and intro movies
+- **Sound**: Positional Audio (3D sounds placed left and right: Panning, the default; Console, through
+  the sound chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo
+  or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
-  and items, and whether the game pauses while it is open
+  and items, and whether the game pauses while it is open; all difficulties from the start; all costumes
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
   inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The
@@ -158,6 +157,8 @@ the game was in.
   decides what to draw for a narrower view).
 - At **10x render resolution with 8x anti-aliasing**, where the frame rate drops below 60, characters'
   shadows can flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
+- Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
+- Opening a menu or the map can shift the whole picture by a few pixels until it closes (#99).
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 

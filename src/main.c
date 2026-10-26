@@ -1354,6 +1354,7 @@ int main(int argc, char **argv)
             usleep(2000);
         }
         printf("Window closed.\n");
+        fflush(stdout);   /* _exit does not flush: into a pipe (a log through tee) the line was lost, and a closed window looked like a crash */
         _exit(0);
     }
 #endif

@@ -87,7 +87,7 @@ static const Action s_act[A_COUNT] = {
     { "Quick Menu: Next", "quick_right", "Opens the melee weapons on the next card; while open, selects the next entry.", SDL_SCANCODE_RIGHT, 0, P(P_DR), T_HOST, 8, 0 },
     { "Quick Menu: Confirm", "quick_confirm", "Equips the selected weapon or Ninpo, or uses the selected item.", SDL_SCANCODE_RETURN, 0, P(P_A), T_HOST, 16, 0 },
     { "Quick Menu: Cancel", "quick_cancel", "Closes the quick menu without applying the selection.", SDL_SCANCODE_ESCAPE, SDL_SCANCODE_BACKSPACE, P(P_B), T_HOST, 32, 0 },
-    { "Toggle HUD", "toggle_hud", "Shows or hides the HUD (Display & Audio > HUD). Not bound unless chosen.", 0, 0, 0, T_HOST,
+    { "Toggle HUD", "toggle_hud", "Shows or hides the HUD (Display > HUD). Not bound unless chosen.", 0, 0, 0, T_HOST,
       NGB_BIND_HUD_BIT, 0 },
 };
 

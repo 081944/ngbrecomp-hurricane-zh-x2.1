@@ -545,9 +545,10 @@ private:
     std::atomic<uint32_t> pipes_since_save_{0};
     std::thread saver_;                      // the periodic save of pcache_, off the frame (CacheSavePipelinesSoon)
     std::atomic<bool> saving_{false};
-    // shaders and pipelines a draw needs and nothing has made yet: made on a thread of their own while the
-    // draw is left out (a frame or two), instead of the frame waiting for them (a hitch). NGB_D3D_SYNC_COMPILE=1
-    // makes them at once instead.
+    // shaders and pipelines a draw needs and nothing has made yet: made at once while the frame has spent less
+    // than compile_budget_us_ making them, then on a thread of their own while the draw is left out (a frame or
+    // two) -- a short wait instead of geometry missing (#94), and no long hitch when an area brings dozens.
+    // NGB_D3D_COMPILE_BUDGET_MS sets the budget (4; 0: always on the thread), NGB_D3D_SYNC_COMPILE=1 makes all at once.
     struct Job { bool pipeline; uint64_t key; std::string hlsl; bool vertex; PipeKey pk; };
     std::thread compiler_;
     std::mutex job_mu_;
@@ -558,6 +559,8 @@ private:
     std::unordered_map<PipeKey, bool, PipeHash> known_pipes_;   // the seed's and earlier sessions' (cache_mu_)
     bool async_ = true;      // the setting
     bool async_now_ = false; // for the draw being made (the backend's own passes make theirs at once)
+    uint64_t compile_budget_us_ = 4000;
+    bool Defer() const { return async_now_ && compile_us_ >= compile_budget_us_; }   // this one to the thread
     void Compiler();
     std::atomic<uint32_t> async_made_{0}, skipped_{0};
     std::thread prewarm_;
@@ -1064,8 +1067,15 @@ void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count,
         x0 = std::min(x0, xy[v][0]); x1 = std::max(x1, xy[v][0]);
         y0 = std::min(y0, xy[v][1]); y1 = std::max(y1, xy[v][1]);
     }
-    for (int v = 0; v < 4; v++)   // axis-aligned: every corner on the box
-        if (!((xy[v][0] == x0 || xy[v][0] == x1) && (xy[v][1] == y0 || xy[v][1] == y1))) return;
+    // axis-aligned: every corner on the box, within a hundredth of a pixel (the pause menu's dagger has a corner at
+    // 181.4999 beside 181.5, and its body was left out, #83); each corner taken as the box's
+    constexpr float kEps = 0.01f;
+    auto on = [](float a, float b) { return std::abs(a - b) <= kEps; };
+    for (int v = 0; v < 4; v++) {
+        if (!((on(xy[v][0], x0) || on(xy[v][0], x1)) && (on(xy[v][1], y0) || on(xy[v][1], y1)))) return;
+        xy[v][0] = on(xy[v][0], x0) ? x0 : x1;
+        xy[v][1] = on(xy[v][1], y0) ? y0 : y1;
+    }
     if (x1 - x0 < 1.0f || y1 - y0 < 1.0f) return;
     // the corners at (x0,y0), (x1,y0), (x0,y1)
     int c00 = -1, c10 = -1, c01 = -1;
@@ -2109,7 +2119,7 @@ VkShaderModule VulkanBackend::Module(uint64_t key, const std::function<std::stri
     // Left to the compiler thread only when it is new: a module whose SPIR-V an earlier session kept is
     // made at once (no glslang, just vkCreateShaderModule). Deferred, the draw was left out until the
     // prewarm thread got to it -- walls and effects flickering for a while after every launch (#21).
-    if (async_now_ && !SpirvKnown(hlsl, vertex)) {
+    if (Defer() && !SpirvKnown(hlsl, vertex)) {
         std::lock_guard<std::mutex> g(job_mu_);
         if (!pending_mods_.count(key) && std::getenv("NGB_D3D_HITCHLOG")) {   // NGB_D3D_HITCHLOG: what is left to the compiler thread
             static int n;
@@ -2205,8 +2215,9 @@ VkPipeline VulkanBackend::Pipeline(const PipeKey& k) {
         known = known_pipes_.count(k) != 0;
     }
     // The same for a pipeline: one the seed or an earlier session made is made at once (the driver's
-    // cache has it); only a new one waits for the compiler thread, its draw left out meanwhile.
-    if (async_now_ && !known) {
+    // cache has it); a new one too while the frame's budget lasts, past it the compiler thread's, its draw
+    // left out meanwhile.
+    if (Defer() && !known) {
         std::lock_guard<std::mutex> g(job_mu_);
         if (!pending_pipes_.count(k) && std::getenv("NGB_D3D_HITCHLOG")) {   // NGB_D3D_HITCHLOG: what is left to the compiler thread
             static int n;
@@ -4059,6 +4070,7 @@ void VulkanBackend::CacheOpen() {
     if (const char* sr = std::getenv("NGB_D3D_SEED_RECORD")) seed_out_ = OpenAppend(sr);
     if (!std::getenv("NGB_D3D_NO_PREWARM")) prewarm_ = std::thread([this] { Prewarm(); });
     async_ = !std::getenv("NGB_D3D_SYNC_COMPILE");
+    if (const char* b = std::getenv("NGB_D3D_COMPILE_BUDGET_MS")) compile_budget_us_ = uint64_t(std::max(0.0, std::atof(b)) * 1000);
     if (async_) compiler_ = std::thread([this] { Compiler(); });
 }
 

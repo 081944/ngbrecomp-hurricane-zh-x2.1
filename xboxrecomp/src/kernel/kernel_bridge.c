@@ -3283,13 +3283,16 @@ static void deliver_one_apc(uint32_t apc_routine, uint32_t apc_context,
     if (!fn) fn = recomp_lookup_manual(apc_routine);
     if (!fn) fn = recomp_lookup_kernel(apc_routine);
     if (fn) {
-        /* VOID ApcRoutine(PVOID ApcContext, PIO_STATUS_BLOCK, ULONG) */
+        /* VOID NTAPI ApcRoutine(PVOID ApcContext, PIO_STATUS_BLOCK, ULONG): stdcall, it pops its own
+         * arguments and the return address, so esp goes back to where it was -- adding 12 left the caller
+         * 12 bytes high (upstream a37d669). */
+        uint32_t saved_esp = g_esp;
         g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;
         g_esp -= 4; BRIDGE_MEM32(g_esp) = iostatus;
         g_esp -= 4; BRIDGE_MEM32(g_esp) = apc_context;
         g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;   /* dummy return address */
         fn();
-        g_esp += 12;
+        g_esp = saved_esp;
     } else {
         uint32_t ord = 0;
         if (apc_routine >= KERNEL_VA_BASE && apc_routine < KERNEL_VA_END) {

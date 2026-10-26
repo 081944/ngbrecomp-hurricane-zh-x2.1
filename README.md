@@ -39,8 +39,8 @@ No game data is included. You need your own copy of the game and the x2.1 patch.
   rebinding, MSAA, anisotropic filtering, steady frame pacing, Camera Sensitivity, Smoother Glow, and
   under Gameplay an NG2-style d-pad Quick Menu for weapons, Ninpo and items (off unless chosen); cheats
   including Infinite Items (healing items, the Talisman of Rebirth and the Jewel of the Demon Seal) and
-  Infinite Projectiles; a HUD on/off switch and Positional Audio (Off / Console / Panning, Panning by default) under
-  Display & Audio; sound mixed on the PC (the game's DirectSound on a host mixer: positional 3D sound, the console's
+  Infinite Projectiles; a HUD on/off switch under Display and Positional Audio (Off / Console / Panning, Panning by
+  default) under Sound; sound mixed on the PC (the game's DirectSound on a host mixer: positional 3D sound, the console's
   room reverb, and 5.1 surround with Audio Output Auto / Stereo / 5.1); about 250 MB of video memory at the default settings (was over 3 GB before 0.9.27), and
   textures unused for 30 s give their memory back, so long sessions no longer run out of it.
 - The arcade Ninja Gaiden on the Han's bar cabinet and in the main menu (once unlocked), recompiled as programs
@@ -51,6 +51,15 @@ No game data is included. You need your own copy of the game and the x2.1 patch.
 
 Not included: the SFC Ninja Gaiden trilogy (`NinjaFCJ.xbe` / `NinjaFCU.xbe`), a separate program that is not
 recompiled; its main-menu entry is not shown.
+
+## Known issues
+
+- At 21:9, objects at the far left and right of the screen can appear a moment late (the game decides what to
+  draw for a narrower view).
+- At 10x render resolution with 8x anti-aliasing, where the frame rate drops below 60, characters' shadows can
+  flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
+- Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
+- Opening a menu or the map can shift the whole picture by a few pixels until it closes (#99).
 
 ## Getting started (Windows)
 
@@ -65,7 +74,21 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.30`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.31`.
+
+## Changes in 0.9.31
+
+- Ryu's shadow no longer comes and goes (#50): the game's own GPU-load measurement is reported as nothing, so it
+  no longer lowers the quality level and swaps the shadow map for the round shadow.
+- A 2D quad's corners within a hundredth of a pixel count as axis-aligned (#83): the pause menu's dagger is no
+  longer left out at some render scales.
+- The recompiler lifts the code past a switch's tables that only a branch reaches (#91): the Gobdeck's fire
+  breath gets its flames.
+- A new shader or pipeline is made at once while the frame has spent under 4 ms on them (#94), instead of the
+  draw being left out until a compiler thread gets to it.
+- Settings: Display & Audio is now two pages, Display and Sound; Skip Intros moved to Display, All Difficulties
+  and All Costumes to Gameplay.
+- The window-close line is flushed into a piped log, so a closed window no longer looks like a crash there.
 
 ## Changes from ngbrecomp
 
