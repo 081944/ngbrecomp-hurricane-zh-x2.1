@@ -16,7 +16,7 @@
  * Graphics, Display and Startup Settings, Gameplay, Cheats and Controls,
  * opening pages 10-15 (no Exit row: the column has six, and B leaves) --
  * the recomp's settings as rows with values, like Video Settings'; Cheats'
- * row Unlocks opens page 16, as Screen Adjustment opens its page -- and
+ * row Unlocks puts the unlocks' rows in its page's place (unl_show) -- and
  * the header and category words are pictures of ours (src/pause_tab.c)
  * while it is open. The page and row tables and the text table are
  * extended in guest memory at first use, and the page table pointer is
@@ -56,9 +56,8 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 #define PAGE_GAME  13             /* Gameplay: the optional changes to play (the Quick Menu) */
 #define PAGE_CHEAT 14
 #define PAGE_CTRL  15             /* Controls: the bindings' panel (src/pause_tab.c) over it */
-#define PAGE_UNL   16             /* Unlocks: a page of Cheats' (its row "Unlocks"), not a category */
-#define N_OURS     6              /* the categories */
-#define N_PAGES    7              /* and the pages: theirs, then Unlocks */
+#define N_OURS     6
+#define UNL_ACTION 16             /* Cheats' row Unlocks: its rows in the page's place (unl_show), not a page */
 #define PC_RAISE   30             /* a page of more than seven rows: higher */
 #define PC_CLOSER  8              /* and closer, clear of the information line */
 
@@ -69,7 +68,7 @@ enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS,
 };
 
-static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_PAGES; }
+static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
 
 /* Video Settings with the console's widescreen option (page 4) and without
  * (page 6) -- their rows were Screen Adjustment, Movie Display Ratio,
@@ -86,15 +85,15 @@ static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_
                                         ROW_UNLOCKS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
 static const uint8_t s_rows_unl[] = { ROW_ALLDIFF, ROW_ALLCOST, ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_BACK };
-static const struct { const uint8_t *kinds; int n; } s_ours[N_PAGES] = {
+static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
     { s_rows_gfx, (int)sizeof s_rows_gfx },
     { s_rows_disp, (int)sizeof s_rows_disp },
     { s_rows_sound, (int)sizeof s_rows_sound },
     { s_rows_game, (int)sizeof s_rows_game },
     { s_rows_cheat, (int)sizeof s_rows_cheat },
     { s_rows_ctrl, (int)sizeof s_rows_ctrl },
-    { s_rows_unl, (int)sizeof s_rows_unl },
 };
+#define N_UNL (int)sizeof s_rows_unl
 #define N_WS  (int)sizeof s_rows_ws
 #define N_STD (int)sizeof s_rows_std
 
@@ -298,7 +297,10 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
 
 static int s_ready;
 static uint32_t s_labels_ws, s_labels_std;               /* guest: text ids */
-static uint32_t s_labels_ours[N_PAGES];
+static uint32_t s_labels_ours[N_OURS];
+static uint32_t s_labels_unl, s_rowtab_unl, s_rowtab_cheat;   /* guest: Unlocks' rows and labels, Cheats' rows */
+static int s_unl;                                         /* Cheats' page shows Unlocks' rows */
+static void unl_show(int on, int row);
 static uint32_t s_highlight;                              /* guest: a byte per row */
 static uint32_t s_pages_recomp;                           /* guest: RECOMP SETTINGS' page table */
 
@@ -322,7 +324,7 @@ static uint32_t make_rows(const uint8_t *kinds, int n)
         switch (kinds[i]) {
         case ROW_SCREEN:  src = 0x429968; break;
         case ROW_PC:      src = 0x429968; break;
-        case ROW_UNLOCKS: src = 0x429968; break;          /* opens a page, as Screen Adjustment does */
+        case ROW_UNLOCKS: src = 0x429968; break;          /* a row with an action, as Screen Adjustment's */
         case ROW_DEFAULT: src = 0x4299A0; break;
         case ROW_EXIT:
         case ROW_BACK:    src = 0x4299BC; break;
@@ -342,7 +344,7 @@ static uint32_t make_rows(const uint8_t *kinds, int n)
         if (src == 0x429984)
             MEM32(e + 0xC) = (uint32_t)max;                /* value range */
         if (kinds[i] == ROW_UNLOCKS)
-            MEM8(e + 1) = PAGE_UNL;                        /* the page it opens */
+            MEM8(e + 1) = UNL_ACTION;                      /* (never a page: unl_show) */
     }
     memset((void *)XBOX_PTR(va + 0x1C * n), 0, 0x1C);
     MEM8(va + 0x1C * n) = 0xFF;
@@ -408,7 +410,7 @@ static void pc_menu_init(void)
      * bytes, then 0xFF) with page 0's categories ours -- rows opening pages
      * 10-15, no Exit -- and our pages 10-15, copies of Screen Adjustment's
      * (page 9: a page of Video Settings) going back to their category. */
-    uint32_t pages = xbox_HeapAlloc(0x18 * (10 + N_PAGES + 1), 4);
+    uint32_t pages = xbox_HeapAlloc(0x18 * (10 + N_OURS + 1), 4);
     memcpy((void *)XBOX_PTR(pages), (void *)XBOX_PTR(0x429CB8), 0x18 * 10);
     {
         uint32_t src = MEM32(0x429CB8 + 0xC), rows = xbox_HeapAlloc(0x1C * (N_OURS + 1), 4);
@@ -423,23 +425,22 @@ static void pc_menu_init(void)
         MEM32(pages + 0xC) = rows;
         MEM8(pages + 2) = N_OURS - 1;                      /* the last row */
     }
-    for (int i = 0; i < N_PAGES; i++) {
+    for (int i = 0; i < N_OURS; i++) {
         uint32_t pg = pages + 0x18 * (10 + i);
         memcpy((void *)XBOX_PTR(pg), (void *)XBOX_PTR(0x429D90), 0x18);
         MEM8(pg) = (uint8_t)(PAGE_GFX + i);
         MEM8(pg + 2) = (uint8_t)(s_ours[i].n - 1);
         MEM8(pg + 6) = 0;                                  /* back to page 0, */
         MEM8(pg + 7) = (uint8_t)i;                         /* its category's row */
-        if (PAGE_GFX + i == PAGE_UNL) {                    /* Unlocks: back to Cheats, its row */
-            MEM8(pg + 6) = PAGE_CHEAT;
-            MEM8(pg + 7) = (uint8_t)(sizeof s_rows_cheat - 2);
-        }
         MEM32(pg + 0xC) = make_rows(s_ours[i].kinds, s_ours[i].n);
         s_labels_ours[i] = make_labels(s_ours[i].kinds, s_ours[i].n);
     }
-    memset((void *)XBOX_PTR(pages + 0x18 * (10 + N_PAGES)), 0, 0x18);
-    MEM8(pages + 0x18 * (10 + N_PAGES)) = 0xFF;
+    memset((void *)XBOX_PTR(pages + 0x18 * (10 + N_OURS)), 0, 0x18);
+    MEM8(pages + 0x18 * (10 + N_OURS)) = 0xFF;
     s_pages_recomp = pages;
+    s_rowtab_cheat = MEM32(pages + 0x18 * PAGE_CHEAT + 0xC);
+    s_rowtab_unl = make_rows(s_rows_unl, N_UNL);
+    s_labels_unl = make_labels(s_rows_unl, N_UNL);
 
     s_labels_ws = make_labels(s_rows_ws, N_WS);
     s_labels_std = make_labels(s_rows_std, N_STD);
@@ -702,6 +703,8 @@ void ngb_recomp_menu_tick(void)
     MEM32(0x42A28C) = s_saved_tables[0];
     MEM32(0x42A2AC) = s_saved_tables[1];
     s_recomp = s_recomp_seen = 0;
+    if (s_unl)
+        unl_show(0, -1);
     ngb_recomp_pictures_off();
 }
 
@@ -709,6 +712,10 @@ void ngb_recomp_menu_tick(void)
  * or ours. */
 static const uint8_t *page_rows(int *n)
 {
+    if (page_now() == PAGE_CHEAT && s_unl) {
+        *n = N_UNL;
+        return s_rows_unl;
+    }
     if (is_ours(page_now())) {
         *n = s_ours[page_now() - PAGE_GFX].n;
         return s_ours[page_now() - PAGE_GFX].kinds;
@@ -858,6 +865,29 @@ static int pc_value_change(int row, int delta)
     return 1;
 }
 
+/* Cheats' page with Unlocks' rows (on) or its own, the cursor on row: the page's row table and last row
+ * swapped in place. Not a page of its own: the engine slides the whole screen out and in between two
+ * pages, and a page with fewer rows sat lower. */
+static void unl_show(int on, int row)
+{
+    uint32_t pg = s_pages_recomp + 0x18 * PAGE_CHEAT;
+    s_unl = on;
+    MEM32(pg + 0xC) = on ? s_rowtab_unl : s_rowtab_cheat;
+    MEM8(pg + 2) = (uint8_t)((on ? N_UNL : (int)sizeof s_rows_cheat) - 1);
+    if (row >= 0) {                                       /* (not as the menu closes) */
+        MEM8(MENU_STATE + 1) = MEM8(MENU_STATE + 2) = (uint8_t)row;
+        MEM16(0x8DE468) = (uint16_t)row;                  /* the drawer's copy: else a frame on the old row */
+    }
+}
+
+static void menu_sound(uint32_t which)
+{
+    PUSH32(esp, 0x40);
+    PUSH32(esp, which);
+    PUSH32(esp, 0x0017F54Eu); RECOMP_ABI_CALL(0x001E3400u, sub_001E3400);
+    esp = esp + 8;
+}
+
 /**
  * sub_0017F4E0
  * Original: 0x0017F4E0 - 0x0017F6F0 (528 bytes, 161 insns)
@@ -939,6 +969,11 @@ loc_0017F540: ;
     if (CMP_EQ(_fa, _fb)) goto loc_0017F567; /* je: equal / zero */
 
 loc_0017F545: ;
+    if (s_recomp && s_unl && MEM8(edi) == PAGE_CHEAT) {   /* PC: B on Unlocks' rows: Cheats' again, on Unlocks */
+        menu_sound(3);
+        unl_show(0, (int)sizeof s_rows_cheat - 2);
+        goto loc_0017F681;
+    }
     PUSH32(esp, 0x40);
     PUSH32(esp, 3);
     PUSH32(esp, 0x0017F54Eu); RECOMP_ABI_CALL(0x001E3400u, sub_001E3400); /* call 0x001E3400 */
@@ -1029,6 +1064,13 @@ loc_0017F5E4: ;
     goto loc_0017F681;
 
 loc_0017F5F9: ;
+    if (s_recomp && MEM8(edi) == PAGE_CHEAT &&
+        (LO8(edx) == UNL_ACTION || (LO8(edx) == 0xFD && s_unl))) {   /* PC: Unlocks' rows, or Exit on them */
+        int open = LO8(edx) == UNL_ACTION;
+        menu_sound(open ? 5 : 3);
+        unl_show(open, open ? 0 : (int)sizeof s_rows_cheat - 2);
+        goto loc_0017F681;
+    }
     eax = ZX8(LO8(edx));
     _fb = (uint32_t)(0xFC) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* sub source, before the write */
     eax = eax - 0xFC;
@@ -1108,23 +1150,12 @@ loc_0017F67F: ;
     _fa = (uint32_t)(ebx) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* xor result */
 
 loc_0017F681: ;
-    {   /* PC: back from Unlocks (the engine's, by the page's back page and row): Cheats' page drawn in as
-         * when a row opens a page -- else its rows stayed undrawn */
-        static int last;
-        if (last == PAGE_UNL && MEM8(edi) == PAGE_CHEAT) {
-            MEM32(edi + 0x18) = MEM32(edi + 0x18) | 2;
-            MEM8(edi + 0x11) = 1;
-            MEM8(esp + 0x20) = 2;                          /* (what the handler gives back then) */
-        }
-        last = MEM8(edi);
-    }
     PUSH32(esp, ebx);
     PUSH32(esp, 0x0017F687u); RECOMP_ABI_CALL(0x0017FC00u, sub_0017FC00); /* call 0x0017FC00 */
 
 loc_0017F687: ;
     /* PC: the category lit in the column: Video's (3), or ours. */
-    PUSH32(esp, page_now() == PAGE_UNL ? (uint32_t)(PAGE_CHEAT - PAGE_GFX)   /* Unlocks: Cheats' */
-              : is_ours(page_now()) ? (uint32_t)(page_now() - PAGE_GFX) : 3u);
+    PUSH32(esp, is_ours(page_now()) ? (uint32_t)(page_now() - PAGE_GFX) : 3u);
     SET_LO8(edx, 1);
     PUSH32(esp, 0x0017F690u); RECOMP_ABI_CALL(0x0017FD30u, sub_0017FD30); /* call 0x0017FD30 */
 
@@ -1418,6 +1449,10 @@ loc_0021F11C: ;
         MEM32(esp + 0x1C) = (uint32_t)s_ours[page_now() - PAGE_GFX].n;
         MEM32(esp + 0x4C) = s_labels_ours[page_now() - PAGE_GFX];
     }
+    if (page_now() == PAGE_CHEAT && s_unl) {
+        MEM32(esp + 0x1C) = (uint32_t)N_UNL;
+        MEM32(esp + 0x4C) = s_labels_unl;
+    }
 
 loc_0021F11D: ;
     ecx = ZX8(MEM8(0xDB9ADA));
@@ -1473,8 +1508,8 @@ loc_0021F14F: ;
     MEM32(0x43B47C) = eax;
     MEM32(0x43B480) = eax;
     ebx = 0x70;
-    if ((int)MEM32(esp + 0x1C) > 7)
-        ebx = 0x70 - PC_RAISE;                   /* PC: more than seven rows, a little higher */
+    if ((int)MEM32(esp + 0x1C) > 7 || (s_recomp && page_now() == PAGE_CHEAT))
+        ebx = 0x70 - PC_RAISE;                   /* PC: more than seven rows, a little higher (Cheats' always: its Unlocks rows where its own were) */
     MEM32(esp + 0x10) = 0;
     if (CMP_LE(_fas, _fbs)) goto loc_0021F5E7; /* jle: less or equal (signed <=) */
 
@@ -1867,7 +1902,7 @@ loc_0021F5BC: ;
 
 loc_0021F5BF: ;
     esi = MEM32(0x43B478);
-    if ((int)MEM32(esp + 0x1C) > 7)
+    if ((int)MEM32(esp + 0x1C) > 7 || (s_recomp && page_now() == PAGE_CHEAT))
         esi -= PC_CLOSER;                        /* PC: and a little closer */
     eax = MEM32(esp + 0x10);
     ecx = MEM32(esp + 0x1C);

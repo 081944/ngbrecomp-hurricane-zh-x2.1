@@ -101,7 +101,7 @@ of the pause menu. Changes apply at once and are saved.
   and items, and whether the game pauses while it is open
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs.
   Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
-  Missions, Arcade Ninja Gaiden and Movie Theater without earning them
+  Missions (with every mission), Arcade Ninja Gaiden and Movie Theater without earning them
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
   inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The
   bindings follow the game's own Button Settings: an action keeps its key or button whatever the

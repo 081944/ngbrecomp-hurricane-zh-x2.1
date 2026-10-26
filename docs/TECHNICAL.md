@@ -124,8 +124,10 @@ is untouched and turning it off puts back what they have earned. Off, Ninja Dog 
 has it: offered after dying in chapter 1. Missions, Arcade Ninja Gaiden and Movie Theater (Cheats >
 Unlocks, saved) answer yes for flags 10-12 the same way: the main menu's MISSIONS, ARCADE NINJA GAIDEN
 and MOVIE THEATER, which the game shows once earned (the list's entries 2, 4 and 5); a change made in
-RECOMP SETTINGS shows or hides them at once (`src/main_menu.c`). Inside, the missions and movies are
-as the game offers them.
+RECOMP SETTINGS shows or hides them at once (`src/main_menu.c`). With Missions on every mission is
+offered too: the Missions menu asks a byte per mission (0xDB95AC + its number, bit 0 offered, bit 1
+cleared; the game offers ten as Missions is earned and the rest as missions are cleared), and its
+reads (four lifted functions in `src/main_menu.c`) see bit 0 set; nothing written there either.
 
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
