@@ -73,7 +73,10 @@ int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
             last = menu;
         }
     }
-    if (!menu && !getenv("NGB_FIXED_KEYS")) {   /* in play: as bound (src/bindings.c, the Controls page) */
+    static int fixed_keys = -1;
+    if (fixed_keys < 0)
+        fixed_keys = getenv("NGB_FIXED_KEYS") != NULL;
+    if (!menu && !fixed_keys) {   /* in play: as bound (src/bindings.c, the Controls page) */
         SHORT mx = 0, my = 0;
         if (SDL_GetRelativeMouseMode()) {
             xbox_InputMouseStick(900.0f, &mx, &my);
@@ -136,7 +139,10 @@ void nv2a_window_tick(void)
 {
     static int captured;
     SDL_Window *w = SDL_GetKeyboardFocus();
-    int want = w && xbox_InputKeyboardActive() && !ngb_menu_up() && !getenv("NGB_NO_MOUSE_CAPTURE");
+    static int no_capture = -1;
+    if (no_capture < 0)
+        no_capture = getenv("NGB_NO_MOUSE_CAPTURE") != NULL;
+    int want = w && xbox_InputKeyboardActive() && !ngb_menu_up() && !no_capture;
     if (want != captured) {
         captured = want;
         s_capture_changed = SDL_GetTicks64();

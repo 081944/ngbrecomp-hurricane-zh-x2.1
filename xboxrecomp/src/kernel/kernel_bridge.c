@@ -1828,7 +1828,10 @@ static void bridge_MmGetPhysicalAddress(void)
      * are static and driven by guest CPU state, and nothing in tests/ can
      * reach them. */
     g_eax = (uint32_t)xbox_MmGetPhysicalAddress((PVOID)(uintptr_t)addr);
-    if (getenv("RECOMP_PHYS_TRACE")) {
+    static int phys_trace = -1;
+    if (phys_trace < 0)
+        phys_trace = getenv("RECOMP_PHYS_TRACE") != NULL;
+    if (phys_trace) {
         static unsigned n;
         if (n++ < 200)
             fprintf(stderr, "  [PHYS] 0x%08X -> 0x%08X (ret 0x%08X)\n",

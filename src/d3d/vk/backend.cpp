@@ -756,8 +756,10 @@ void VulkanBackend::ReadQuality() {
             prewarm_ = std::thread([this, msaa] { WarmSamples(uint32_t(msaa)); });
         }
     }
-    if (const char* e = std::getenv("NGB_D3D_SCALE")) scale_ = std::clamp(std::atoi(e), 1, 10);   // debugging
-    if (const char* e = std::getenv("NGB_D3D_QUALITY_FLIP")) {   // testing: MSAA and scale changing every n s
+    static const char* scale_env = std::getenv("NGB_D3D_SCALE");
+    static const char* flip_env = std::getenv("NGB_D3D_QUALITY_FLIP");
+    if (const char* e = scale_env) scale_ = std::clamp(std::atoi(e), 1, 10);   // debugging
+    if (const char* e = flip_env) {   // testing: MSAA and scale changing every n s
         static uint32_t start = presents_;
         uint32_t n = uint32_t(std::max(1, std::atoi(e)) * 60), k = (presents_ - start) / n;
         if (k & 1) {
@@ -1886,7 +1888,8 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     uint32_t levels = d.levels;
     std::vector<uint8_t> top;
     tx.gen = 0;
-    if (std::getenv("NGB_D3D_MIPLOG")) {   // debugging: which textures have one level, and their format
+    static const bool miplog = std::getenv("NGB_D3D_MIPLOG") != nullptr;
+    if (miplog) {   // debugging: which textures have one level, and their format
         static int n;
         if (d.levels == 1 && !d.cube && n < 300) {
             n++;
@@ -2510,7 +2513,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     for (int i = 0; i < 4 && quad; i++)   // a screen quad's linearly filtered textures (QuadSnap's alpha weighting)
         if (info[i].kind == kTex2D && !info[i].shadow && (s.tss[size_t(i)][kTssMagFilter] >= 2 || aniso_level_ > 0))
             info[i].flags |= kTexLinear;
-    if ((info[0].flags & kTexSigned) && std::getenv("NGB_D3D_BUMPLOG")) {   // the water's stage 0 sampling (#16)
+    static const bool bumplog = std::getenv("NGB_D3D_BUMPLOG") != nullptr;
+    if ((info[0].flags & kTexSigned) && bumplog) {   // the water's stage 0 sampling (#16)
         static int n;
         if (n++ < 6) {
             const auto& t = s.tss[0];
@@ -2772,7 +2776,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
     Color(SimpleState(s, kMPsFinalConstant0), c.pc[16]);
     Color(SimpleState(s, kMPsFinalConstant1), c.pc[17]);
-    if (s.ps && std::getenv("NGB_D3D_PSCLOG")) {   // debugging: each pixel shader's combiner constants, once (#29)
+    static const bool psclog = std::getenv("NGB_D3D_PSCLOG") != nullptr;
+    if (s.ps && psclog) {   // debugging: each pixel shader's combiner constants, once (#29)
         static std::set<uint64_t> told;
         uint64_t k = uint64_t(s.ps->handle) << 32 ^ SimpleState(s, kMPsConstant0);
         if (told.size() < 64 && told.insert(k).second)
@@ -3750,7 +3755,8 @@ void VulkanBackend::Present(const Surface& front) {
     presents_++;
     id_count_ = 0;
     if (id_file_) std::fflush(id_file_);
-    if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
+    static const bool section_log = std::getenv("NGB_D3D_SECTION_LOG") != nullptr;
+    if (SectionPull() > 0 && section_log && presents_ % 120 == 0)
         std::fprintf(stderr, "[SECTION] %u draws pulled\n", section_pulled_);
     section_pulled_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)

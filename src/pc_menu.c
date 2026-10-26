@@ -579,7 +579,10 @@ static int s_recomp;
 
 void ngb_aspect_tick(void)
 {
-    if (getenv("NGB_ASPECT_LOG")) {
+    static int aspect_log = -1;
+    if (aspect_log < 0)
+        aspect_log = getenv("NGB_ASPECT_LOG") != NULL;
+    if (aspect_log) {
         static unsigned n;
         if (n++ % 20000 == 0)
             fprintf(stderr, "[ASPECT] tick: constants %.4f %.4f 977EF8 %.4f flags %X\n", MEMF(0x414AF4), MEMF(0x414AF8),

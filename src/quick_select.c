@@ -683,7 +683,10 @@ void ngb_quick_tick(void)
         ngb_quick_close();
         pause_menu(0);
     }
-    if (getenv("NGB_QUICK_PROBE"))
+    static int probe = -1;
+    if (probe < 0)
+        probe = getenv("NGB_QUICK_PROBE") != NULL;
+    if (probe)
     {
         /* SDL's clock is host time, independent of the guest pause counter. */
         static uint64_t last;

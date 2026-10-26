@@ -42,8 +42,13 @@ void ngb_quick_set_game_dir(const char *path) { snprintf(s_game_dir, sizeof s_ga
  * This exercises the real backend, without sending input to the desktop. */
 static void test_input(void)
 {
-    const char *path = getenv("NGB_TEST_INPUT");
-    if (!path || !getenv("NGB_TEST_HIDDEN"))
+    static const char *path;
+    static int checked;
+    if (!checked) {
+        checked = 1;
+        path = getenv("NGB_TEST_HIDDEN") ? getenv("NGB_TEST_INPUT") : NULL;
+    }
+    if (!path)
         return;
     static SDL_Joystick *pad;
     static long offset;
