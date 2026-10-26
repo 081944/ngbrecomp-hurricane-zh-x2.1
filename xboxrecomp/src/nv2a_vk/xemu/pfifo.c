@@ -261,6 +261,39 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
     return num_proc;
 }
 
+/* xboxrecomp: methods the pusher passes over without handing them to PGRAPH. This port draws with its own
+ * renderer from the title's Direct3D calls; the NV2A model only keeps the time -- fences, flips, notifies,
+ * reports -- and its own drawing is off (nv2a_vk_set_draws_off). These are the 3D object's (subchannel 0)
+ * bulky state for that drawing alone: combiners, texgen, matrices, fog/specular/viewport/eye parameters,
+ * the vertex program and its constants, lights, vertex arrays, inline vertex data and the texture stages.
+ * Every method else -- surfaces, BEGIN_END, clears, semaphores, flips, NOPs, reports, objects and context
+ * DMAs -- still goes through PGRAPH. NV2A_PFIFO_SKIP=0: every method to PGRAPH as before. */
+static bool pfifo_skippable(uint32_t subchannel, uint32_t m)
+{
+    if (subchannel != 0)
+        return false;
+    return (m >= 0x0260 && m <= 0x028C) || (m >= 0x03C0 && m <= 0x03CC) ||
+           (m >= 0x0440 && m <= 0x07BC) || (m >= 0x09D0 && m <= 0x0BFC) ||
+           (m >= 0x0C00 && m <= 0x13FC) || (m >= 0x1720 && m <= 0x17BC) ||
+           m == 0x17E0 || m == 0x17E4 || m == 0x17E8 ||
+           (m >= 0x1800 && m <= 0x1AFC) || (m >= 0x1B00 && m <= 0x1BFC) ||
+           (m >= 0x1E40 && m <= 0x1E60);
+}
+
+bool nv2a_vk_draws_off(void);   /* pgraph/vk/instance.c: the port's renderer draws */
+
+/* Only while the NV2A model draws nothing: with NGB_RENDERER=xemu, or a program on the model's drawing, every
+ * method still counts. */
+static int pfifo_skip_enabled(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("NV2A_PFIFO_SKIP");
+        on = !(e && *e == '0');
+    }
+    return on && nv2a_vk_draws_off();
+}
+
 static bool pfifo_pusher_should_stall(NV2AState *d)
 {
     return !can_fifo_access(d) ||
@@ -315,7 +348,7 @@ static void pfifo_run_pusher(NV2AState *d)
      * little */
     enum { kBatch = 64 };
     bool graph_held = false;
-    unsigned batch = 0;
+    unsigned batch = 0, since_progress = 0;
 
     while (!pfifo_pusher_should_stall(d)) {
         if (graph_held && ++batch >= kBatch) {
@@ -352,7 +385,27 @@ static void pfifo_run_pusher(NV2AState *d)
         uint32_t subroutine_state =
             GET_MASK(*dma_subroutine, NV_PFIFO_CACHE1_DMA_SUBROUTINE_STATE);
 
-        if (method_count) {
+        if (method_count && pfifo_skip_enabled() && pfifo_skippable(method_subchannel, method)) {
+            /* a run of skippable methods (pfifo_skippable): taken as read, all at once */
+            if (pfifo_puller_should_stall(d, graph_held)) {
+                break;
+            }
+            uint32_t n = MIN(method_count, (uint32_t)num_words_available), k = 1;
+            if (method_type == NV_PFIFO_CACHE1_DMA_STATE_METHOD_TYPE_INC) {
+                while (k < n && pfifo_skippable(method_subchannel, method + 4 * k)) {
+                    k++;
+                }
+            } else {
+                k = n;
+            }
+            d->pfifo.regs[NV_PFIFO_CACHE1_DMA_DATA_SHADOW] = ldl_le_p(word_ptr + (k - 1));
+            dma_get_v += (k - 1) * 4;
+            if (method_type == NV_PFIFO_CACHE1_DMA_STATE_METHOD_TYPE_INC) {
+                SET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_METHOD, (method + 4 * k) >> 2);
+            }
+            SET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_METHOD_COUNT, method_count - k);
+            (*dma_dcount) += k;
+        } else if (method_count) {
             /* data word of methods command */
             d->pfifo.regs[NV_PFIFO_CACHE1_DMA_DATA_SHADOW] = word;
 
@@ -457,14 +510,23 @@ static void pfifo_run_pusher(NV2AState *d)
             }
         }
 
-        __atomic_store_n(dma_get, dma_get_v, __ATOMIC_SEQ_CST);
-        nv2a_vk_progress();   /* a title waiting for the GPU (host/nv2a_host.c) */
+        /* xboxrecomp: the read position as each word is taken, and a title waiting for the GPU
+         * (host/nv2a_host.c) woken every 64 words and at the end -- the full fence and the check it
+         * pairs with, after every word, were most of this thread's time */
+        __atomic_store_n(dma_get, dma_get_v, __ATOMIC_RELEASE);
+        if (++since_progress >= 64) {
+            since_progress = 0;
+            __atomic_thread_fence(__ATOMIC_SEQ_CST);
+            nv2a_vk_progress();
+        }
 
         if (GET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_ERROR)) {
             break;
         }
     }
     pfifo_graph_end(d, &graph_held);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    nv2a_vk_progress();
 
     // NV2A_DPRINTF("DMA pusher done: max 0x%" HWADDR_PRIx ", 0x%" HWADDR_PRIx " - 0x%" HWADDR_PRIx "\n",
     //      dma_len, control->dma_get, control->dma_put);
