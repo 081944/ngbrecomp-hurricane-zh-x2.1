@@ -2728,6 +2728,20 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 }
             }
         }
+        // Ryu's shadow laid over what is already drawn (a pass sampling a shadow map, depth tested, not written): the
+        // same surface again by another vertex path, so its depth ties with the first pass's and the ties grow with
+        // the depth slope in pixels -- from 4x up the shadow on a wall broke up and flickered as he hung from a
+        // ledge (#106). Pulled as the towers' pieces are, by half a console pixel's worth of slope.
+        static const bool shadow_pull = [] { const char* e = std::getenv("NGB_D3D_SHADOW_PULL"); return !e || *e != '0'; }();
+        bool receiver = false;
+        for (int i = 0; i < 4; i++) receiver |= from_target[i] && info[i].shadow != 0;
+        if (shadow_pull && receiver && !(k.has_ds & kDsDynamicBias) && a.topology == Topology::Triangles && k.zen &&
+            !k.zwrite && k.has_ds) {
+            k.has_ds |= kDsDynamicBias;
+            float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
+            pull_slope = -SectionSlope() * std::max(scale, 1.0f);
+            pull_steps = -SectionPull();
+        }
     }
     // the console culls the CULLMODE winding (D3DCULL_CW 0x900, CCW 0x901); FRONTFACE says which
     // winding is the front, so the culled side is the front when the two agree
@@ -2845,7 +2859,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             // are drawn from -0.5 and land texel on pixel; half a texel more at each step moved the picture a
             // console pixel right and down as a menu opened (#99).
             static const bool rt_half = std::getenv("NGB_D3D_RT_HALF_TEXEL") != nullptr;   // the old way, to compare
-            if (from_target[i] && (info[i].shadow || rt_half)) {
+            static const bool sh_half = [] { const char* e = std::getenv("NGB_D3D_SHADOW_HALF_TEXEL"); return !e || *e != '0'; }();
+            if (from_target[i] && ((info[i].shadow && sh_half) || rt_half)) {
                 c.texsize[i][2] = -0.5f / float(d.width);
                 c.texsize[i][3] = -0.5f / float(d.height);
             }
