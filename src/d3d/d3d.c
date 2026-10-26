@@ -161,28 +161,55 @@ uint64_t xbox_ReadTimeStampCounter(void);
 static int s_cpu_load = -1;
 uint64_t ngb_load_exclude_begin(void);
 void ngb_load_exclude_end(uint64_t t0);
+/* Timed with the CPU's own cycle counter, a few nanoseconds a read: the title's clock (a system clock call
+ * and a division) read twice a call was a seventh of the title thread's time, some 250,000 calls a second.
+ * Its cycles are turned into the title's clock by a ratio measured against it once a frame (load_calibrate). */
+#if defined(__x86_64__) || defined(_M_X64)
+#include <x86intrin.h>
+static inline uint64_t host_cycles(void) { return __rdtsc(); }
+#define HOST_CYCLES 1
+#else
+static inline uint64_t host_cycles(void) { return xbox_ReadTimeStampCounter(); }
+#define HOST_CYCLES 0
+#endif
+static double s_title_per_cycle = HOST_CYCLES ? 0.0 : 1.0;   /* 0: not measured yet, nothing taken out */
+static void load_calibrate(void)
+{
+#if HOST_CYCLES
+    static uint64_t c0, t0;
+    uint64_t c = host_cycles(), t = xbox_ReadTimeStampCounter();
+    if (!c0) {
+        c0 = c;
+        t0 = t;
+    } else if (c - c0 > 100000000ull) {   /* over a tenth of a second or so: the ratio is good */
+        s_title_per_cycle = (double)(t - t0) / (double)(c - c0);
+    }
+#endif
+}
 static inline uint64_t host_start(void)
 {
     if (s_cpu_load < 0) {
         const char *e = getenv("NGB_CPU_LOAD");
         s_cpu_load = e && atoi(e) != 0;
     }
-    return s_cpu_load ? 0 : xbox_ReadTimeStampCounter();
+    return s_cpu_load ? 0 : host_cycles();
 }
 static inline void host_end(uint64_t t0)
 {
-    if (!t0)
+    if (!t0 || s_title_per_cycle == 0.0)
         return;
     uint64_t start = (uint64_t)MEM32(0xD21680) | (uint64_t)MEM32(0xD21684) << 32;
-    start += xbox_ReadTimeStampCounter() - t0;
+    start += (uint64_t)((double)(host_cycles() - t0) * s_title_per_cycle);
     MEM32(0xD21680) = (uint32_t)start;
     MEM32(0xD21684) = (uint32_t)(start >> 32);
 }
 
 int d3d_hook(int fn)
 {
-    if (fn == D3DF_D3DDevice_Swap)
+    if (fn == D3DF_D3DDevice_Swap) {
         ngb_frame_tick();
+        load_calibrate();
+    }
     if (s_hle < 0) {
         const char *e = getenv("NGB_RENDERER");
         s_hle = e && (!strcmp(e, "d3d") || !strcmp(e, "mirror"));
