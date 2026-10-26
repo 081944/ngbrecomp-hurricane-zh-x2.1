@@ -2840,7 +2840,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (s.textures[size_t(i)] && Describe(s.textures[size_t(i)], d)) {
             c.texsize[i][0] = float(d.width);
             c.texsize[i][1] = float(d.height);
-            if (from_target[i]) {
+            // A depth target read as a shadow map: half a texel up and left. A colour target is read as drawn: the
+            // game's copies of it (the pause menu's picture of the game behind it, 720x480 to 512x512 and back)
+            // are drawn from -0.5 and land texel on pixel; half a texel more at each step moved the picture a
+            // console pixel right and down as a menu opened (#99).
+            static const bool rt_half = std::getenv("NGB_D3D_RT_HALF_TEXEL") != nullptr;   // the old way, to compare
+            if (from_target[i] && (info[i].shadow || rt_half)) {
                 c.texsize[i][2] = -0.5f / float(d.width);
                 c.texsize[i][3] = -0.5f / float(d.height);
             }
