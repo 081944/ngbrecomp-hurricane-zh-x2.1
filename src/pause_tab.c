@@ -181,7 +181,7 @@ static void value_text(int row, char *out, size_t n)
 {
     int v = ngb_pc_setting(row);
     switch (row) {
-    case S_RENDER:  snprintf(out, n, v == 1 ? "1x (console)" : "%dx", v); break;
+    case S_RENDER:  snprintf(out, n, "%dx %dx%d", v, 720 * v, 480 * v); break;   /* the game's 720x480 times it (#105) */
     case S_TEXTURE:
     case S_MSAA:    if (v > 1) snprintf(out, n, "%dx", v); else snprintf(out, n, "Off"); break;
     case S_SHADOW:  snprintf(out, n, v == 1 ? "1x (console)" : "%dx", v); break;

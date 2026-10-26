@@ -397,8 +397,10 @@ void ngb_settings_change(NgbSettings *s, int row, int dir)
 void ngb_settings_row_text(const NgbSettings *s, int row, const char **label, char *val, size_t n)
 {
     static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+    /* the game draws a 720x480 picture at every aspect (480p); the scale multiplies it (#105) */
     static const char *const SCALE_LABEL[10] = {
-        "Native (1x)", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x" };
+        "1x 720x480", "2x 1440x960", "3x 2160x1440", "4x 2880x1920", "5x 3600x2400",
+        "6x 4320x2880", "7x 5040x3360", "8x 5760x3840", "9x 6480x4320", "10x 7200x4800" };
     val[0] = 0;
     switch (row) {
     case ROW_ASPECT:  *label = "Aspect ratio";  snprintf(val, n, "%s", ASPECT_LABEL[s->aspect]); break;
