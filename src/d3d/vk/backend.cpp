@@ -255,6 +255,9 @@ struct Target {
     bool drawn = false;
     bool ms_stale = false;     // img holds the picture, ms not yet: filled from img before the next pass
     Image fb;                  // a copy of img for a draw that reads the target it draws into (BindTexture)
+    uint32_t addr = 0;         // its guest memory (physical)
+    uint64_t stamp = 0;        // the CPU's writes to that memory when last drawn into (StampTarget)
+    bool stamped = false;
 };
 
 struct Tex {
@@ -512,6 +515,8 @@ private:
     Target* bound_ds_ = nullptr;
     bool rendering_ = false;
     void BeginRendering(Target* rt, Target* ds);
+    bool TargetStamp(const Target& t, uint64_t& stamp);
+    void StampTarget(Target& t) { t.stamped = TargetStamp(t, t.stamp); }
     void EndRendering();
     void FillMs(Target& t);    // MSAA image from the plain one (a picture kept across a setting change)
     VkSampler fill_sampler_ = VK_NULL_HANDLE;
@@ -972,8 +977,21 @@ void VulkanBackend::EndFrame() {
             uint64_t bytes = 0;
             for (const auto& t : textures_)
                 bytes += uint64_t(t.second.img.w) * t.second.img.h * 4 * (t.second.gen == 1 ? 4 : 3) / 3;
-            std::fprintf(stderr, "[TEXSTATS] frame %u: %zu textures, ~%llu MB, %zu evicted\n", frame_, textures_.size(),
-                         (unsigned long long)(bytes >> 20), gone);
+            uint64_t tbytes = 0;   // the render targets: kept by guest address (EnsureTarget)
+            for (const auto& t : targets_)
+                tbytes += uint64_t(t.second.img.w) * t.second.img.h * 4 * std::max<uint32_t>(t.second.samples, 1);
+            std::fprintf(stderr, "[TEXSTATS] frame %u: %zu textures, ~%llu MB, %zu evicted; %zu targets, ~%llu MB\n", frame_,
+                         textures_.size(), (unsigned long long)(bytes >> 20), gone, targets_.size(),
+                         (unsigned long long)(tbytes >> 20));
+            VmaBudget bud[VK_MAX_MEMORY_HEAPS];
+            vmaGetHeapBudgets(vma_, bud);
+            VmaTotalStatistics ts;
+            vmaCalculateStatistics(vma_, &ts);
+            std::fprintf(stderr, "[TEXSTATS] heap0 usage %llu MB budget %llu MB; vma blocks %u allocs %u, %llu MB in blocks %llu MB used\n",
+                         (unsigned long long)(bud[0].usage >> 20), (unsigned long long)(bud[0].budget >> 20),
+                         ts.total.statistics.blockCount, ts.total.statistics.allocationCount,
+                         (unsigned long long)(ts.total.statistics.blockBytes >> 20),
+                         (unsigned long long)(ts.total.statistics.allocationBytes >> 20));
         }
     }
     Begin();
@@ -1263,6 +1281,7 @@ Target* VulkanBackend::MakeTarget(const Surface&, bool depth, uint64_t key, uint
     t.gw = w;
     t.gh = h;
     t.samples = samples;
+    t.addr = uint32_t(key >> 1);
     VkImageUsageFlags u = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                           (depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
     if (!CreateImage(t.img, depth ? ds_format_ : kColorFormat, iw, ih, 1, 1, depth, false, u)) return nullptr;
@@ -1615,6 +1634,14 @@ void VulkanBackend::EndRendering() {
     rendering_ = false;
 }
 
+// The CPU's writes to the start of a target's memory, counted (nv2a_dirty_stamp): the GPU draws only into the
+// images here, never into guest memory, so a change since the last pass into it is the game putting something
+// else there -- a texture loaded where a target was, and that target left behind is stale (#81)
+bool VulkanBackend::TargetStamp(const Target& t, uint64_t& stamp) {
+    size_t len = std::min<size_t>(size_t(t.gw) * t.gh * 2, 64 << 10);
+    return len && nv2a_dirty_stamp(HostPtr(t.addr | 0x80000000u), len, &stamp) != 0;
+}
+
 void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     // a colour and a depth target of different sizes cannot share a pass (one scaled, one not):
     // the depth goes without, as the title's picture is in the colour
@@ -1664,6 +1691,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
             ca.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
         rt->drawn = true;
+        StampTarget(*rt);
     }
     if (ds) {
         da.imageView = ds->img.view;
@@ -1678,6 +1706,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
             da.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         }
         ds->drawn = true;
+        StampTarget(*ds);
     }
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     const Image& any = rt ? rt->img : ds->img;
@@ -1759,7 +1788,27 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     // A bump map (V8U8: nothing renders into that) or a mip chain is never a target: the game has put a
     // texture where it once drew, and the target left behind is not it (#16: the pond's ripple maps,
     // read as the target that memory had held, a picture of something else).
-    bool never_target = d.format == 0x28 || d.format == 0x17 || d.levels > 1;
+    // DXT and P8 are never drawn into either (#81: DXT backdrops read as the target once there, black).
+    bool never_target = d.format == 0x28 || d.format == 0x17 || d.levels > 1 || fi.compressed || d.format == 0x0B;
+    // And a target whose memory the CPU has written since it was last drawn into holds a texture now (#81):
+    // the target goes, and the texture is read from memory.
+    static const bool keep_stale = std::getenv("NGB_D3D_KEEP_STALE_TARGETS") != nullptr;
+    if (tit != targets_.end() && !keep_stale && tit->second.stamped && &tit->second != draw_rt_ &&
+        &tit->second != bound_rt_ && &tit->second != bound_ds_) {
+        uint64_t now;
+        if (TargetStamp(tit->second, now) && now != tit->second.stamp) {
+            Target& t = tit->second;
+            static int told;
+            if (told < 32 && ++told)
+                std::fprintf(stderr, "[D3D] target @%08X %ux%u: memory rewritten since drawn, read as texture fmt %X %ux%u\n",
+                             t.addr, t.gw, t.gh, d.format, d.width, d.height);
+            Retire(t.img);
+            if (t.ms.image) Retire(t.ms);
+            if (t.fb.image) Retire(t.fb);
+            targets_.erase(tit);
+            tit = targets_.end();
+        }
+    }
     if (tit != targets_.end() && !d.cube && d.depth == 1 && never_target) {
         static std::set<uint32_t> told;
         if (told.size() < 32 && told.insert(d.data).second)
