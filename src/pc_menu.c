@@ -588,6 +588,13 @@ int ngb_2d_screen_frame(int threed)
 {
     return s_screen_wide && (s_menu_now || ((s_menu_last || s_screen_2d) && threed < 30));
 }
+
+/* Its parts as of a call, for a renderer that draws later (gpu::Peek): 1 a menu now, 2 the last frame's menu or a
+ * 2D screen -- ngb_2d_screen_frame is (1) or (2 and fewer than 30 3D draws so far). */
+int ngb_2d_screen_flags(void)
+{
+    return s_screen_wide ? (s_menu_now ? 1 : 0) | (s_menu_last || s_screen_2d ? 2 : 0) : 0;
+}
 /* Before the game runs: the screen's shape (the flags are the game's to set up, then kept by the tick). */
 void ngb_game_aspect_init(int widescreen)
 {

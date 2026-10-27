@@ -40,6 +40,7 @@
 #include "gpu/shaders.h"
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
+#include "gpu/headers.h"
 #include "kernel/kernel.h"
 #include "vk/spirv.h"
 #include "nv2a_vk_share.h"   // the NV2A renderer's device and presenter (NGB_RENDERER=d3d)
@@ -222,6 +223,7 @@ extern "C" int nv2a_dirty_stamp(const void* host, size_t len, uint64_t* stamp); 
 extern "C" float ngb_hud_shape(void);   // src/pc_menu.c: the menus' and HUD's narrowing
 extern "C" int ngb_2d_stretched(void);
 extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
+extern "C" int ngb_2d_screen_flags(void);   // src/pc_menu.c: ngb_2d_screen_frame's parts, for gpu::Peek
 extern "C" int ngb_2d_screen_frame(int threed);   // src/pc_menu.c: a 2D screen (a menu, the title, a chapter
                                                 // card), knowing the 3D this frame has drawn so far
 // This frame's draws into display-sized targets, all and 3D (src/pc_menu.c: a frame of next to no 3D is a
@@ -345,8 +347,21 @@ public:
     void SetGamma(const uint8_t* ramp) override;
     void VisibilityBegin() override { vis_on_ = true; vis_test_++; }
     void VisibilityEnd(uint32_t report_va) override;
+    void CapturePeek(const State& s, Peek& p) override;
+    void CaptureQuick(QuickPeek& q) override;
+    void UsePeek(const Peek& p) override { pk_ = p; pk_given_ = true; }
+    void UseQuick(const QuickPeek& q) override { qk_ = q; }
 
 private:
+    // the game's side of the call being drawn (gpu::Peek) and of the frame (QuickPeek): taken here at the call, or
+    // given by a render thread's capture (pk_given_) -- the drawing reads these, never the game itself
+    Peek pk_;
+    QuickPeek qk_;
+    bool pk_given_ = false;
+    uint32_t towers_lo_ = 0, towers_hi_ = 0;   // the towers' chunk's data, up to the next loaded chunk's
+    uint32_t towers_frame_ = ~0u, peek_frames_ = 0;
+    // ngb_2d_screen_frame as of the call: a 2D screen, knowing the 3D drawn so far this frame
+    bool ScreenFrame(uint32_t threed) const { return (pk_.screen & 1) || ((pk_.screen & 2) && threed < 30); }
     // device: the NV2A renderer's, shared, when NGB_RENDERER=d3d (its presenter then shows our
     // frames in the game window); else one of our own, drawing unseen (mirror mode)
     bool CreateInstance();
@@ -1038,19 +1053,22 @@ float SectionSlope() {   // NGB_D3D_SECTION_SLOPE=f: console pixels' worth of de
     static const float f = std::getenv("NGB_D3D_SECTION_SLOPE") ? float(std::atof(std::getenv("NGB_D3D_SECTION_SLOPE"))) : 0.5f;
     return f;
 }
-// the loaded chunk whose data holds the guest address a (its data address), or 0
-uint32_t ChunkDataOf(uint32_t a) {
-    uint32_t best = 0;
+// the drawbridge towers' chunk as loaded ("KMD", its size 0x4FF470 at +0xC), as a range: its data to the next loaded
+// chunk's (or the end of memory), 0..0 when not loaded -- a draw's vertex buffer header in it (the loaded chunk whose
+// data holds it) for every draw, from one read of the table a frame
+void TowersRange(uint32_t& lo, uint32_t& hi) {
+    lo = hi = 0;
     for (uint32_t i = 0; i < kChunkSlots; i++) {
         uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
-        if (kernel::R32(e + 4) == 1 && base <= a && base > best) best = base;
+        if (kernel::R32(e + 4) == 1 && base && kernel::R32(base) == 0x00444D4B && kernel::R32(base + 0xC) == 0x004FF470)
+            lo = base;
     }
-    return best;
-}
-// whether the guest address a is in the drawbridge towers' chunk
-bool InTowersChunk(uint32_t a) {
-    uint32_t base = ChunkDataOf(a);
-    return base && kernel::R32(base) == 0x00444D4B && kernel::R32(base + 0xC) == 0x004FF470;   // "KMD", its size
+    if (!lo) return;
+    hi = 0xFFFFFFFFu;
+    for (uint32_t i = 0; i < kChunkSlots; i++) {
+        uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
+        if (kernel::R32(e + 4) == 1 && base > lo && base < hi) hi = base;
+    }
 }
 // the chunk slot of the map piece being drawn, or ~0u
 uint32_t DrawChunkSlot() {
@@ -1722,6 +1740,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
 
 void VulkanBackend::Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color,
                           float z, uint32_t stencil) {
+    if (!pk_given_) CapturePeek(s, pk_);
     if (ContinuousGlowEnabled() && (flags & kClearTarget)) InvalidateContinuousGlow(s.rt.data);
     Target* rt = (flags & kClearTarget) ? EnsureTarget(s.rt, false) : nullptr;
     Target* ds = (flags & (kClearZ | kClearStencil)) ? EnsureTarget(s.zs, true) : nullptr;
@@ -1902,7 +1921,7 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     const uint32_t* palette = nullptr;
     if (d.format == 0x0B && s.palettes[size_t(stage)]) {
         uint32_t pal = s.palettes[size_t(stage)];
-        palette = static_cast<const uint32_t*>(HostPtr(mem::ResourceData(pal)));
+        palette = static_cast<const uint32_t*>(HostPtr(ResourceDataOf(pal)));
         sig = Hash(palette, 1024, sig);
     }
     uint64_t key = uint64_t(d.data) << 8 | d.format;
@@ -2452,7 +2471,36 @@ void Transpose(const float* m, float* o) {
 
 #include "spark_aspect.h"
 
+void VulkanBackend::CapturePeek(const State& s, Peek& p) {
+    if (towers_frame_ != peek_frames_) {   // the chunk table once a frame (it changes as an area loads)
+        towers_frame_ = peek_frames_;
+        TowersRange(towers_lo_, towers_hi_);
+    }
+    p.draw_node = g_draw_node;
+    p.chunk_slot = int32_t(DrawChunkSlot());
+    uint32_t vb = s.streams[0].vb;
+    p.towers = vb && vb >= towers_lo_ && vb < towers_hi_;
+    p.stretched = uint8_t(ngb_2d_stretched());
+    p.screen = uint8_t(ngb_2d_screen_flags());
+    p.hud_shape = ngb_hud_shape();
+}
+
+void VulkanBackend::CaptureQuick(QuickPeek& q) {
+    peek_frames_++;
+    q.percent = ngb_pc_setting(20);
+    q.frozen = 0;
+    q.layer.clear();
+    if (!q.percent) return;
+    q.layer.resize(size_t(NGB_QUICK_WIDTH) * NGB_QUICK_HEIGHT);
+    if (!ngb_quick_layer(q.layer.data())) {   // (its input steps here, once a frame)
+        q.layer.clear();
+        return;
+    }
+    q.frozen = ngb_quick_frozen();
+}
+
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
+    if (!pk_given_) CapturePeek(s, pk_);
     st_.draws++;
     if (!Assemble(s, prim, start, count, indices, asm_)) { st_.noasm++; return; }
     ClassifyGlowTarget(s,asm_,count);
@@ -2712,7 +2760,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen && k.has_ds) {   // a pull of 0 turns it off
             // by the vertex buffer (its header in the towers' chunk), not the texture: every pass over the same mesh -- the
             // depth pre-pass, untextured, and Ryu's shadow laid over it -- then moves with it, or the shadow breaks up
-            if (s.streams[0].vb && InTowersChunk(s.streams[0].vb)) {
+            if (pk_.towers) {
                 k.has_ds |= kDsDynamicBias;   // the pull set at the draw: any setting without a pipeline of its own
                 {
                     // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
@@ -2916,7 +2964,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         }
     }
     if (a.pretransformed && rt && rt->gw >= 640) {
-        float k = ngb_hud_shape();
+        float k = pk_.hud_shape;
         const VertexElement& pe = a.elements[0];
         if ((a.regs & 1) && pe.format == 2 && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src) {
             const VertexBuffer& vb = a.buffers[pe.buffer];
@@ -3006,7 +3054,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     }
                 }
             }
-            if (ngb_2d_stretched()) {
+            if (pk_.stretched) {
                 // The game's 2D in its widescreen mode, the console's 16:9 look, kept 16:9: on a wider screen
                 // (21:9) narrowed to the middle 16:9 (kx), on a narrower one (16:10) shortened to it (ky);
                 // a 2D screen (menus, the title, chapter cards) whole, clipped there; in play the HUD's
@@ -3016,12 +3064,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 // in play, a screen effect -- the water's surface seen from under it, a flash, a vignette, a
                 // distortion reading the frame (a render target) -- fills the screen as drawn: anything
                 // covering most of the screen, or reading a render target, is the 3D's, not the HUD's
-                if (!ngb_2d_screen_frame(int(threed_)) && (rt_tex || (x1 - x0 >= w * 0.85f && y1 - y0 >= h * 0.75f))) spans = true;
+                if (!ScreenFrame(threed_) && (rt_tex || (x1 - x0 >= w * 0.85f && y1 - y0 >= h * 0.75f))) spans = true;
                 static int centred = -1;
                 if (centred < 0) centred = std::getenv("NGB_HUD_CENTER") != nullptr;
                 if (n && ky < 0.999f && !paused && !spans) {
                     float ax = w / 2, ay = h / 2;
-                    if (!ngb_2d_screen_frame(int(threed_)) && !centred) {
+                    if (!ScreenFrame(threed_) && !centred) {
                         HudPlace(x0, x1, y0, y1, w, h, ax, ay);
                         if (x1 - x0 < w * 0.89f && y1 - y0 < h * 0.9f && hud_boxes_.size() < 2048)
                             hud_boxes_.push_back({x0, x1, y0, y1, st_.drawn});
@@ -3039,7 +3087,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     c.ext[1] = w / 2;
                     // In play the HUD's elements to the screen's sides (HudPlace). NGB_HUD_CENTER=1: all about
                     // the middle.
-                    if (!centred && !ngb_2d_screen_frame(int(threed_))) {
+                    if (!centred && !ScreenFrame(threed_)) {
                         float ax = w / 2, ay = h / 2;
                         HudPlace(x0, x1, y0, y1, w, h, ax, ay);
                         c.ext[1] = ax;
@@ -3052,7 +3100,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     }
                 }
             } else if (n && k < 0.999f && !paused &&
-                       (ngb_2d_screen_frame(int(threed_)) || ((hud_menu_ || hud_cover_ >= 0.5f) && threed_ < 30))) {
+                       (ScreenFrame(threed_) || ((hud_menu_ || hud_cover_ >= 0.5f) && threed_ < 30))) {
                 // A 2D screen in the game's 4:3 mode (Menus 4:3; or the first frame of one, before the game
                 // switches): the console's 4:3 picture, all of it narrowed alike about the middle and clipped
                 // there, black beyond (its pieces -- tiles, scrolling layers reaching off the screen -- only
@@ -3116,9 +3164,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                          SimpleState(s, kMZFunc));
             for (int k2 = 0; k2 < g_draw_stack_n; k2++) std::fprintf(vf, " %08X", g_draw_stack[k2]);
             std::fprintf(vf, "\n");
-            if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000) {
-                std::fprintf(vf, "node %08X", g_draw_node);
-                for (uint32_t o = 0; o < 0x60; o += 4) std::fprintf(vf, " %08X", kernel::R32(g_draw_node + o));
+            if (pk_.draw_node >= 0x10000 && pk_.draw_node < 0x4000000) {
+                std::fprintf(vf, "node %08X", pk_.draw_node);
+                for (uint32_t o = 0; o < 0x60; o += 4) std::fprintf(vf, " %08X", kernel::R32(pk_.draw_node + o));
                 std::fprintf(vf, "\n");
             }
             for (int m : {256, 2, 3}) {
@@ -3210,24 +3258,24 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 id_file_frame_ = presents_ + 1;
             }
             if (id_file_) {
-                std::fprintf(id_file_, "%u piece %08X chunk %d tex %08X n %u", n, g_draw_node, int(DrawChunkSlot()),
+                std::fprintf(id_file_, "%u piece %08X chunk %d tex %08X n %u", n, pk_.draw_node, pk_.chunk_slot,
                              s.textures[0], count);
-                if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000)
-                    for (uint32_t o = 0; o < 0x20; o += 4) std::fprintf(id_file_, " %08X", kernel::R32(g_draw_node + o));
+                if (pk_.draw_node >= 0x10000 && pk_.draw_node < 0x4000000)
+                    for (uint32_t o = 0; o < 0x20; o += 4) std::fprintf(id_file_, " %08X", kernel::R32(pk_.draw_node + o));
                 std::fprintf(id_file_, "\n");
             }
         }
     } else if (IdView() && id_opaque) {
         // NGB_D3D_IDVIEW: one of 24 hues by the map piece and texture (or the draw's vertex buffer), the same every
         // frame; the legend, each colour's draws, goes to the log every 5 s
-        uint32_t piece = g_draw_node, tex = s.textures[0];
+        uint32_t piece = pk_.draw_node, tex = s.textures[0];
         uint32_t key = piece ? piece * 2654435761u ^ tex * 40503u : uint32_t(s.streams[0].vb) * 2654435761u ^ tex;
         uint32_t idx = (key >> 7) % 24;
         c.qsnap[2] = float(idx + 1);
         static std::map<uint32_t, std::string> legend;
         static uint32_t last = 0;
         char line[160];
-        std::snprintf(line, sizeof line, "piece %08X chunk %d tex %08X n %u", piece, int(DrawChunkSlot()), tex, count);
+        std::snprintf(line, sizeof line, "piece %08X chunk %d tex %08X n %u", piece, pk_.chunk_slot, tex, count);
         std::string& e = legend[idx];
         if (e.find(line) == std::string::npos && e.size() < 600) e += std::string(e.empty() ? "" : "; ") + line;
         if (presents_ - last >= 300) {
@@ -3436,7 +3484,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             char name[64];
             std::snprintf(name, sizeof(name), "step_%05u_%04u_tex0", presents_, st_.drawn);
             const uint32_t* pal = d0.format == 0x0B && s.palettes[0]
-                ? static_cast<const uint32_t*>(HostPtr(mem::ResourceData(s.palettes[0]))) : nullptr;
+                ? static_cast<const uint32_t*>(HostPtr(ResourceDataOf(s.palettes[0]))) : nullptr;
             DumpTexture(d0, Format(d0.format), static_cast<const uint8_t*>(HostPtr(d0.data)), pal, dump_dir_.c_str(), name);
         }
         std::fprintf(stderr, "       rt format %08X zs format %08X tfactor %08X\n", s.rt.format, s.zs.format, s.rs[kRsTextureFactor]);
@@ -3821,6 +3869,11 @@ void VulkanBackend::TraceFrame(Target& t) {
 }
 
 void VulkanBackend::Present(const Surface& front) {
+    if (!pk_given_) {
+        static const State none;
+        CapturePeek(none, pk_);
+        CaptureQuick(qk_);
+    }
     presents_++;
     id_count_ = 0;
     if (id_file_) std::fflush(id_file_);
@@ -3914,11 +3967,11 @@ void VulkanBackend::Present(const Surface& front) {
             static int mode_log = std::getenv("NGB_MODE_LOG") ? std::atoi(std::getenv("NGB_MODE_LOG")) : 0;
             if (mode_log && (mode_log > 1 || presents_ % 30 == 0))
                 std::fprintf(stderr, "[MODE] %u stretched %d screen %d 3d %u (off-screen %u) draws %d paused %d cover %.2f\n",
-                             presents_, ngb_2d_stretched(), ngb_2d_screen_frame(int(threed_)), threed_, offscreen3d_,
+                             presents_, pk_.stretched, ScreenFrame(threed_), threed_, offscreen3d_,
                              ngb_frame_draws, paused_now_, paused_cover_);
             float bars = 0, bars_y = 0;
-            if (ngb_2d_stretched() && ngb_2d_screen_frame(int(threed_)) && t->gw >= 640) {   // (not in play: 3D the screen's shape)
-                float km = ngb_hud_shape() * 4.0f / 3.0f, ky = 0.75f / ngb_hud_shape();
+            if (pk_.stretched && ScreenFrame(threed_) && t->gw >= 640) {   // (not in play: 3D the screen's shape)
+                float km = pk_.hud_shape * 4.0f / 3.0f, ky = 0.75f / pk_.hud_shape;
                 if (km < 0.999f) bars = (1 - km) / 2;
                 if (ky < 0.999f) bars_y = (1 - ky) / 2;
                 // a menu drawn over the paused game (the save statue's) shows the game around it; the menus with

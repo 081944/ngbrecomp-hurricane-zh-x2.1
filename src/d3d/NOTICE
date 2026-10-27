@@ -4,6 +4,9 @@ Xbox XBE Recomp SDK (https://github.com/TGP482/Xbox-XBERecomp, runtime/gpu, comm
 SCDA-XBERecomp (https://github.com/TGP482/SCDA-XBERecomp; MIT License, Copyright (c) 2026 TGP482,
 Joshhhuaaa), whose xdk/d3d8.cpp and gpu/d3d12.cpp src/d3d/hle.cpp and src/d3d/vk/backend.cpp
 follow. Adapted to this project: Vulkan in place of Direct3D 12, Ninja Gaiden Black's D3D8LTCG conventions.
+src/d3d/gpu/threaded.cpp follows the SDK's runtime/gpu/render_thread.cpp (https://github.com/TGP482/XboxXBE-Recomp,
+commit 0fd0044, 2026-10-26; same license and copyright), with the resource headers kept as copies the renderer
+reads through (gpu/headers.h) and the game's side of each call (gpu::Peek) recorded with it.
 src/d3d/compat/ maps that code's host interfaces (guest memory, logging, DXGI format names) onto
 this runtime.
 

@@ -90,14 +90,13 @@ void VulkanBackend::QuickMenuBackground(Image& dst) {
 }
 
 void VulkanBackend::QuickMenu(Image& dst) {
-    int percent = ngb_pc_setting(20);
-    if (!percent) return;
-    uint32_t pixels[NGB_QUICK_WIDTH * NGB_QUICK_HEIGHT];
-    if (!ngb_quick_layer(pixels)) return;
+    int percent = qk_.percent;   // (the frame's, CaptureQuick)
+    if (!percent || qk_.layer.size() != size_t(NGB_QUICK_WIDTH) * NGB_QUICK_HEIGHT) return;
+    const uint32_t* pixels = qk_.layer.data();
     if (!quick_layer_.image &&
         !CreateImage(quick_layer_, kColorFormat, NGB_QUICK_WIDTH, NGB_QUICK_HEIGHT, 1, 1, false, false,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) return;
-    VkDeviceSize at = Upload(pixels, sizeof(pixels), 16);
+    VkDeviceSize at = Upload(pixels, qk_.layer.size() * sizeof(uint32_t), 16);
     Barrier(quick_layer_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     VkBufferImageCopy c{};
     c.bufferOffset = at;
@@ -128,7 +127,7 @@ void VulkanBackend::QuickMenu(Image& dst) {
     if (!pipe || !quick_sampler_) return;
     // Apply the background effect before the crisp menu. Waiting for an
     // action and Quick Menu Pause Off both bypass this pass entirely.
-    if (ngb_quick_frozen()) QuickMenuBackground(dst);
+    if (qk_.frozen) QuickMenuBackground(dst);
     Barrier(quick_layer_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Barrier(dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingAttachmentInfo ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};

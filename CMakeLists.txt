@@ -164,7 +164,8 @@ if(NGB_NV2A_VK)
         src/d3d/vk/spirv.cpp
         src/d3d/gpu/shaders.cpp
         src/d3d/gpu/vertex.cpp
-        src/d3d/gpu/texture.cpp)
+        src/d3d/gpu/texture.cpp
+        src/d3d/gpu/threaded.cpp)
     target_include_directories(ngb_d3d PRIVATE
         src
         src/d3d src/d3d/compat ${XBOXRECOMP_DIR}/src/nv2a_vk/host

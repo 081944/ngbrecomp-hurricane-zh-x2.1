@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "gpu/state.h"
 
@@ -14,9 +15,33 @@ enum : uint32_t {
     kClearStencil = 0x02,
 };
 
+// What the renderer takes from the game besides the Direct3D state, as of the call it draws for: a render thread
+// draws later, when the game has moved on. Taken on the title's thread (Backend::CapturePeek), handed back before
+// the call is drawn (Backend::UsePeek); a backend that draws at once takes it itself.
+struct Peek {
+    uint32_t draw_node = 0;    // the map piece being drawn (g_draw_node), 0 if none
+    int32_t chunk_slot = -1;   // its chunk slot, -1 if none (debugging views)
+    uint8_t towers = 0;        // stream 0's vertex buffer in the drawbridge towers' chunk (the section pull)
+    uint8_t stretched = 0;     // the game's 2D in its widescreen mode (ngb_2d_stretched)
+    uint8_t screen = 0;        // ngb_2d_screen_flags: 1 a menu now, 2 the last frame's menu or a 2D screen
+    float hud_shape = 1;       // ngb_hud_shape
+};
+// The quick menu as the frame is presented (src/quick_ui.c draws it on the CPU)
+struct QuickPeek {
+    int percent = 0;           // its size, 0 off
+    int frozen = 0;            // the game paused behind it: its background effect
+    std::vector<uint32_t> layer;   // NGB_QUICK_WIDTH x NGB_QUICK_HEIGHT, empty when it is closed
+};
+
 class Backend {
 public:
     virtual ~Backend() = default;
+    // the game's side of a call (Peek) and of a frame (QuickPeek), on the title's thread; and given back before
+    // the call is drawn -- from then on the backend takes nothing itself
+    virtual void CapturePeek(const State&, Peek&) {}
+    virtual void CaptureQuick(QuickPeek&) {}
+    virtual void UsePeek(const Peek&) {}
+    virtual void UseQuick(const QuickPeek&) {}
     // the title's back buffer size, the output window may differ
     virtual bool Init(uint32_t width, uint32_t height) = 0;
     // rects: count D3DRECTs (4 x int32), null for the whole viewport

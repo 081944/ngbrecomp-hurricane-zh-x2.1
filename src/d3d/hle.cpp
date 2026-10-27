@@ -589,6 +589,11 @@ void Start() {
         std::fprintf(stderr, "[D3D] renderer init failed\n");
         if (!g_mirror) ngb_renderer_fatal("The renderer could not start on this GPU (details above in the log).");
     }
+    // NGB_D3D_THREAD=capture: the renderer draws from a recording of the calls (src/d3d/gpu/threaded.cpp)
+    if (g_backend && std::getenv("NGB_D3D_THREAD") && std::strcmp(std::getenv("NGB_D3D_THREAD"), "0")) {
+        g_backend = gpu::CreateThreadedBackend(std::move(g_backend));
+        std::fprintf(stderr, "[D3D] drawing from a recording of the calls\n");
+    }
     std::fprintf(stderr, "[D3D] renderer on (%s)\n", g_mirror ? "mirroring the NV2A emulation" : "drawing to the window");
 }
 
