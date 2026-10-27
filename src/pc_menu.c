@@ -239,7 +239,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_LOADDETAIL, "Lower Detail Under Load" },
     { D_LOADDETAIL, "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker." },
     { T_RTHREAD, "Experimental Render Thread" },
-    { D_RTHREAD, "Drawing on a thread of its own. May glitch. From the next start." },
+    { D_RTHREAD, "Drawing on a thread of its own. May glitch. Needs restart." },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
     { T_MSAA0 + 0, "Off" }, { T_MSAA0 + 1, "2x" }, { T_MSAA0 + 2, "4x" }, { T_MSAA0 + 3, "8x" },

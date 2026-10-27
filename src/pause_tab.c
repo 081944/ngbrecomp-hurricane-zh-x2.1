@@ -123,7 +123,7 @@ static const char *const s_help[S_COUNT] = {
     "ARCADE NINJA GAIDEN in the main menu without earning it.",
     "MOVIE THEATER in the main menu without earning it.",
     "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.",
-    "Drawing on a thread of its own. May glitch. From the next start.",
+    "Drawing on a thread of its own. May glitch. Needs restart.",
     "Difficulties, costumes and the main menu's extras, without earning them. Saved.",
 };
 
