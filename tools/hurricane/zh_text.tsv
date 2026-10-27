@@ -228,3 +228,7 @@ cat	Controls	按键	P
 	Skip intros and warnings	跳过片头与警告	P
 	Up/Down or mouse: choose    Left/Right or click: change    A / Enter: select    B / Esc / F1: resume	上/下或鼠标：选择　　左/右或点击：更改　　A / Enter：确定　　B / Esc / F1：继续游戏	P
 	Changes apply when you resume. Skip intros and the startup screen take effect next start.	继续游戏时应用更改。跳过片头与启动画面在下次启动时生效。	P
+	The resolution the game is drawn at: the console's 720x480 times this.	以主机 720x480 的倍数渲染。	E
+	Optional changes to how the game plays, each off unless chosen: the Quick Menu.	可选的玩法改动，默认关闭。	E
+	Resolution, texture filtering, anti-aliasing, shadows, the glow, and two options for slower PCs.	分辨率、纹理、抗锯齿、阴影、泛光等。	E
+	Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved. And the unlocks.	难关助力与解锁，不保存。	E
