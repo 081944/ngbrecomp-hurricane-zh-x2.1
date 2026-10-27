@@ -201,7 +201,7 @@ debug knobs out once it is the default.
 
 ## The render thread (2026-10-27, opt-in)
 
-`NGB_D3D_THREAD=1` draws on a thread of its own (src/d3d/gpu/threaded.cpp, after TGP482's SDK
+Graphics > Experimental Render Thread (from the next start), or `NGB_D3D_THREAD=1` (`0` off) over it, draws on a thread of its own (src/d3d/gpu/threaded.cpp, after TGP482's SDK
 render_thread.cpp): the title's thread records each call -- the state that changed, the resource headers
 it names (gpu/headers.h), its indices and rects, the vertices of a DrawVerticesUP, and the game's side of
 it (gpu::Peek: the map piece, the towers' chunk, the 2D and HUD layout flags; gpu::QuickPeek once a frame) --

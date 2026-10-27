@@ -573,6 +573,7 @@ void After(int fn, Call c) {
 }
 
 extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c
+extern "C" int ngb_pc_setting(int which);                            // src/ingame_menu.c
 
 bool g_started;
 
@@ -592,8 +593,10 @@ void Start() {
         std::fprintf(stderr, "[D3D] renderer init failed\n");
         if (!g_mirror) ngb_renderer_fatal("The renderer could not start on this GPU (details above in the log).");
     }
-    // NGB_D3D_THREAD=capture: the renderer draws from a recording of the calls (src/d3d/gpu/threaded.cpp)
-    if (g_backend && std::getenv("NGB_D3D_THREAD") && std::strcmp(std::getenv("NGB_D3D_THREAD"), "0")) {
+    // Graphics > Render Thread (experimental), or NGB_D3D_THREAD=1 or 0 over it; NGB_D3D_THREAD=capture: the
+    // renderer draws from a recording of the calls on the title's thread (src/d3d/gpu/threaded.cpp)
+    const char* thread = std::getenv("NGB_D3D_THREAD");
+    if (g_backend && (thread ? std::strcmp(thread, "0") != 0 : ngb_pc_setting(30) != 0)) {
         g_backend = gpu::CreateThreadedBackend(std::move(g_backend));
         std::fprintf(stderr, "[D3D] drawing from a recording of the calls\n");
     }

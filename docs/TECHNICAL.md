@@ -289,7 +289,8 @@ records how far into the frame the GPU got there, and over 94% the game lowers i
 swaps Ryu's shadow map for the round shadow under him (sub_001D5E30). The emulated GPU only reads the
 push buffer while the renderer draws, so that callback reports no GPU time (`ngb_gpu_frame_reached`,
 src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
-`NGB_GPU_LOAD=1` keeps the game's measurement.
+Graphics > Lower Detail Under Load keeps the game's measurement, which on a slower PC steadied the frame
+time (#114); `NGB_GPU_LOAD=1` or `0` overrides the setting.
 
 ## The renderer
 

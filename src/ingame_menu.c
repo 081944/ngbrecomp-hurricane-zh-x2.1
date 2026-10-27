@@ -86,8 +86,9 @@ void ngb_menu_set_running(const NgbSettings *s)
  * percent, in tens), 21 infinite items, 22 infinite projectiles (cheats, src/cheats.c), 23 positional
  * audio (0 off, 1 the HRTF filters, 2 panning only; #30, #86), 24 the HUD (src/hud.c, #80), 25 the audio
  * output (0 auto, 1 stereo, 2 5.1; src/audio), 26-28 the main menu's MISSIONS, ARCADE NINJA GAIDEN and
- * MOVIE THEATER unlocked (src/cheats.c, saved). A change applies at once (8, 9 and 25 at the next start) and is saved, the cheats'
- * not. */
+ * MOVIE THEATER unlocked (src/cheats.c, saved), 29 Lower Detail Under Load (src/d3d/d3d.c), 30 the render thread
+ * (src/d3d/hle.cpp, experimental). A change applies at once (8, 9, 25 and 30 at the next start) and is saved, the
+ * cheats' not. */
 int ngb_cheat(int which);
 void ngb_cheat_set(int which, int on);
 void ngb_audio_set_positional(int mode);  /* src/audio/dsound.c: positional audio (23) */
@@ -135,6 +136,8 @@ int ngb_pc_setting(int which)
     case 20: return s_running.quick_menu_scale;
     case 23: return s_running.positional_audio;
     case 24: return s_running.show_hud;
+    case 29: return s_running.detail_under_load;
+    case 30: return s_running.render_thread;
     case 25: return s_running.audio_output;
     default: return s_running.show_fps;
     }
@@ -169,6 +172,8 @@ void ngb_pc_set_setting(int which, int value)
     case 18: s_running.smooth_glow = !!value; break;
     case 23: s_running.positional_audio = value < 0 ? 0 : value > 2 ? 2 : value; ngb_audio_set_positional(s_running.positional_audio); break;
     case 24: s_running.show_hud = !!value; break;
+    case 29: s_running.detail_under_load = !!value; break;
+    case 30: s_running.render_thread = !!value; break;   /* at the next start */
     case 25:   /* the mixer's at the next start; the arcade's at its next */
         s_running.audio_output = value < 0 ? 0 : value > 2 ? 2 : value;
         ngb_audio_set_output(s_running.audio_output);

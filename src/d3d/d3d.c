@@ -328,13 +328,15 @@ void d3d_visibility_hook(void)
  * under him -- and raises it again under 90%. Here the emulated GPU only reads the push buffer, the
  * renderer draws, so how late it gets to the callback says nothing of the drawing: on some PCs it is
  * late now and then, and the shadow came and went every second or so, in nearly every area. The GPU's
- * share is reported as nothing; NGB_GPU_LOAD=1 keeps the title's own measurement. */
+ * share is reported as nothing, unless Graphics > Lower Detail Under Load keeps the title's own measurement:
+ * on a slower PC its easing off steadied the frame time (#114). NGB_GPU_LOAD=1 or 0 overrides the setting. */
+int ngb_pc_setting(int which);
 void ngb_gpu_frame_reached(void)
 {
-    static int keep = -1;
-    if (keep < 0)
-        keep = getenv("NGB_GPU_LOAD") && atoi(getenv("NGB_GPU_LOAD")) != 0;
-    if (keep) {
+    static int forced = -2;
+    if (forced == -2)
+        forced = getenv("NGB_GPU_LOAD") ? atoi(getenv("NGB_GPU_LOAD")) != 0 : -1;
+    if (forced >= 0 ? forced : ngb_pc_setting(29)) {
         sub_0030E060();
         return;
     }
