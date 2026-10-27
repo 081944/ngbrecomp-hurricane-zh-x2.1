@@ -1506,13 +1506,17 @@ static int tk_ready(void)
         if (t) {                  /* on a dark plate of their own: the pictures are wider than tall, the game's
                                    * L and R plates square, and showed above and below them */
             for (int i = 0; i < 2; i++) {
-                float x0 = (float)(i * 32 * KS), r = 4.0f * KS;
+                /* a rounded square a texel in from the cell's edges, its edge's pixels partly covered (no
+                 * steps along the corners once the texture is filtered down) */
+                float x0 = (float)(i * 32 * KS), r = 4.0f * KS, in = 1.0f, cw = 21.0f * KS, ch = 23.0f * KS;
                 for (int Y = 0; Y < 23 * KS; Y++)
                     for (int X = 0; X < 21 * KS; X++) {
-                        float dx = fmaxf(0, fmaxf(r - X, X + 1 - (21 * KS - r))),
-                              dy = fmaxf(0, fmaxf(r - Y, Y + 1 - (23 * KS - r)));
-                        if (dx * dx + dy * dy <= r * r)
-                            px[Y * 64 * KS + (int)x0 + X] = 0xFF26262Bu;
+                        float qx = X + 0.5f, qy = Y + 0.5f;
+                        float dx = fmaxf(0, fmaxf(in + r - qx, qx - (cw - in - r))),
+                              dy = fmaxf(0, fmaxf(in + r - qy, qy - (ch - in - r)));
+                        float a = fminf(1, fmaxf(0, r - sqrtf(dx * dx + dy * dy) + 0.5f));
+                        if (a > 0)
+                            px[Y * 64 * KS + (int)x0 + X] = (uint32_t)lroundf(a * 255) << 24 | 0x26262Bu;
                     }
                 picture_icon(px, 64 * KS, 32 * KS, x0 + KS, KS, x0 + 20 * KS, 22 * KS, i ? "PS3_R2" : "PS3_L2", at);
             }
