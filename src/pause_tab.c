@@ -2455,15 +2455,19 @@ static void draw_exit_page(int focused, int row, int armed)
         page_text(px, m, s_exit_label[i], 20, y + 19, 20,
                   sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0);
     }
-    if (focused && row >= 0 && row < EXIT_ROWS)
+    if (focused && row >= 0 && row < EXIT_ROWS && !armed)   /* (not under the box: it showed through it) */
         page_text(px, m, s_exit_help[row], 445, 12 + EXIT_ROWS * (ROW_H + 4) + 18, 15, 0xFFFFFF, 2);
-    (void)armed;
     upload(&s_tex[2], px);
 }
 
 static void pt_exit_draw(void)
 {
-    if (ngb_confirm_is_open()) {                       /* Are you sure? (over the page) */
+    if (ngb_confirm_is_open()) {                       /* Are you sure? (over the page, without its help line) */
+        if (s_drawn.page != 1 || s_drawn.row != -2) {
+            draw_exit_page(1, s_exit_row, 1);
+            s_drawn.page = 1;
+            s_drawn.row = -2;
+        }
         sprite(PT_SPRITE + 2, PAGE_X, PAGE_Y, 0x1CC, 0, 1.0f, 1.0f, 1.0f, 1.0f);
         int r = ngb_confirm_tick();
         if (r == 1) {
@@ -2518,7 +2522,7 @@ static void pt_exit_draw(void)
         play_sound(s_focus ? 6 : 3);
     int shown = s_exit_row * 4 + s_exit_armed + 1;
     if (s_drawn.page != 1 || s_focus != s_drawn.focused || shown != s_drawn.row) {
-        draw_exit_page(s_focus, s_exit_row, s_exit_armed);
+        draw_exit_page(s_focus, s_exit_row, 0);
         s_drawn.page = 1;
         s_drawn.focused = s_focus;
         s_drawn.row = shown;
