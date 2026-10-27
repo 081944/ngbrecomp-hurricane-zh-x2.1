@@ -3428,7 +3428,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                      "rt %08X %ux%u tex0 %08X @%08X %X %ux%u%s tex1 %08X %X tss0 %u %u %u %u|%u %u %u tss1 %u %u %u|%u "
                      "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X signed %u%u%u%u uv %s "
                      "shaders %016llx %016llx light %X spec %g %g %g pow %g csign %X %X %X %X lw %08X "
-                     "pt %u %u %g %g %g %u %g %g %g regs %X\n",
+                     "pt %u %u %g %g %g %u %g %g %g regs %X stk %08X %08X %08X %08X\n",
                      presents_, st_.drawn, prim, count, a.pretransformed, prog, s.ps ? s.ps->handle : 0, k.blend, k.src,
                      k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten, s.rt.data, rt ? rt->gw : 0, rt ? rt->gh : 0,
                      s.textures[0], h0 ? t0d.data : 0, h0 ? t0d.format : 0, h0 ? t0d.width : 0, h0 ? t0d.height : 0,
@@ -3472,7 +3472,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                      // vertex's attributes (bit 9: texture coordinates 0; #51)
                      s.rs[kRsPointSpriteEnable], s.rs[kRsPointScaleEnable], Bits(s.rs[kRsPointSize]),
                      Bits(s.rs[kRsPointSizeMin]), Bits(s.rs[kRsPointSizeMax]), prim == 1 ? 1u : 0u,
-                     Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), a.regs);
+                     Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), a.regs, g_draw_stack_n>0?g_draw_stack[0]:0, g_draw_stack_n>1?g_draw_stack[1]:0, g_draw_stack_n>2?g_draw_stack[2]:0, g_draw_stack_n>3?g_draw_stack[3]:0);
     }
     if (int(presents_) == g_step_frame)
         std::fprintf(stderr, "[STEP] %u prim %u count %u pre %d prog %d ps %08X blend %u %X %X op %X wmask %X zen %u "

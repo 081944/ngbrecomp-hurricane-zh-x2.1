@@ -192,7 +192,8 @@ The boot "Warnings" screen is always skipped (`NGB_KEEP_WARNINGS=1` shows it).
 
 For glitches that only show in play: F7 records the next 300 frames to `~/ngb-trace-<n>/` -- a
 small picture of each frame and a line per draw (its state: targets, textures, combiner stages,
-blending, fog, vertex colour, clears) in `draws.txt` (`NGB_TRACE_FRAMES=<n>` frames;
+blending, fog, vertex colour, clears, and `stk`: the game's return addresses on its stack, innermost
+first, which say what drew it) in `draws.txt` (`NGB_TRACE_FRAMES=<n>` frames;
 `NGB_TRACE_PRE=1` only the screen-space draws and the first draw after each target change;
 `NGB_TRACE_NOPIC=1` no pictures, `=copy` pictures only around a copy into a 512x512 target, the
 cut cross-fade's). F8 appends Ryu's position to `ngb_positions.txt`
@@ -291,6 +292,13 @@ push buffer while the renderer draws, so that callback reports no GPU time (`ngb
 src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
 Graphics > Lower Detail Under Load keeps the game's measurement, which on a slower PC steadied the frame
 time (#114); `NGB_GPU_LOAD=1` or `0` overrides the setting.
+
+The game draws each frame from render lists it builds as trees of nodes, all cut from one pool of
+768 (src/render_list.c). When the pool is used up a node is silently left out, and the HUD, the 2D
+layer and the screen effects go in last: in a fight with enough enemies, blood and sparks for 768
+nodes before them, the HUD disappeared for the busiest ten or twenty frames of a multi-kill, its
+sprites piling up until a quieter frame drew them all at once (#96). sub_00308BF0, the allocating
+insert, gives out 4096 more nodes of ours after the game's; `NGB_NODE_POOL=0` keeps the game's limit.
 The weapon-hit sparks are lines the game draws 2.7 to 3 pixels wide; `NGB_SPARK_WIDTH=0.5` (0.1 to 1)
 makes them thinner, never under a pixel (#117).
 
