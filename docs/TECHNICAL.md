@@ -268,7 +268,9 @@ pause menu's L and R plates too (on a dark plate the size of the game's), and R1
 game draws White's icon smaller); the Controls page names them the same way. The Controls page shows the
 two-button actions (Ninpo, Wind Run) as the pad's button pictures, Xelu's Xbox 360 ones on an Xbox pad
 (`assets/prompts/xbox`). The game's Button Settings
-page keeps its picture of the Xbox controller. `NGB_PAD_PROMPTS=ps` shows them whatever the pad.
+page keeps its picture of the Xbox controller. The Controls page's Button Prompts picks the set: Auto (the
+device in use, as above), Xbox, PlayStation or PC (the keys), saved in `controls.ini` (`button_prompts`).
+`NGB_PAD_PROMPTS=ps` shows the PlayStation's whatever the setting, any other value the Xbox's.
 
 In the game's menus (main menu, Options, the pause menu and its tabs, message boxes) the mouse
 points: the game's own cursor follows it onto the item under it (a press of the pad at a time,

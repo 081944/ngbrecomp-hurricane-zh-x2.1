@@ -152,8 +152,9 @@ static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
 #define CTL_INVX A_COUNT
 #define CTL_START (A_COUNT + 3)
 #define CTL_MOUSE (A_COUNT + 4)   /* Camera Sensitivity: a value, Left / Right (#67) */
-#define CTL_DEF  (A_COUNT + 5)
-#define CTL_ROWS (A_COUNT + 6)
+#define CTL_PROMPTS (A_COUNT + 5) /* Button Prompts: Auto, Xbox, PlayStation, PC (#113) */
+#define CTL_DEF  (A_COUNT + 6)
+#define CTL_ROWS (A_COUNT + 7)
 #define CTL_TOGGLE(r) ((r) >= CTL_INVX && (r) <= CTL_START)
 static const char *const s_ctl_toggle_name[4] = {
     "Invert Camera X", "Invert Camera Y", "Invert First-Person X", "Start in Third Person",
@@ -859,6 +860,16 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
             page_text(px, m, pct, s_ctl_cx[2], y + 18, 15, sel ? 0xFFFFFF : 0xC8C8D0, 1);
             continue;
         }
+        if (r == CTL_PROMPTS) {
+            if (sel)
+                page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
+            page_text_fit(px, m, "Button Prompts", CTL_NAME_X + 6, y + 19, 18,
+                          sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0, 260);
+            char v[32];
+            snprintf(v, sizeof v, "%s%s%s", sel ? "< " : "", ngb_bind_prompts_name(ngb_bind_prompts()), sel ? " >" : "");
+            page_text(px, m, v, s_ctl_cx[2], y + 18, 15, sel ? 0xFFFFFF : 0xC8C8D0, 1);
+            continue;
+        }
         if (r == CTL_DEF) {                            /* Default Controls */
             if (sel)
                 page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
@@ -908,6 +919,8 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         help = s_ctl_toggle_help[row - CTL_INVX];
     else if (focused && row == CTL_MOUSE)
         help = "How fast the right stick and the mouse turn the camera (play only).";
+    else if (focused && row == CTL_PROMPTS)
+        help = "The buttons the prompts show. Auto: whichever controller or keyboard is in use.";
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : ngb_pad_prompts_ps() ? "Cross: change   Square / Delete: clear   (play only; the menus keep theirs)"
@@ -1555,7 +1568,7 @@ static void kc_tab_keys(void)
         if (n++ % 120 == 0)
             fprintf(stderr, "[TAB] tick: kbm %d first %.1f..%.1f\n", xbox_InputKeyboardActive(), s_tab_first[0], s_tab_first[2]);
     }
-    int keys = xbox_InputKeyboardActive() && !getenv("NGB_PAD_PROMPTS");
+    int keys = ngb_prompts_keys();
     if ((!keys && !ngb_pad_prompts_ps()) || s_tab_first[2] <= s_tab_first[0] || !tk_ready())
         return;
     MEM32(s_tk_entry) = MEM32(s_tk_entry + 4) = s_tk[keys ? 0 : 1].hdr;
@@ -1583,7 +1596,7 @@ static void kc_check(uint32_t id)
         return;
     uint32_t entry = 0x8DBB28 + MEM32(def + 0x10) * 8, now = MEM32(entry);
     int ours = s_kc_made > 0 && (now == s_kc[0].hdr || now == s_kc[1].hdr);
-    if (!xbox_InputKeyboardActive()) {
+    if (!ngb_prompts_keys()) {
         if (ours)
             MEM32(entry) = s_kc_orig;                   /* the controller's icons back */
         return;
@@ -1678,7 +1691,7 @@ static void ps_check(uint32_t id)
         return;
     uint32_t entry = 0x8DBB28 + MEM32(def + 0x10) * 8, now = MEM32(entry);
     int ours = s_ps[slot].made > 0 && now == s_ps[slot].t.hdr;
-    if ((xbox_InputKeyboardActive() && !getenv("NGB_PAD_PROMPTS")) || !ngb_pad_prompts_ps()) {
+    if (ngb_prompts_keys() || !ngb_pad_prompts_ps()) {
         if (ours)
             MEM32(entry) = s_ps[slot].orig;
         if (slot == 2)
@@ -1947,6 +1960,11 @@ static int ctl_keys(int key, int *row, int strip)
             play_sound(1);
             break;
         }
+        if (*row == CTL_PROMPTS) {
+            ngb_bind_step_prompts(key == K_LEFT ? -1 : 1);
+            play_sound(1);
+            break;
+        }
         int c = s_ctl_col + (key == K_LEFT ? -1 : 1);
         if (c >= 0 && c <= 2 && !(c == 2 && *row < A_COUNT && ngb_bind_pad_fixed(*row))) {
             s_ctl_col = c;
@@ -1960,6 +1978,9 @@ static int ctl_keys(int key, int *row, int strip)
             play_sound(6);
         } else if (*row == CTL_MOUSE) {
             ngb_bind_step_mouse_sensitivity(1);
+            play_sound(6);
+        } else if (*row == CTL_PROMPTS) {
+            ngb_bind_step_prompts(1);
             play_sound(6);
         } else if (*row == CTL_DEF) {
             ngb_bind_defaults();

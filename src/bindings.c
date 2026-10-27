@@ -203,12 +203,15 @@ static void identity_check(void)
 static int s_invert[2][2];
 static int s_third_start;
 static int s_mouse_pct = 100;   /* Camera Sensitivity, percent: the right stick, mouse and keys (#67) */
+static int s_prompts;           /* Button Prompts: 0 Auto (the device in use), 1 Xbox, 2 PlayStation, 3 PC */
+static const char *const s_prompts_ini[4] = { "auto", "xbox", "playstation", "pc" };
 
 void ngb_bind_defaults(void)
 {
     memset(s_invert, 0, sizeof s_invert);
     s_third_start = 0;
     s_mouse_pct = 100;
+    s_prompts = 0;
     for (int a = 0; a < A_COUNT; a++) {
         s_bind[a][0] = s_act[a].key0;
         s_bind[a][1] = s_act[a].key1;
@@ -220,16 +223,59 @@ void ngb_bind_defaults(void)
 
 /* ---------- names ---------- */
 
-/* A PlayStation pad in use (xboxrecomp's xbox_InputPadPlayStation): its buttons' names and pictures in the
- * prompts (src/pause_tab.c). NGB_PAD_PROMPTS=ps shows them whatever the pad, for tests; set otherwise, never. */
+static void ensure(void);
+static void save(void);
+
+/* Button Prompts (the Controls page): which buttons the game's prompts show. Auto follows the device in use --
+ * the keyboard's keys while it is (xboxrecomp's xbox_InputKeyboardActive), a PlayStation pad's buttons while
+ * one is (xbox_InputPadPlayStation, #113), else the Xbox's; the others keep one set whatever is in use.
+ * NGB_PAD_PROMPTS (tests) overrides it: ps the PlayStation's, anything else the Xbox's. */
+int ngb_bind_prompts(void)
+{
+    ensure();
+    return s_prompts;
+}
+
+void ngb_bind_step_prompts(int dir)
+{
+    ensure();
+    s_prompts = (s_prompts + (dir < 0 ? 3 : 1)) % 4;
+    s_gen++;
+    save();
+}
+
+const char *ngb_bind_prompts_name(int v)
+{
+    static const char *const name[4] = { "Auto", "Xbox", "PlayStation", "PC" };
+    return name[v & 3];
+}
+
+static int prompts_forced(void)   /* NGB_PAD_PROMPTS: 2 PlayStation, 1 Xbox, 0 not set */
+{
+    static int forced = -1;
+    if (forced < 0) {
+        const char *e = getenv("NGB_PAD_PROMPTS");
+        forced = !e ? 0 : !SDL_strcasecmp(e, "ps") ? 2 : 1;
+    }
+    return forced;
+}
+
+/* The keys and mouse buttons in the prompts (src/pause_tab.c) */
+int ngb_prompts_keys(void)
+{
+    int p = ngb_bind_prompts();
+    if (prompts_forced())
+        return 0;
+    return p == 3 || (p == 0 && xbox_InputKeyboardActive());
+}
+
+/* A PlayStation pad's buttons in the prompts and the button names */
 int ngb_pad_prompts_ps(void)
 {
-    static int forced = -2;
-    if (forced == -2) {
-        const char *e = getenv("NGB_PAD_PROMPTS");
-        forced = e ? !SDL_strcasecmp(e, "ps") : -1;
-    }
-    return forced >= 0 ? forced : xbox_InputPadPlayStation();
+    int p = ngb_bind_prompts();
+    if (prompts_forced())
+        return prompts_forced() == 2;
+    return p == 2 || (p == 0 && xbox_InputPadPlayStation());
 }
 
 void ngb_bind_input_name(int in, char *out, int n)
@@ -341,6 +387,7 @@ static void save(void)
     fprintf(f, "invert_first_person_x = %d\n", s_invert[1][0]);
     fprintf(f, "third_person_on_load = %d\n", s_third_start);
     fprintf(f, "mouse_sensitivity = %d\n", s_mouse_pct);
+    fprintf(f, "button_prompts = %s\n", s_prompts_ini[s_prompts]);
     fclose(f);
 }
 
@@ -369,6 +416,12 @@ void ngb_bind_load(void)
         }
         if (!strcmp(key, "third_person_on_load")) {
             s_third_start = atoi(val) != 0;
+            continue;
+        }
+        if (!strcmp(key, "button_prompts")) {
+            for (int i = 0; i < 4; i++)
+                if (!SDL_strcasecmp(val, s_prompts_ini[i]))
+                    s_prompts = i;
             continue;
         }
         if (!strcmp(key, "mouse_sensitivity")) {
