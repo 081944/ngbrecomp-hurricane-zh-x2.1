@@ -12,7 +12,8 @@
 namespace gpu {
 
 struct HeaderCopy {
-    uint32_t w[5];   // common, data, lock, format, size
+    uint32_t w[5];                   // common, data, lock, format, size
+    const uint8_t* host = nullptr;   // the data itself, when copied with the call (a DrawVerticesUP's vertices)
 };
 
 inline thread_local const std::unordered_map<uint32_t, HeaderCopy>* g_header_view = nullptr;
@@ -30,6 +31,15 @@ inline uint32_t HeaderWord(uint32_t header, int i) {
 inline uint32_t ResourceDataOf(uint32_t res) {
     uint32_t d = HeaderWord(res, 1);
     return (HeaderWord(res, 0) & 0x80000000u) ? d : mem::VirtualFromPhysical(d);
+}
+
+// the data itself: the copy taken with the call when there is one, else the guest's memory
+inline const uint8_t* ResourceHost(uint32_t res) {
+    if (g_header_view) {
+        auto it = g_header_view->find(res);
+        if (it != g_header_view->end() && it->second.host) return it->second.host;
+    }
+    return static_cast<const uint8_t*>(kernel::HostPtr(ResourceDataOf(res)));
 }
 
 }  // namespace gpu

@@ -22,9 +22,16 @@
 #include "nv2a_int.h"
 
 /* USER - PFIFO MMIO and DMA submission area */
+/* xboxrecomp: called as the title reads the push buffer's progress (DMA_GET, REF) -- a renderer holding the pusher
+ * back to what it has drawn (pfifo.c, nv2a_pfifo_gate) hands over what the title recorded since, or the title would
+ * wait on its own unsent calls */
+void (*nv2a_user_read_hook)(void);
+
 uint64_t user_read(void *opaque, hwaddr addr, unsigned int size)
 {
     NV2AState *d = (NV2AState *)opaque;
+    if (nv2a_user_read_hook)
+        nv2a_user_read_hook();
 
     unsigned int channel_id = addr >> 16;
     assert(channel_id < NV2A_NUM_CHANNELS);

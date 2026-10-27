@@ -101,6 +101,31 @@ void pfifo_kick(NV2AState *d)
     qemu_cond_broadcast(&d->pfifo.fifo_cond);
 }
 
+/* xboxrecomp: the push buffer read only as far as a renderer drawing after the title's calls has drawn (the port's
+ * src/d3d/gpu/threaded.cpp): every reference, fence and semaphore the title waits on then follows that drawing, as
+ * the console's GPU's would -- else the title reused vertex and texture memory still to be drawn. on: read up to
+ * put, a DMA_PUT the title set (the pusher stops there exactly: PUT is at a method's end); off: as far as the
+ * title has put. */
+static uint32_t s_gate_put;
+static int s_gate_on;
+void nv2a_pfifo_gate(int on, uint32_t put)
+{
+    NV2AState *d = g_nv2a;
+    if (!d)
+        return;
+    qemu_mutex_lock(&d->pfifo.lock);
+    qatomic_set(&s_gate_put, put);
+    qatomic_set(&s_gate_on, on);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
+}
+
+/* The title's DMA_PUT now, for a recording to be read up to once drawn. */
+uint32_t nv2a_pfifo_put(void)
+{
+    return g_nv2a ? qatomic_read(&g_nv2a->pfifo.regs[NV_PFIFO_CACHE1_DMA_PUT]) : 0;
+}
+
 static bool can_fifo_access(NV2AState *d) {
     return qatomic_read(&d->pgraph.regs_[NV_PGRAPH_FIFO]) &
            NV_PGRAPH_FIFO_ACCESS;
@@ -357,7 +382,7 @@ static void pfifo_run_pusher(NV2AState *d)
             batch = 0;
         }
         uint32_t dma_get_v = *dma_get;
-        uint32_t dma_put_v = qatomic_read(dma_put);
+        uint32_t dma_put_v = qatomic_read(&s_gate_on) ? qatomic_read(&s_gate_put) : qatomic_read(dma_put);
         if (dma_get_v == dma_put_v) break;
         if (dma_get_v >= dma_len) {
             assert(!"Dma value is out of range in PFIFO pusher");

@@ -339,7 +339,8 @@ public:
     void Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
                uint32_t stencil) override;
     void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) override;
-    void Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects, uint32_t dst_points) override;
+    void Copy(const Surface& src, const Surface& dst, uint32_t count, const uint8_t* src_rects,
+              const uint8_t* dst_points) override;
     void Present(const Surface& front) override;
     void Sync(uint32_t, uint32_t) override {}
     void SyncLate(uint32_t) override {}
@@ -3544,7 +3545,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
 }
 
-void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects, uint32_t dst_points) {
+void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count, const uint8_t* src_rects,
+                         const uint8_t* dst_points) {
     if (ContinuousGlowEnabled()) InvalidateContinuousGlow(dst.data);
     Target* a = EnsureTarget(src, false);
     Target* b = EnsureTarget(dst, false);
@@ -3566,10 +3568,12 @@ void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count,
     };
     if (count && src_rects) {
         for (uint32_t i = 0; i < count; i++) {
-            int x0 = int(kernel::R32(src_rects + i * 16)), y0 = int(kernel::R32(src_rects + i * 16 + 4));
-            int x1 = int(kernel::R32(src_rects + i * 16 + 8)), y1 = int(kernel::R32(src_rects + i * 16 + 12));
-            int dx = dst_points ? int(kernel::R32(dst_points + i * 8)) : x0;
-            int dy = dst_points ? int(kernel::R32(dst_points + i * 8 + 4)) : y0;
+            int32_t r[4], p[2];
+            std::memcpy(r, src_rects + i * 16, 16);
+            if (dst_points) std::memcpy(p, dst_points + i * 8, 8);
+            int x0 = r[0], y0 = r[1], x1 = r[2], y1 = r[3];
+            int dx = dst_points ? p[0] : x0;
+            int dy = dst_points ? p[1] : y0;
             add(x0, y0, x1, y1, dx, dy);
         }
     } else {

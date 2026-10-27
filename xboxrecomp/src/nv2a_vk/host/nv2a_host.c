@@ -526,8 +526,11 @@ static void in_a_ms(struct timespec *ts)
 
 void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead)
 {
+    extern void (*nv2a_user_read_hook)(void);   /* xemu/user.c: a renderer holding the pusher back hands over */
     if (put - __atomic_load_n(word, __ATOMIC_SEQ_CST) <= ahead)
         return;
+    if (nv2a_user_read_hook)
+        nv2a_user_read_hook();
     int release = wait_release();
 #if XBOX_HAS_VCPU
     if (release)

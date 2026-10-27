@@ -490,7 +490,10 @@ bool Before(int fn, Call c) {
         break;
     }
     case D3DF_D3DDevice_CopyRects:                   // (source, rects, count, destination, points)
-        if (g_backend) g_backend->Copy(SurfaceOf(c.a(0)), SurfaceOf(c.a(3)), c.a(2), c.a(1), c.a(4));
+        if (g_backend)
+            g_backend->Copy(SurfaceOf(c.a(0)), SurfaceOf(c.a(3)), c.a(2),
+                            c.a(1) ? static_cast<const uint8_t*>(HostPtr(c.a(1))) : nullptr,
+                            c.a(4) ? static_cast<const uint8_t*>(HostPtr(c.a(4))) : nullptr);
         break;
     case D3DF_D3DDevice_Swap:
         static const bool aspectlog = std::getenv("NGB_ASPECT_LOG") != nullptr;
