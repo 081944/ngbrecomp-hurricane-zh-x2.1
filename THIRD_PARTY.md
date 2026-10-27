@@ -13,7 +13,7 @@ its own license.
 | TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) DirectSound code | followed by `src/audio/dsound_hle.cpp` | MIT — see `src/audio/NOTICE` |
 | EB Garamond | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-EBGaramond.txt`) |
 | Liberation Serif | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-Liberation.txt`) |
-| Xelu's Free Controller & Key Prompts | `assets/prompts/keys` | CC0 (`assets/prompts/License-Xelu.txt`) |
+| Xelu's Free Controller & Key Prompts | `assets/prompts/keys`, `assets/prompts/ps` | CC0 (`assets/prompts/License-Xelu.txt`) |
 
 ## The runtime: xboxrecomp
 

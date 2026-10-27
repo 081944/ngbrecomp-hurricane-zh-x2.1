@@ -75,7 +75,8 @@ endforeach()
 
 # The keyboard and mouse prompts (Xelu's free prompts, CC0: assets/prompts/License-Xelu.txt), the dark
 # set and its blank key: each embedded, and a table of them by file name (src/pause_tab.c).
-file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png)
+file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png
+                       ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/ps/*.png)   # PlayStation buttons (#113)
 set(key_decls "")
 set(key_rows "")
 list(LENGTH NGB_KEY_PNGS key_count)

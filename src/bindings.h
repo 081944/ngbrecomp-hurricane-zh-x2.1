@@ -58,6 +58,7 @@ void ngb_bind_load(void);
 /* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a
  * short one for a keycap (1-3 characters; "" for a mouse button). */
 void ngb_bind_input_name(int input, char *out, int n);
+int ngb_pad_prompts_ps(void);            /* a PlayStation pad in use: its buttons in the prompts (#113) */
 const char *ngb_bind_pad_combo(int a);   /* "X + A" for Wind Run, "Y + B" for Ninpo; else NULL */
 void ngb_bind_input_short(int input, char *out, int n);
 /* The keyboard or mouse input shown for the pad's button b (XBOX_BUTTON_*)

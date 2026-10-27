@@ -100,6 +100,11 @@ static const char *const s_pad_name[P_COUNT] = {
     "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Start", "Back", "LS", "RS",
     "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
 };
+/* The same buttons on a PlayStation pad, shown while one is in use (#113); saved as the names above */
+static const char *const s_pad_name_ps[P_COUNT] = {
+    "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "Start", "Select", "L3", "R3",
+    "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
+};
 static const char *const s_mouse_name[6] = { "", "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse 4", "Mouse 5" };
 
 const char *ngb_bind_name(int a) { return a >= 0 && a < A_COUNT ? s_act[a].name : ""; }
@@ -178,6 +183,8 @@ const char *ngb_bind_pad_combo(int a)
     unsigned char tab[10];
     game_buttons(tab);
     int slot = game_slot(&s_act[a], tab);
+    if (ngb_pad_prompts_ps())
+        return slot == 8 ? "Square + Cross" : slot == 9 ? "Triangle + Circle" : NULL;
     return slot == 8 ? "X + A" : slot == 9 ? "Y + B" : NULL;
 }
 unsigned ngb_bind_generation(void) { return s_gen; }
@@ -213,12 +220,25 @@ void ngb_bind_defaults(void)
 
 /* ---------- names ---------- */
 
+/* A PlayStation pad in use (xboxrecomp's xbox_InputPadPlayStation): its buttons' names and pictures in the
+ * prompts (src/pause_tab.c). NGB_PAD_PROMPTS=ps shows them whatever the pad, for tests; set otherwise, never. */
+int ngb_pad_prompts_ps(void)
+{
+    static int forced = -2;
+    if (forced == -2) {
+        const char *e = getenv("NGB_PAD_PROMPTS");
+        forced = e ? !SDL_strcasecmp(e, "ps") : -1;
+    }
+    return forced >= 0 ? forced : xbox_InputPadPlayStation();
+}
+
 void ngb_bind_input_name(int in, char *out, int n)
 {
     if (!in)
         snprintf(out, n, "-");
     else if (in & BIND_PAD)
-        snprintf(out, n, "%s", (in & 0xFF) < P_COUNT ? s_pad_name[in & 0xFF] : "?");
+        snprintf(out, n, "%s", (in & 0xFF) < P_COUNT ? (ngb_pad_prompts_ps() ? s_pad_name_ps : s_pad_name)[in & 0xFF]
+                                                     : "?");
     else if (in & BIND_MOUSE)
         snprintf(out, n, "%s", (in & 0xFF) >= 1 && (in & 0xFF) <= 5 ? s_mouse_name[in & 0xFF] : "Mouse ?");
     else {

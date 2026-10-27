@@ -259,6 +259,12 @@ game's button prompts are keys and mouse buttons instead -- Xelu's dark keyboard
 of, its blank key with the key's name; `src/pause_tab.c`), in play the ones bound to each action, in
 the menus the mouse's buttons (left to choose, right to go back), K, Space, Shift and Q/E;
 `NGB_PAD_PROMPTS=1` keeps the pad's.
+With a PlayStation pad in use (SDL's controller type: a DualShock 3 or 4, a DualSense, or an adapter
+that says so) the prompts are its buttons (#113): Xelu's PS3 set (`assets/prompts/ps`), the symbols in
+their colours on black as on the DualShock 2 of the game's time -- Cross, Circle, Square and Triangle for
+A, B, X and Y, L2 and R2 for the triggers, L1 and R1 for Black and White (the buttons they are on), over the
+pause menu's L and R plates too; the Controls page names them the same way. The game's Button Settings
+page keeps its picture of the Xbox controller. `NGB_PAD_PROMPTS=ps` shows them whatever the pad.
 
 In the game's menus (main menu, Options, the pause menu and its tabs, message boxes) the mouse
 points: the game's own cursor follows it onto the item under it (a press of the pad at a time,
