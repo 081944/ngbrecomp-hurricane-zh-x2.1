@@ -15,7 +15,9 @@ What the changes add, in short:
 - **GPU**: xemu's NV2A model and Vulkan renderer (`src/nv2a_vk`, LGPL-2.1-or-later, imported
   verbatim and then extended): dirty-page tracking, render scale, shadow-map scale, SPIR-V and
   pipeline caches, texture dumping and replacement, frame pacing and presentation (mailbox, FIFO,
-  adaptive V-Sync), an FPS overlay hook.
+  adaptive V-Sync), an FPS overlay hook, and a pusher that takes the graphics lock once per batch of
+  methods instead of swapping locks around every one and, while the model's own drawing is off, passes
+  over the 3D object's drawing-only state in one step.
 - **Audio**: the MCPX APU's voices resampled to 48 kHz, a stereo downmix with reverb, an SDL2 sink
   paced by the output device.
 - **Kernel and lifter fixes** found running Ninja Gaiden Black: interrupt lines, thread objects,

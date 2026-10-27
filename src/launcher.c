@@ -122,7 +122,7 @@ void ngb_settings_load(NgbSettings *s)
     char path[1100], line[256];
     FILE *f;
 
-    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, 4:3 movies... */
+    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, the unlocks, 4:3 movies... */
     s->aspect = ASPECT_16_9;
     s->width = 1280;
     s->height = 720;
@@ -182,6 +182,12 @@ void ngb_settings_load(NgbSettings *s)
             s->all_difficulties = atoi(val) != 0;
         } else if (!strcmp(key, "unlock_all_costumes")) {
             s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_missions")) {
+            s->unlock[0] = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_arcade")) {
+            s->unlock[1] = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_movie_theater")) {
+            s->unlock[2] = atoi(val) != 0;
         } else if (!strcmp(key, "audio_output")) {
             s->audio_output = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 auto, 1 stereo, 2 5.1 */
         } else if (!strcmp(key, "show_hud")) {
@@ -190,6 +196,10 @@ void ngb_settings_load(NgbSettings *s)
             s->positional_audio = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 off, 1 console, 2 panning */
         } else if (!strcmp(key, "smoother_glow")) {
             s->smooth_glow = atoi(val) != 0;
+        } else if (!strcmp(key, "detail_under_load")) {
+            s->detail_under_load = atoi(val) != 0;
+        } else if (!strcmp(key, "render_thread")) {
+            s->render_thread = atoi(val) != 0;
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -230,9 +240,14 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "msaa = %d\n", s->msaa);
     fprintf(f, "unlock_all_difficulties = %d\n", s->all_difficulties);
     fprintf(f, "unlock_all_costumes = %d\n", s->all_costumes);
+    fprintf(f, "unlock_missions = %d\n", s->unlock[0]);
+    fprintf(f, "unlock_arcade = %d\n", s->unlock[1]);
+    fprintf(f, "unlock_movie_theater = %d\n", s->unlock[2]);
     fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
     fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
+    fprintf(f, "detail_under_load = %d\n", s->detail_under_load);
+    fprintf(f, "render_thread = %d\n", s->render_thread);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "audio_output = %d\n", s->audio_output);
@@ -398,8 +413,10 @@ void ngb_settings_change(NgbSettings *s, int row, int dir)
 void ngb_settings_row_text(const NgbSettings *s, int row, const char **label, char *val, size_t n)
 {
     static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+    /* the game draws a 720x480 picture at every aspect (480p); the scale multiplies it (#105) */
     static const char *const SCALE_LABEL[10] = {
-        "Native (1x)", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x" };
+        "1x 720x480", "2x 1440x960", "3x 2160x1440", "4x 2880x1920", "5x 3600x2400",
+        "6x 4320x2880", "7x 5040x3360", "8x 5760x3840", "9x 6480x4320", "10x 7200x4800" };
     val[0] = 0;
     switch (row) {
     case ROW_ASPECT:  *label = "Aspect ratio";  snprintf(val, n, "%s", ASPECT_LABEL[s->aspect]); break;

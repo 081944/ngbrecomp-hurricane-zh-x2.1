@@ -22,6 +22,7 @@
 #include "nv2a_int.h"
 
 void nv2a_vk_progress(void);
+#include "../host/threadload.h"
 
 typedef struct RAMHTEntry {
     uint32_t handle;
@@ -82,7 +83,10 @@ void pfifo_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         nv2a_update_irq(d);
         break;
     default:
+        /* xboxrecomp: the pusher works through a batch of methods holding only pgraph.lock (pfifo_run_pusher) */
+        qemu_mutex_lock(&d->pgraph.lock);
         d->pfifo.regs[addr] = val;
+        qemu_mutex_unlock(&d->pgraph.lock);
         break;
     }
 
@@ -95,6 +99,31 @@ void pfifo_kick(NV2AState *d)
 {
     d->pfifo.fifo_kick = true;
     qemu_cond_broadcast(&d->pfifo.fifo_cond);
+}
+
+/* xboxrecomp: the push buffer read only as far as a renderer drawing after the title's calls has drawn (the port's
+ * src/d3d/gpu/threaded.cpp): every reference, fence and semaphore the title waits on then follows that drawing, as
+ * the console's GPU's would -- else the title reused vertex and texture memory still to be drawn. on: read up to
+ * put, a DMA_PUT the title set (the pusher stops there exactly: PUT is at a method's end); off: as far as the
+ * title has put. */
+static uint32_t s_gate_put;
+static int s_gate_on;
+void nv2a_pfifo_gate(int on, uint32_t put)
+{
+    NV2AState *d = g_nv2a;
+    if (!d)
+        return;
+    qemu_mutex_lock(&d->pfifo.lock);
+    qatomic_set(&s_gate_put, put);
+    qatomic_set(&s_gate_on, on);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
+}
+
+/* The title's DMA_PUT now, for a recording to be read up to once drawn. */
+uint32_t nv2a_pfifo_put(void)
+{
+    return g_nv2a ? qatomic_read(&g_nv2a->pfifo.regs[NV_PFIFO_CACHE1_DMA_PUT]) : 0;
 }
 
 static bool can_fifo_access(NV2AState *d) {
@@ -124,36 +153,60 @@ static bool is_flip_stall_complete(NV2AState *d)
     return false;
 }
 
-static bool pfifo_stall_for_flip(NV2AState *d)
+static bool pfifo_stall_for_flip(NV2AState *d, bool graph_held)
 {
     bool should_stall = false;
 
     if (qatomic_read(&d->pgraph.waiting_for_flip)) {
-        qemu_mutex_lock(&d->pgraph.lock);
+        if (!graph_held)
+            qemu_mutex_lock(&d->pgraph.lock);
         if (!is_flip_stall_complete(d)) {
             should_stall = true;
         } else {
             d->pgraph.waiting_for_flip = false;
         }
-        qemu_mutex_unlock(&d->pgraph.lock);
+        if (!graph_held)
+            qemu_mutex_unlock(&d->pgraph.lock);
     }
 
     return should_stall;
 }
 
-static bool pfifo_puller_should_stall(NV2AState *d)
+static bool pfifo_puller_should_stall(NV2AState *d, bool graph_held)
 {
-    return pfifo_stall_for_flip(d) || qatomic_read(&d->pgraph.waiting_for_nop) ||
+    return pfifo_stall_for_flip(d, graph_held) || qatomic_read(&d->pgraph.waiting_for_nop) ||
            qatomic_read(&d->pgraph.waiting_for_context_switch) ||
            !can_fifo_access(d);
+}
+
+/* xboxrecomp: pfifo.lock is let go and pgraph.lock taken for a batch of methods (pfifo_run_pusher, *graph_held),
+ * not around each one: the swap per method was some 3 million lock operations a second. The order is xemu's,
+ * pfifo.lock before pgraph.lock, and never both: a batch ends by letting pgraph.lock go before pfifo.lock is
+ * taken again. */
+static void pfifo_graph_begin(NV2AState *d, bool *graph_held)
+{
+    if (!*graph_held) {
+        qemu_mutex_unlock(&d->pfifo.lock);
+        qemu_mutex_lock(&d->pgraph.lock);
+        *graph_held = true;
+    }
+}
+
+static void pfifo_graph_end(NV2AState *d, bool *graph_held)
+{
+    if (*graph_held) {
+        qemu_mutex_unlock(&d->pgraph.lock);
+        qemu_mutex_lock(&d->pfifo.lock);
+        *graph_held = false;
+    }
 }
 
 static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
                                 uint32_t parameter, uint32_t *parameters,
                                 size_t num_words_available,
-                                size_t max_lookahead_words)
+                                size_t max_lookahead_words, bool *graph_held)
 {
-    if (pfifo_puller_should_stall(d)) {
+    if (pfifo_puller_should_stall(d, *graph_held)) {
         return -1;
     }
 
@@ -186,9 +239,7 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
         SET_MASK(*engine_reg, 3 << (4*subchannel), entry.engine);
         SET_MASK(*pull1, NV_PFIFO_CACHE1_PULL1_ENGINE, entry.engine);
 
-        // TODO: this is fucked
-        qemu_mutex_unlock(&d->pfifo.lock);
-        qemu_mutex_lock(&d->pgraph.lock);
+        pfifo_graph_begin(d, graph_held);
 
         // Switch contexts if necessary
         if (can_fifo_access(d)) {
@@ -199,9 +250,6 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
                                   num_words_available, max_lookahead_words, inc);
             }
         }
-
-        qemu_mutex_unlock(&d->pgraph.lock);
-        qemu_mutex_lock(&d->pfifo.lock);
 
     } else if (method >= 0x100) {
         // method passed to engine
@@ -221,18 +269,13 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
         assert(engine == ENGINE_GRAPHICS);
         SET_MASK(*pull1, NV_PFIFO_CACHE1_PULL1_ENGINE, engine);
 
-        // TODO: this is fucked
-        qemu_mutex_unlock(&d->pfifo.lock);
-        qemu_mutex_lock(&d->pgraph.lock);
+        pfifo_graph_begin(d, graph_held);
 
         if (can_fifo_access(d)) {
             num_proc =
                 pgraph_method(d, subchannel, method, parameter, parameters,
                               num_words_available, max_lookahead_words, inc);
         }
-
-        qemu_mutex_unlock(&d->pgraph.lock);
-        qemu_mutex_lock(&d->pfifo.lock);
     } else {
         assert(!"Unrecognized pfifo puller method");
     }
@@ -242,6 +285,39 @@ static ssize_t pfifo_run_puller(NV2AState *d, uint32_t method_entry,
     }
 
     return num_proc;
+}
+
+/* xboxrecomp: methods the pusher passes over without handing them to PGRAPH. This port draws with its own
+ * renderer from the title's Direct3D calls; the NV2A model only keeps the time -- fences, flips, notifies,
+ * reports -- and its own drawing is off (nv2a_vk_set_draws_off). These are the 3D object's (subchannel 0)
+ * bulky state for that drawing alone: combiners, texgen, matrices, fog/specular/viewport/eye parameters,
+ * the vertex program and its constants, lights, vertex arrays, inline vertex data and the texture stages.
+ * Every method else -- surfaces, BEGIN_END, clears, semaphores, flips, NOPs, reports, objects and context
+ * DMAs -- still goes through PGRAPH. NV2A_PFIFO_SKIP=0: every method to PGRAPH as before. */
+static bool pfifo_skippable(uint32_t subchannel, uint32_t m)
+{
+    if (subchannel != 0)
+        return false;
+    return (m >= 0x0260 && m <= 0x028C) || (m >= 0x03C0 && m <= 0x03CC) ||
+           (m >= 0x0440 && m <= 0x07BC) || (m >= 0x09D0 && m <= 0x0BFC) ||
+           (m >= 0x0C00 && m <= 0x13FC) || (m >= 0x1720 && m <= 0x17BC) ||
+           m == 0x17E0 || m == 0x17E4 || m == 0x17E8 ||
+           (m >= 0x1800 && m <= 0x1AFC) || (m >= 0x1B00 && m <= 0x1BFC) ||
+           (m >= 0x1E40 && m <= 0x1E60);
+}
+
+bool nv2a_vk_draws_off(void);   /* pgraph/vk/instance.c: the port's renderer draws */
+
+/* Only while the NV2A model draws nothing: with NGB_RENDERER=xemu, or a program on the model's drawing, every
+ * method still counts. */
+static int pfifo_skip_enabled(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("NV2A_PFIFO_SKIP");
+        on = !(e && *e == '0');
+    }
+    return on && nv2a_vk_draws_off();
 }
 
 static bool pfifo_pusher_should_stall(NV2AState *d)
@@ -293,9 +369,20 @@ static void pfifo_run_pusher(NV2AState *d)
     hwaddr dma_len;
     uint8_t *dma = nv_dma_map(d, dma_instance, &dma_len);
 
+    /* xboxrecomp: up to kBatch methods to a pgraph.lock (pfifo_graph_begin): long enough to make the locking
+     * cheap, short enough that a thread waiting for pgraph.lock (a register write, a surface download) waits
+     * little */
+    enum { kBatch = 64 };
+    bool graph_held = false;
+    unsigned batch = 0, since_progress = 0;
+
     while (!pfifo_pusher_should_stall(d)) {
+        if (graph_held && ++batch >= kBatch) {
+            pfifo_graph_end(d, &graph_held);
+            batch = 0;
+        }
         uint32_t dma_get_v = *dma_get;
-        uint32_t dma_put_v = *dma_put;
+        uint32_t dma_put_v = qatomic_read(&s_gate_on) ? qatomic_read(&s_gate_put) : qatomic_read(dma_put);
         if (dma_get_v == dma_put_v) break;
         if (dma_get_v >= dma_len) {
             assert(!"Dma value is out of range in PFIFO pusher");
@@ -324,7 +411,27 @@ static void pfifo_run_pusher(NV2AState *d)
         uint32_t subroutine_state =
             GET_MASK(*dma_subroutine, NV_PFIFO_CACHE1_DMA_SUBROUTINE_STATE);
 
-        if (method_count) {
+        if (method_count && pfifo_skip_enabled() && pfifo_skippable(method_subchannel, method)) {
+            /* a run of skippable methods (pfifo_skippable): taken as read, all at once */
+            if (pfifo_puller_should_stall(d, graph_held)) {
+                break;
+            }
+            uint32_t n = MIN(method_count, (uint32_t)num_words_available), k = 1;
+            if (method_type == NV_PFIFO_CACHE1_DMA_STATE_METHOD_TYPE_INC) {
+                while (k < n && pfifo_skippable(method_subchannel, method + 4 * k)) {
+                    k++;
+                }
+            } else {
+                k = n;
+            }
+            d->pfifo.regs[NV_PFIFO_CACHE1_DMA_DATA_SHADOW] = ldl_le_p(word_ptr + (k - 1));
+            dma_get_v += (k - 1) * 4;
+            if (method_type == NV_PFIFO_CACHE1_DMA_STATE_METHOD_TYPE_INC) {
+                SET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_METHOD, (method + 4 * k) >> 2);
+            }
+            SET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_METHOD_COUNT, method_count - k);
+            (*dma_dcount) += k;
+        } else if (method_count) {
             /* data word of methods command */
             d->pfifo.regs[NV_PFIFO_CACHE1_DMA_DATA_SHADOW] = word;
 
@@ -340,7 +447,7 @@ static void pfifo_run_pusher(NV2AState *d)
             ssize_t num_words_processed =
                 pfifo_run_puller(d, method_entry, word, word_ptr,
                                  MIN(method_count, num_words_available),
-                                 num_words_available);
+                                 num_words_available, &graph_held);
             if (num_words_processed < 0) {
                 break;
             }
@@ -429,13 +536,23 @@ static void pfifo_run_pusher(NV2AState *d)
             }
         }
 
-        __atomic_store_n(dma_get, dma_get_v, __ATOMIC_SEQ_CST);
-        nv2a_vk_progress();   /* a title waiting for the GPU (host/nv2a_host.c) */
+        /* xboxrecomp: the read position as each word is taken, and a title waiting for the GPU
+         * (host/nv2a_host.c) woken every 64 words and at the end -- the full fence and the check it
+         * pairs with, after every word, were most of this thread's time */
+        __atomic_store_n(dma_get, dma_get_v, __ATOMIC_RELEASE);
+        if (++since_progress >= 64) {
+            since_progress = 0;
+            __atomic_thread_fence(__ATOMIC_SEQ_CST);
+            nv2a_vk_progress();
+        }
 
         if (GET_MASK(*dma_state, NV_PFIFO_CACHE1_DMA_STATE_ERROR)) {
             break;
         }
     }
+    pfifo_graph_end(d, &graph_held);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    nv2a_vk_progress();
 
     // NV2A_DPRINTF("DMA pusher done: max 0x%" HWADDR_PRIx ", 0x%" HWADDR_PRIx " - 0x%" HWADDR_PRIx "\n",
     //      dma_len, control->dma_get, control->dma_put);
@@ -463,8 +580,11 @@ void *pfifo_thread(void *arg)
     rcu_register_thread();
 
     qemu_mutex_lock(&d->pfifo.lock);
+    unsigned rounds = 0;
     while (true) {
         d->pfifo.fifo_kick = false;
+        if ((++rounds & 15) == 0)
+            recomp_load_sample(RECOMP_LOAD_GPU);   /* this thread's CPU time, for log.txt (host/threadload.h) */
 
         pgraph_process_pending(d);
 

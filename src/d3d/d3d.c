@@ -109,6 +109,7 @@ static int s_hle = -1;
  * guest thread must not be parked by the runtime's scheduler while it
  * holds one (xboxrecomp win32_compat.h: a host section). */
 #include "platform/vcpu.h"
+#include "nv2a_vk/host/threadload.h"
 #if !XBOX_HAS_VCPU
 /* (the runtime's real Windows threads, without the virtual CPU, need no host/guest bracketing) */
 static inline void compat_host_enter(void) {}
@@ -150,10 +151,106 @@ static void *watchdog(void *arg)
 
 void ngb_frame_tick(void);   /* src/cheats.c */
 
+/* The game's CPU load (#96). The title times its frame from its start (the cycle counter at 0xD21680)
+ * to the point it hands the frame to the GPU (sub_0030E140 -> 0xD21698, a percentage) and, over a
+ * limit, sheds work: its HUD and 2D pass are left out for frames and drawn all at once later. Here
+ * the renderer does its work inside the title's Direct3D calls, on the title's thread -- time the
+ * console's Direct3D never spends -- and on slower PCs a busy fight crossed the limit while the frame
+ * still made 60 fps. The time spent in its Direct3D calls is taken out (span_leave): the frame's start
+ * moves on by it. And what is left is kept under the limits (load_cap): the HUD still went for frames in
+ * the busiest fights on slower PCs with all of Direct3D out (0.9.33), the title's own code and its waits
+ * on other threads crossing 90% there, while shedding the HUD saves the port nothing. NGB_CPU_LOAD=1
+ * keeps the title's own measurement. */
+uint64_t xbox_ReadTimeStampCounter(void);
+static int s_cpu_load = -1;
+/* Timed with the CPU's own cycle counter, a few nanoseconds a read: the title's clock (a system clock call
+ * and a division) read twice a call was a seventh of the title thread's time, some 250,000 calls a second.
+ * Its cycles are turned into the title's clock by a ratio measured against it once a frame (load_calibrate). */
+#if defined(__x86_64__) || defined(_M_X64)
+#include <x86intrin.h>
+static inline uint64_t host_cycles(void) { return __rdtsc(); }
+#define HOST_CYCLES 1
+#else
+static inline uint64_t host_cycles(void) { return xbox_ReadTimeStampCounter(); }
+#define HOST_CYCLES 0
+#endif
+static double s_title_per_cycle = HOST_CYCLES ? 0.0 : 1.0;   /* 0: not measured yet, nothing taken out */
+static void load_calibrate(void)
+{
+#if HOST_CYCLES
+    static uint64_t c0, t0;
+    uint64_t c = host_cycles(), t = xbox_ReadTimeStampCounter();
+    if (!c0) {
+        c0 = c;
+        t0 = t;
+    } else if (c - c0 > 100000000ull) {   /* over a tenth of a second or so: the ratio is good */
+        s_title_per_cycle = (double)(t - t0) / (double)(c - c0);
+    }
+#endif
+}
+static inline uint64_t host_start(void)
+{
+    if (s_cpu_load < 0) {
+        const char *e = getenv("NGB_CPU_LOAD");
+        s_cpu_load = e && atoi(e) != 0;
+    }
+    return s_cpu_load ? 0 : host_cycles();
+}
+static inline void host_end(uint64_t t0)
+{
+    if (!t0 || s_title_per_cycle == 0.0)
+        return;
+    uint64_t start = (uint64_t)MEM32(0xD21680) | (uint64_t)MEM32(0xD21684) << 32;
+    start += (uint64_t)((double)(host_cycles() - t0) * s_title_per_cycle);
+    MEM32(0xD21680) = (uint32_t)start;
+    MEM32(0xD21684) = (uint32_t)(start >> 32);
+}
+/* A Direct3D call, from its hook to the end of d3d_after, out of the title's CPU load: the renderer's
+ * work and the title's own Direct3D library -- the recompiled library, slower than the console's, and
+ * the wait for the emulated GPU in D3D_BlockOnTime inside it. A call the library makes to another hooked
+ * function counts once, in the outermost. */
+/* Per thread: a guest thread that waits inside a hooked call for good kept a shared count from ever
+ * reaching zero. Only the thread that presents (calls Swap) moves the frame's start. */
+static _Thread_local int s_span_depth;
+static _Thread_local uint64_t s_span_t0;
+static _Thread_local uint32_t s_span_frame;   /* the frame's start (low half) as the call began */
+static _Thread_local int s_frame_thread;
+static inline void span_enter(void)
+{
+    if (s_span_depth++ == 0 && s_frame_thread) {
+        s_span_t0 = host_start();
+        s_span_frame = MEM32(0xD21680);
+    }
+}
+static inline void span_leave(void)
+{
+    /* a call in which the title began its next frame (Swap and the waits around it): its time belongs to
+     * the frame before, and moving the new frame's start by it put the start after the end */
+    if (s_span_depth > 0 && --s_span_depth == 0 && s_frame_thread && s_span_t0 && MEM32(0xD21680) == s_span_frame)
+        host_end(s_span_t0);
+}
+
+/* The title's CPU load as it ended the frame (sub_0030E140 writes it before presenting), at most 80%:
+ * under the limits it sheds work at (90 to 95%: the HUD, the shadow map's quality) -- as the GPU's
+ * share is reported as nothing (ngb_gpu_frame_reached). */
+static void load_cap(void)
+{
+    if (s_cpu_load < 0)
+        host_start();
+    if (!s_cpu_load && MEMF(0xD21698) > 80.0f)
+        MEMF(0xD21698) = 80.0f;
+}
+
 int d3d_hook(int fn)
 {
-    if (fn == D3DF_D3DDevice_Swap)
+    if (fn == D3DF_D3DDevice_Swap) {
+        load_cap();
         ngb_frame_tick();
+        load_calibrate();
+        s_frame_thread = 1;
+        recomp_load_sample(RECOMP_LOAD_GAME);   /* the threads' CPU time in the log every five seconds */
+        recomp_load_report();
+    }
     if (s_hle < 0) {
         const char *e = getenv("NGB_RENDERER");
         s_hle = e && (!strcmp(e, "d3d") || !strcmp(e, "mirror"));
@@ -171,6 +268,7 @@ int d3d_hook(int fn)
         push_dump();
     if (s_hle) {
         uint32_t regs[8] = { eax, ecx, edx, ebx, esp, g_ebp, esi, edi };
+        span_enter();
         compat_host_enter();
         int took = d3d_hle_call(fn, regs);
         compat_host_leave();
@@ -178,6 +276,7 @@ int d3d_hook(int fn)
             eax = regs[0];                       /* its return value */
             esp = regs[4];                       /* its stack (ret n) */
             s_in_fn = -1;
+            span_leave();
             return 1;
         }
     }
@@ -188,7 +287,10 @@ int d3d_hook(int fn)
     if (s_trace > 0)
         trace(fn);
     s_in_fn = -1;
-    return d3d_handlers[fn] ? d3d_handlers[fn]() : 0;
+    int taken = d3d_handlers[fn] ? d3d_handlers[fn]() : 0;
+    if (taken && s_hle)
+        span_leave();   /* no d3d_after for a call a handler took */
+    return taken;
 }
 
 /* After the recompiled body ran (the call was not taken): its results. */
@@ -202,6 +304,7 @@ void d3d_after(int fn)
         compat_host_enter();
         d3d_hle_after(fn, regs);
         compat_host_leave();
+        span_leave();
         s_in_fn = -1;
     }
 }
@@ -225,13 +328,15 @@ void d3d_visibility_hook(void)
  * under him -- and raises it again under 90%. Here the emulated GPU only reads the push buffer, the
  * renderer draws, so how late it gets to the callback says nothing of the drawing: on some PCs it is
  * late now and then, and the shadow came and went every second or so, in nearly every area. The GPU's
- * share is reported as nothing; NGB_GPU_LOAD=1 keeps the title's own measurement. */
+ * share is reported as nothing, unless Graphics > Lower Detail Under Load keeps the title's own measurement:
+ * on a slower PC its easing off steadied the frame time (#114). NGB_GPU_LOAD=1 or 0 overrides the setting. */
+int ngb_pc_setting(int which);
 void ngb_gpu_frame_reached(void)
 {
-    static int keep = -1;
-    if (keep < 0)
-        keep = getenv("NGB_GPU_LOAD") && atoi(getenv("NGB_GPU_LOAD")) != 0;
-    if (keep) {
+    static int forced = -2;
+    if (forced == -2)
+        forced = getenv("NGB_GPU_LOAD") ? atoi(getenv("NGB_GPU_LOAD")) != 0 : -1;
+    if (forced >= 0 ? forced : ngb_pc_setting(29)) {
         sub_0030E060();
         return;
     }

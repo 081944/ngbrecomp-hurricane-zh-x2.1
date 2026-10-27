@@ -302,6 +302,7 @@ typedef struct w32_object {
     /* event */
     int             signaled;
     int             manual_reset;
+    unsigned        set_gen;      /* events: SetEvent / PulseEvent count (wait_single) */
 
     /* semaphore */
     long            sem_count;
@@ -560,11 +561,16 @@ static DWORD wait_single(w32_object *o, DWORD ms)
 
     pthread_mutex_lock(&o->lock);
     DWORD result = WAIT_OBJECT_0;
+    /* A manual-reset event set (or pulsed) while this thread waited releases it, as Windows releases every
+     * waiter at the set: re-testing only the state, a waiter woken by the broadcast went back to sleep when
+     * another thread reset the event before it got the lock -- two threads waiting on the D3D vblank event
+     * missed vblanks for up to 150 ms that way, and movies played in jerks. */
+    unsigned gen0 = o->set_gen;
 
     for (;;) {
         int ready = 0;
         switch (o->kind) {
-        case K_EVENT:  ready = o->signaled; break;
+        case K_EVENT:  ready = o->signaled || (o->manual_reset && o->set_gen != gen0); break;
         case K_THREAD: ready = o->exited;   break;
         case K_SEM:    ready = (o->sem_count > 0); break;
         case K_MUTEX:
@@ -710,6 +716,7 @@ BOOL SetEvent(HANDLE h)
     if (!o || o->kind != K_EVENT) return FALSE;
     pthread_mutex_lock(&o->lock);
     o->signaled = 1;
+    o->set_gen++;
     pthread_cond_broadcast(&o->cond);
     pthread_mutex_unlock(&o->lock);
     return TRUE;
@@ -731,6 +738,7 @@ BOOL PulseEvent(HANDLE h)
     if (!o || o->kind != K_EVENT) return FALSE;
     pthread_mutex_lock(&o->lock);
     o->signaled = 1;
+    o->set_gen++;   /* (the waiters see it: wait_single) */
     pthread_cond_broadcast(&o->cond);
     o->signaled = 0;
     pthread_mutex_unlock(&o->lock);

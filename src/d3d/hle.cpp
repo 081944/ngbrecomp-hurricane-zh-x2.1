@@ -121,7 +121,8 @@ std::shared_ptr<gpu::VertexShader> ReadVertexShader(uint32_t decl, uint32_t func
         vs->program_type = hdr & 0xFFFF;
         uint32_t n = hdr >> 16;
         for (uint32_t i = 0; i < n * 4; i++) vs->program.push_back(R32(func + 4 + i * 4));
-        if (std::getenv("NGB_D3D_VPLOG"))   // debugging: where the vertex programs come from
+        static const bool vplog = std::getenv("NGB_D3D_VPLOG") != nullptr;   // debugging: where the vertex programs come from
+        if (vplog)
             std::fprintf(stderr, "[VP] func %08X n %u first %08X %08X %08X %08X\n", func, n, n ? vs->program[0] : 0,
                          n ? vs->program[1] : 0, n ? vs->program[2] : 0, n ? vs->program[3] : 0);
     }
@@ -445,7 +446,8 @@ bool Before(int fn, Call c) {
     case D3DF_D3DDevice_SetScreenSpaceOffset:
         g_state.ss_offset_x = c.af(0);
         g_state.ss_offset_y = c.af(1);
-        if (std::getenv("NGB_D3D_SSLOG")) {
+        static const bool sslog = std::getenv("NGB_D3D_SSLOG") != nullptr;
+        if (sslog) {
             static float lx = -1e9f, ly = -1e9f;
             if (g_state.ss_offset_x != lx || g_state.ss_offset_y != ly)
                 std::fprintf(stderr, "[D3D] screen space offset %g %g\n", g_state.ss_offset_x, g_state.ss_offset_y);
@@ -488,10 +490,14 @@ bool Before(int fn, Call c) {
         break;
     }
     case D3DF_D3DDevice_CopyRects:                   // (source, rects, count, destination, points)
-        if (g_backend) g_backend->Copy(SurfaceOf(c.a(0)), SurfaceOf(c.a(3)), c.a(2), c.a(1), c.a(4));
+        if (g_backend)
+            g_backend->Copy(SurfaceOf(c.a(0)), SurfaceOf(c.a(3)), c.a(2),
+                            c.a(1) ? static_cast<const uint8_t*>(HostPtr(c.a(1))) : nullptr,
+                            c.a(4) ? static_cast<const uint8_t*>(HostPtr(c.a(4))) : nullptr);
         break;
     case D3DF_D3DDevice_Swap:
-        if (std::getenv("NGB_ASPECT_LOG")) {   // debugging: the projection's aspect (m22 / m11)
+        static const bool aspectlog = std::getenv("NGB_ASPECT_LOG") != nullptr;
+        if (aspectlog) {   // debugging: the projection's aspect (m22 / m11)
             static unsigned n;
             const auto& m = g_state.transforms[3];
             float m11, m22;
@@ -567,6 +573,7 @@ void After(int fn, Call c) {
 }
 
 extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c
+extern "C" int ngb_pc_setting(int which);                            // src/ingame_menu.c
 
 bool g_started;
 
@@ -585,6 +592,13 @@ void Start() {
         }
         std::fprintf(stderr, "[D3D] renderer init failed\n");
         if (!g_mirror) ngb_renderer_fatal("The renderer could not start on this GPU (details above in the log).");
+    }
+    // Graphics > Render Thread (experimental), or NGB_D3D_THREAD=1 or 0 over it; NGB_D3D_THREAD=capture: the
+    // renderer draws from a recording of the calls on the title's thread (src/d3d/gpu/threaded.cpp)
+    const char* thread = std::getenv("NGB_D3D_THREAD");
+    if (g_backend && (thread ? std::strcmp(thread, "0") != 0 : ngb_pc_setting(30) != 0)) {
+        g_backend = gpu::CreateThreadedBackend(std::move(g_backend));
+        std::fprintf(stderr, "[D3D] drawing from a recording of the calls\n");
     }
     std::fprintf(stderr, "[D3D] renderer on (%s)\n", g_mirror ? "mirroring the NV2A emulation" : "drawing to the window");
 }

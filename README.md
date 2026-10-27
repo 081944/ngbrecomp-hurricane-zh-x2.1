@@ -51,6 +51,111 @@ No game data is included. You need your own copy of the game and the x2.1 patch.
 
 Not included: the SFC Ninja Gaiden trilogy (`NinjaFCJ.xbe` / `NinjaFCU.xbe`), a separate program that is not
 recompiled; its main-menu entry is not shown.
+### Windows
+
+1. Download `NinjaGaidenBlack-windows-x64.zip` and extract it anywhere.
+2. Run `NinjaGaidenBlack.exe` and choose your disc image as above.
+
+Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
+
+**Antivirus warnings:** the program isn't code-signed, and a new unsigned program is sometimes
+flagged by one antivirus's heuristics (McAfee quarantined it in #88; VirusTotal shows no other
+detections). That's a false positive. Each release lists the SHA-256 hash of both downloads in its
+notes and in `SHA256SUMS.txt`, so you can check that your download is the one published here: in
+PowerShell, `Get-FileHash NinjaGaidenBlack-windows-x64.zip`; on Linux, `sha256sum -c SHA256SUMS.txt`.
+If you'd rather not run a prebuilt program, you can build it yourself from your own disc
+([Building from source](#building-from-source)).
+
+### macOS (unsupported)
+
+The macOS code is a community contribution (#49) that I can't build or test, so there are no
+official macOS packages and macOS bugs may go unfixed. Build the Apple Silicon app using the commands below, extract the resulting zip, and open
+`Ninja Gaiden Black.app`. Choose your own disc image or extracted game folder on first start.
+Current dependencies require macOS 26. Intel Macs and the xemu renderer are unsupported;
+packages are signed ad hoc, without Developer ID signing or notarization.
+
+### Where things are kept
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Installed game, saves | `~/.local/share/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/saves` |
+| Settings (`settings.ini`, `controls.ini`) | `~/.config/NinjaGaidenBlack` | `%APPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/config` |
+| Shader cache | `~/.cache/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack\shaders` | `~/Library/Application Support/NinjaGaidenBlack/cache/NinjaGaidenBlack/shaders` |
+| Log | the terminal, or `log.txt` beside the saves when started without one | `log.txt` beside the saves (or the console it was started from) | `log.txt` beside the saves |
+
+**Portable mode:** with a file named `portable.txt` next to `NinjaGaidenBlack.exe` (or the AppImage or Mac app),
+all of these go into a `userdata` folder next to it instead. The first-run setup offers this as a
+checkbox. The folder must be writable, so not inside Program Files. Delete `portable.txt` to go back.
+
+## Settings
+
+Everything is in the game's own menus: **RECOMP SETTINGS** on the main menu, and the **Settings** tab
+of the pause menu. Changes apply at once and are saved.
+
+- **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
+  anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
+  bright lights; off is the console's look)
+- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
+  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
+  warnings and intro movies
+- **Sound**: Positional Audio (3D sounds placed left and right: Panning, the default; Console, through
+  the sound chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo
+  or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
+- **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
+  and items, and whether the game pauses while it is open
+- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs.
+  Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
+  Missions (with every mission), Arcade Ninja Gaiden and Movie Theater without earning them
+- **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
+  inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The
+  bindings follow the game's own Button Settings: an action keeps its key or button whatever the
+  game's Options assign
+
+The game's own Options (sound, movie aspect, controller vibration and so on) are where they always
+were.
+
+## Controls
+
+A controller works as on the Xbox. The keyboard and mouse can be used at any time — the game follows
+whichever was touched last, and its button prompts change to match.
+
+| Action | Keys | | Action | Keys |
+|---|---|---|---|---|
+| Move | W A S D | | Camera | mouse (numpad 8 4 5 6) |
+| Attack | left mouse, J | | Special attack | right mouse, K |
+| Jump | Space | | Projectile | E |
+| Ninpo | F | | Wind run | C |
+| Guard / roll | Shift | | Center camera | Q, middle mouse |
+| Map | Tab | | Karma window | R |
+| Pause | Esc, Enter | | First-person view | Z |
+
+After loading, the right stick (or the mouse) looks around in first person, as on the Xbox; click the
+right stick (V) to turn the third-person camera instead. With **Start in Third Person** (RECOMP
+SETTINGS → Controls) the stick turns the third-person camera after every load. **Invert Camera X / Y**
+flips the stick and mouse for the third-person camera, **Invert First-Person X** first-person left and
+right; first-person up and down is the game's own Options → Controller Settings → 1st Person Camera
+Control. **Camera Sensitivity** (25%–300%) sets how fast the mouse, the right stick and the camera keys
+turn it; over 100% the camera turns faster than the game's own top speed (the third-person camera's
+left and right; its up and down stays the game's).
+
+With the **Quick Menu** on (RECOMP SETTINGS → Gameplay), Up and Down on the d-pad (or the Up / Down
+arrows, 1 / 2) open it on the melee weapons or the items, and Left and Right on the previous or next
+melee weapon; Up and Down then change category, Left and Right choose, A / Enter equips or uses, B /
+Escape closes. Its keys are in Controls.
+
+In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
+Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
+
+Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
+
+## The arcade Ninja Gaiden
+
+The 1988 arcade Ninja Gaiden is a separate program on the disc (`NinjaTrilogy.xbe`, and
+`NinjaTomoe.xbe` for the Japanese version) that the Xbox switches to. It is recompiled too: the
+packages carry `NinjaTrilogy` and `NinjaTomoe` next to the game, and the game hands over to them from
+the main menu's **ARCADE NINJA GAIDEN** and the cabinet in Han's Bar. In the arcade, Back pauses:
+**B** quits back to Ninja Gaiden Black, **Y** goes to the arcade's title. It opens in the window mode
+the game was in.
 
 ## Known issues
 
@@ -75,7 +180,16 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
 updates on top of one add `-1`, `-2`, ... Releases taken over since 2026-10-26 add `-t` after the number.
-The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.31-t`.
+The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.36-t`.
+
+## Changes in 0.9.36-t
+
+- Merged ngbrecomp 0.9.36 (upstream 0.9.32–0.9.36): the renderer can run on its own thread
+  (experimental), "Lower Detail Under Load" and the thread setting are also in RECOMP SETTINGS on the
+  main menu, Unlocks / Missions / Arcade Ninja Gaiden / Movie Theater, X chooses as in the game's menus,
+  the quick menu can pause the game, and fixes for the shadow flicker at 4x and the moving pause
+  background, among other renderer and timing fixes.
+- The new settings rows have Chinese text in the recomp's own menus.
 
 ## Changes in 0.9.31-t
 

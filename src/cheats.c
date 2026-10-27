@@ -121,7 +121,8 @@ static void cheat_wrote(void)
  * throwing or shooting. With the cheat on, a removal of such an item is made as a change of 0, so
  * the game's own path runs and its caller sees it done. What an item is: its descriptor (the table
  * at [0xDB98E4], [0xDB5E24] of them): +0x0C 1 or 3 ammunition (shuriken, incendiary shuriken, smoke
- * bombs; arrows, explosive arrows, spears), +0x0D its class (5 an item), +0x1D its effect (0x12
+ * bombs; arrows, explosive arrows, spears), +0x18 its category (7 the bow's ammunition: the APFSDS
+ * Cores have 0 at +0x0C, #103), +0x0D its class (5 an item), +0x1D its effect (0x12
  * health, 0x13 ninpo, 0x16 the Jewel of the Demon Seal (a Ninpo upgraded, #52), 0x22 the Talisman of
  * Rebirth; not the jewels that raise the limits for good -- 0x14 Life of the Gods, 0x17 Lives of the
  * Thousand Gods (health), 0x15 Spirit of the Devils (Ki): Infinite Health and Ninpo are the cheats for those). */
@@ -140,7 +141,7 @@ static int item_kept(uint16_t item)
     if (!r)
         return 0;
     uint8_t ammo = MEM8(r + 0x0C), cls = MEM8(r + 0x0D), effect = MEM8(r + 0x1D);
-    if (s_cheat[5] && (ammo == 1 || ammo == 3))
+    if (s_cheat[5] && (ammo == 1 || ammo == 3 || MEM16(r + 0x18) == 7))
         return 1;
     return s_cheat[4] && cls == 5 &&
            (effect == 0x12 || effect == 0x13 || effect == 0x16 || effect == 0x22);
@@ -543,6 +544,11 @@ void ngb_set_all_difficulties(int on) { s_all_difficulties = !!on; }
 /* Every costume (flags 1-4: the game's Costume Selection at New Game, as after clearing each
  * difficulty), the same way -- and the three it has but never offers (src/costume_menu.c). */
 void ngb_set_all_costumes(int on) { s_all_costumes = !!on; }
+/* The main menu's MISSIONS, ARCADE NINJA GAIDEN and MOVIE THEATER (flags 10, 11 and 12, set in the system
+ * data as the game earns them), the same way: read as set, nothing written. which 0-2 in that order. */
+static int s_unlock[3];
+void ngb_set_unlock(int which, int on) { if (which >= 0 && which < 3) s_unlock[which] = !!on; }
+int ngb_unlock(int which) { return which >= 0 && which < 3 ? s_unlock[which] : 0; }
 
 /**
  * sub_001DB520
@@ -656,7 +662,8 @@ void sub_001DB520(void)
 {
     if (ENV_ONCE("NGB_FLAG_LOG"))
         fprintf(stderr, "[FLAG] %u (all difficulties %d)\n", ecx, s_all_difficulties);
-    if ((s_all_difficulties && ecx >= 5 && ecx <= 9) || (s_all_costumes && ecx >= 1 && ecx <= 4)) {
+    if ((s_all_difficulties && ecx >= 5 && ecx <= 9) || (s_all_costumes && ecx >= 1 && ecx <= 4) ||
+        (ecx >= 10 && ecx <= 12 && s_unlock[ecx - 10])) {
         eax = 1;
         esp += 4;   /* ret */
         return;

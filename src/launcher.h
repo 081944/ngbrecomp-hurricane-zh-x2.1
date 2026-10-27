@@ -24,11 +24,14 @@ typedef struct NgbSettings {
     int show_launcher;   /* show the settings screen at startup */
     int all_difficulties;
     int all_costumes;       /* every costume at New Game's Costume Selection */
+    int unlock[3];          /* the main menu's MISSIONS, ARCADE NINJA GAIDEN and MOVIE THEATER (src/cheats.c) */
     int movie_43;           /* the game's Movie Display Ratio 4:3 (kept here: src/pc_menu.c) */
     int positional_audio;   /* 3D sounds placed left and right (#30): 0 off, 1 the HRTF filters, 2 panning only (#86) */
     int show_hud;           /* the in-play HUD (src/hud.c, #80) */
     int audio_output;       /* 0 auto (5.1 on a 5.1 or 7.1 device), 1 stereo, 2 5.1 (src/audio/dsound_hle.cpp) */
     int smooth_glow;        /* the glow's continuous filtering (src/d3d/vk/glow_filter.h, #64) */
+    int detail_under_load;  /* the game's own detail lowering when the GPU looks busy (src/d3d/d3d.c, #50, #114) */
+    int render_thread;      /* the renderer on a thread of its own (src/d3d/gpu/threaded.cpp), experimental */
     /* Hard, Very Hard and Master Ninja offered without clearing the one before */
 } NgbSettings;
 

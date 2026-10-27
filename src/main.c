@@ -1271,8 +1271,11 @@ int main(int argc, char **argv)
         {
             extern void ngb_set_all_difficulties(int on);   /* src/cheats.c */
             extern void ngb_set_all_costumes(int on);
+            extern void ngb_set_unlock(int which, int on);
             ngb_set_all_difficulties(cfg.all_difficulties);
             ngb_set_all_costumes(cfg.all_costumes);
+            for (int i = 0; i < 3; i++)
+                ngb_set_unlock(i, cfg.unlock[i]);
         }
         if (cfg.show_fps && !getenv("NV2A_SHOW_FPS"))
             setenv("NV2A_SHOW_FPS", "1", 1);

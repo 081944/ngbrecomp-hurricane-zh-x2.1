@@ -80,6 +80,12 @@ ctx	en	zh	use
 	The keys, mouse buttons and controller buttons used in play.	游戏中使用的各种操作按键	E
 	Smoother Glow	柔和泛光	E
 	A softer, fainter glow on bright lights. Off: the console's.	亮光的泛光更柔和、更淡。关：主机原版	E
+	Lower Detail Under Load	忙时降低细节	P
+	Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.	繁忙时降低细节，与 Xbox 原版一致；龙的影子可能闪烁	P
+	Experimental Render Thread	实验性渲染线程	P
+	Drawing on a thread of its own. May glitch. Needs restart.	在独立线程绘制。可能出错，需要重启	P
+	Unlocks	解锁	P
+	Difficulties, costumes and the main menu's extras, without earning them. Saved.	直接解锁难度、服装与主菜单内容，无需达成条件。会保存	P
 	Quick Menu	快速菜单	E
 	A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.	用十字键选择武器、忍法与道具的菜单（按上或下打开），以此大小显示	E
 	Quick Menu Pause	快速菜单暂停	E

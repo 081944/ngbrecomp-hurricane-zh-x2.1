@@ -476,6 +476,18 @@ void vcpu_yield_any(void)
     t->in_vcpu = 0;
 }
 
+void vcpu_quiet_begin(void)
+{
+    if (t_self)
+        t_self->in_vcpu = 1;
+}
+
+void vcpu_quiet_end(void)
+{
+    if (t_self)
+        t_self->in_vcpu = 0;
+}
+
 void vcpu_check_preempt(void)
 {
     vcpu_thread *t = t_self;

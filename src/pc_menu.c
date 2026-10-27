@@ -15,7 +15,8 @@
  * OPTIONS does, but on pages of ours: page 0's categories become
  * Graphics, Display, Sound, Gameplay, Cheats and Controls,
  * opening pages 10-15 (no Exit row: the column has six, and B leaves) --
- * the recomp's settings as rows with values, like Video Settings' -- and
+ * the recomp's settings as rows with values, like Video Settings'; Cheats'
+ * row Unlocks puts the unlocks' rows in its page's place (unl_show) -- and
  * the header and category words are pictures of ours (src/pause_tab.c)
  * while it is open. The page and row tables and the text table are
  * extended in guest memory at first use, and the page table pointer is
@@ -57,13 +58,14 @@ void ngb_settings_size_at(int aspect, int i, int *w, int *h);
 #define PAGE_CHEAT 14
 #define PAGE_CTRL  15             /* Controls: the bindings' panel (src/pause_tab.c) over it */
 #define N_OURS     6
-#define PC_RAISE   30             /* a page of more than seven rows: higher */
-#define PC_CLOSER  8              /* and closer, clear of the information line */
+#define UNL_ACTION 16             /* Cheats' row Unlocks: its rows in the page's place (unl_show), not a page */
+#define PC_CLOSER  8              /* a page of more than seven rows: closer, clear of the information line */
 
 enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
        ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO, ROW_POSAUDIO, ROW_HUD, ROW_AUDIOOUT,
+       ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -74,13 +76,16 @@ static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OU
 /* (without the PC Settings row: the PC settings are in RECOMP SETTINGS only) */
 static const uint8_t s_rows_ws[] = { ROW_SCREEN, ROW_MOVIE, ROW_DEFAULT, ROW_EXIT };
 static const uint8_t s_rows_std[] = { ROW_SCREEN, ROW_EXIT };
-static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_BACK };
+static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHADOW, ROW_GLOW, ROW_LOADDETAIL,
+                                      ROW_RTHREAD, ROW_BACK };
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_HUD, ROW_SKIP,
                                        ROW_BACK };
 static const uint8_t s_rows_sound[] = { ROW_POSAUDIO, ROW_AUDIOOUT, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_ALLDIFF, ROW_ALLCOST, ROW_BACK };
-static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
+static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO,
+                                        ROW_UNLOCKS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
+static const uint8_t s_rows_unl[] = { ROW_ALLDIFF, ROW_ALLCOST, ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_BACK };
 static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
     { s_rows_gfx, (int)sizeof s_rows_gfx },
     { s_rows_disp, (int)sizeof s_rows_disp },
@@ -89,6 +94,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
     { s_rows_cheat, (int)sizeof s_rows_cheat },
     { s_rows_ctrl, (int)sizeof s_rows_ctrl },
 };
+#define N_UNL (int)sizeof s_rows_unl
 #define N_WS  (int)sizeof s_rows_ws
 #define N_STD (int)sizeof s_rows_std
 
@@ -175,6 +181,18 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_CONTROLS 0x201B4            /* the category */
 #define T_GLOW     0x201B5            /* Smoother Glow (src/d3d/vk/glow_options.h) */
 #define D_GLOW     0x201B6
+#define T_MISSIONS 0x201D4            /* the unlocks (src/cheats.c): the main menu's extras */
+#define T_ARCADE   0x201D5
+#define T_MOVIES   0x201D6
+#define T_UNLOCKS  0x201D7            /* Cheats' row opening the Unlocks page */
+#define D_MISSIONS 0x201D8
+#define D_ARCADE   0x201D9
+#define D_MOVIES   0x201DA
+#define D_UNLOCKS  0x201DB
+#define T_LOADDETAIL 0x201DC          /* Lower Detail Under Load (src/d3d/d3d.c) */
+#define D_LOADDETAIL 0x201DD
+#define T_RTHREAD  0x201DE            /* Render Thread, experimental (src/d3d/gpu/threaded.cpp) */
+#define D_RTHREAD  0x201DF
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
 #define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" */
@@ -194,7 +212,15 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_POSAUDIO, "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer." },
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
-    { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen: the Quick Menu, every difficulty and costume." },
+    { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen: the Quick Menu." },
+    { T_MISSIONS, "Missions" },
+    { T_ARCADE,   "Arcade Ninja Gaiden" },
+    { T_MOVIES,   "Movie Theater" },
+    { T_UNLOCKS,  "Unlocks" },
+    { D_MISSIONS, "MISSIONS in the main menu without earning it." },
+    { D_ARCADE,   "ARCADE NINJA GAIDEN in the main menu without earning it." },
+    { D_MOVIES,   "MOVIE THEATER in the main menu without earning it." },
+    { D_UNLOCKS,  "Difficulties, costumes and the main menu's extras, without earning them. Saved." },
     { T_INFITEMS, "Infinite Items" },
     { T_INFAMMO,  "Infinite Projectiles" },
     { D_INFITEMS, "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only." },
@@ -211,6 +237,10 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_MSAA,    "Smooths the edges of the 3D; 2x to 8x samples a pixel." },
     { T_GLOW,    "Smoother Glow" },
     { D_GLOW,    "A softer, fainter glow on bright lights. Off: the console's." },
+    { T_LOADDETAIL, "Lower Detail Under Load" },
+    { D_LOADDETAIL, "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker." },
+    { T_RTHREAD, "Experimental Render Thread" },
+    { D_RTHREAD, "Drawing on a thread of its own. May glitch. Needs restart." },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
     { T_MSAA0 + 0, "Off" }, { T_MSAA0 + 1, "2x" }, { T_MSAA0 + 2, "4x" }, { T_MSAA0 + 3, "8x" },
@@ -218,9 +248,10 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_DISPLAY, "Display" },
     { T_VSYNC,   "V-Sync" },
     { T_FPS,     "Show FPS" },
-    { T_SCALE0 + 0, "Native (1x)" }, { T_SCALE0 + 1, "2x" }, { T_SCALE0 + 2, "3x" },
-    { T_SCALE0 + 3, "4x" }, { T_SCALE0 + 4, "5x" }, { T_SCALE0 + 5, "6x" },
-    { T_SCALE0 + 6, "7x" }, { T_SCALE0 + 7, "8x" }, { T_SCALE0 + 8, "9x" }, { T_SCALE0 + 9, "10x" },
+    { T_SCALE0 + 0, "1x 720x480" }, { T_SCALE0 + 1, "2x 1440x960" }, { T_SCALE0 + 2, "3x 2160x1440" },
+    { T_SCALE0 + 3, "4x 2880x1920" }, { T_SCALE0 + 4, "5x 3600x2400" }, { T_SCALE0 + 5, "6x 4320x2880" },
+    { T_SCALE0 + 6, "7x 5040x3360" }, { T_SCALE0 + 7, "8x 5760x3840" }, { T_SCALE0 + 8, "9x 6480x4320" },
+    { T_SCALE0 + 9, "10x 7200x4800" },
     { T_SMOOTH,   "Smooth" },
     { T_ORIGINAL, "Original" },
     { T_SHADOW0 + 0, "Original" }, { T_SHADOW0 + 1, "2x" }, { T_SHADOW0 + 2, "4x" },
@@ -237,7 +268,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_WINDOWSZ, "Window Size" },
     { D_WINDOWSZ, "The size of the window when not full screen." },
     { D_PC,      "Graphics and display settings of the PC version." },
-    { D_RENDER,  "Sets the resolution the game is drawn at." },
+    { D_RENDER,  "The resolution the game is drawn at: the console's 720x480 times this." },
     { D_TEXTURE, "Keeps textures sharp at an angle; Off is the console's filtering." },
     { D_SHADOW,  "Sets the resolution of the character shadows." },
     { D_DISPLAY, "A window, the whole screen, or a window without a frame." },
@@ -249,7 +280,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_NO,      "No" },
     { D_SKIP,    "Starts at the title screen, from the next start." },
     { D_LAUNCHER, "Shows the settings screen before the game, from the next start." },
-    { D_CAT0 + 0, "Render resolution, texture filtering, anti-aliasing, shadows and the glow." },
+    { D_CAT0 + 0, "Resolution, texture filtering, anti-aliasing, shadows, the glow, and two options for slower PCs." },
     { D_CAT0 + 1, "Aspect ratio, window size, display mode, V-Sync, the FPS counter, the HUD and the intros." },
     { D_CAT0 + 2, "Positional audio and the speakers." },
     { D_BACK,    "Returns to the Recomp Settings screen." },
@@ -259,7 +290,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_HEALTH,  "Ryu's health stays full. For this session only." },
     { D_NINPO,   "Ninpo is always ready. For this session only." },
     { D_ESSENCE, "As much essence as can be held. For this session only." },
-    { D_CHEATS,  "Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved." },
+    { D_CHEATS,  "Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved. And the unlocks." },
     { T_ALLDIFF, "All Difficulties" },
     { D_ALLDIFF, "Every difficulty at New Game, Ninja Dog to Master Ninja." },
     { T_SCARABS, "Golden Scarabs" },
@@ -276,6 +307,9 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
 static int s_ready;
 static uint32_t s_labels_ws, s_labels_std;               /* guest: text ids */
 static uint32_t s_labels_ours[N_OURS];
+static uint32_t s_labels_unl, s_rowtab_unl, s_rowtab_cheat;   /* guest: Unlocks' rows and labels, Cheats' rows */
+static int s_unl;                                         /* Cheats' page shows Unlocks' rows */
+static void unl_show(int on, int row);
 static uint32_t s_highlight;                              /* guest: a byte per row */
 static uint32_t s_pages_recomp;                           /* guest: RECOMP SETTINGS' page table */
 
@@ -299,6 +333,7 @@ static uint32_t make_rows(const uint8_t *kinds, int n)
         switch (kinds[i]) {
         case ROW_SCREEN:  src = 0x429968; break;
         case ROW_PC:      src = 0x429968; break;
+        case ROW_UNLOCKS: src = 0x429968; break;          /* a row with an action, as Screen Adjustment's */
         case ROW_DEFAULT: src = 0x4299A0; break;
         case ROW_EXIT:
         case ROW_BACK:    src = 0x4299BC; break;
@@ -317,6 +352,8 @@ static uint32_t make_rows(const uint8_t *kinds, int n)
         MEM8(e) = (uint8_t)i;                              /* row */
         if (src == 0x429984)
             MEM32(e + 0xC) = (uint32_t)max;                /* value range */
+        if (kinds[i] == ROW_UNLOCKS)
+            MEM8(e + 1) = UNL_ACTION;                      /* (never a page: unl_show) */
     }
     memset((void *)XBOX_PTR(va + 0x1C * n), 0, 0x1C);
     MEM8(va + 0x1C * n) = 0xFF;
@@ -330,7 +367,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
                                    T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO, T_POSAUDIO, T_HUD,
-                                   T_AUDIOOUT };
+                                   T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -410,6 +447,9 @@ static void pc_menu_init(void)
     memset((void *)XBOX_PTR(pages + 0x18 * (10 + N_OURS)), 0, 0x18);
     MEM8(pages + 0x18 * (10 + N_OURS)) = 0xFF;
     s_pages_recomp = pages;
+    s_rowtab_cheat = MEM32(pages + 0x18 * PAGE_CHEAT + 0xC);
+    s_rowtab_unl = make_rows(s_rows_unl, N_UNL);
+    s_labels_unl = make_labels(s_rows_unl, N_UNL);
 
     s_labels_ws = make_labels(s_rows_ws, N_WS);
     s_labels_std = make_labels(s_rows_std, N_STD);
@@ -558,6 +598,13 @@ int ngb_2d_screen_frame(int threed)
 {
     return s_screen_wide && (s_menu_now || ((s_menu_last || s_screen_2d) && threed < 30));
 }
+
+/* Its parts as of a call, for a renderer that draws later (gpu::Peek): 1 a menu now, 2 the last frame's menu or a
+ * 2D screen -- ngb_2d_screen_frame is (1) or (2 and fewer than 30 3D draws so far). */
+int ngb_2d_screen_flags(void)
+{
+    return s_screen_wide ? (s_menu_now ? 1 : 0) | (s_menu_last || s_screen_2d ? 2 : 0) : 0;
+}
 /* Before the game runs: the screen's shape (the flags are the game's to set up, then kept by the tick). */
 void ngb_game_aspect_init(int widescreen)
 {
@@ -580,7 +627,10 @@ static int s_recomp;
 
 void ngb_aspect_tick(void)
 {
-    if (getenv("NGB_ASPECT_LOG")) {
+    static int aspect_log = -1;
+    if (aspect_log < 0)
+        aspect_log = getenv("NGB_ASPECT_LOG") != NULL;
+    if (aspect_log) {
         static unsigned n;
         if (n++ % 20000 == 0)
             fprintf(stderr, "[ASPECT] tick: constants %.4f %.4f 977EF8 %.4f flags %X\n", MEMF(0x414AF4), MEMF(0x414AF8),
@@ -669,6 +719,8 @@ void ngb_recomp_menu_tick(void)
     MEM32(0x42A28C) = s_saved_tables[0];
     MEM32(0x42A2AC) = s_saved_tables[1];
     s_recomp = s_recomp_seen = 0;
+    if (s_unl)
+        unl_show(0, -1);
     ngb_recomp_pictures_off();
 }
 
@@ -676,6 +728,10 @@ void ngb_recomp_menu_tick(void)
  * or ours. */
 static const uint8_t *page_rows(int *n)
 {
+    if (page_now() == PAGE_CHEAT && s_unl) {
+        *n = N_UNL;
+        return s_rows_unl;
+    }
     if (is_ours(page_now())) {
         *n = s_ours[page_now() - PAGE_GFX].n;
         return s_ours[page_now() - PAGE_GFX].kinds;
@@ -684,6 +740,8 @@ static const uint8_t *page_rows(int *n)
     *n = N_STD;
     return s_rows_std;
 }
+
+static int kind_unlock(int kind) { return kind - ROW_MISSIONS; }   /* settings 26-28 */
 
 static int row_kind(int row)
 {
@@ -737,8 +795,13 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_SCARABS: return ngb_pc_setting(15) ? T_ON : T_OFF;
     case ROW_ALLCOST: return ngb_pc_setting(16) ? T_YES : T_NO;
     case ROW_GLOW:    return ngb_pc_setting(18) ? T_ON : T_OFF;
+    case ROW_LOADDETAIL: return ngb_pc_setting(29) ? T_ON : T_OFF;
+    case ROW_RTHREAD: return ngb_pc_setting(30) ? T_ON : T_OFF;
     case ROW_INFITEMS: return ngb_pc_setting(21) ? T_ON : T_OFF;
     case ROW_INFAMMO: return ngb_pc_setting(22) ? T_ON : T_OFF;
+    case ROW_MISSIONS:
+    case ROW_ARCADE:
+    case ROW_MOVIES:  return ngb_pc_setting(26 + kind_unlock(row_kind(row))) ? T_YES : T_NO;
     default:          return 0;
     }
 }
@@ -749,8 +812,8 @@ static int pc_value_change(int row, int delta)
 {
     int kind = row_kind(row);
     int step = delta > 0 ? 1 : -1;
-    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_AUDIOOUT))
-        return 0;
+    if (kind < ROW_RENDER || kind == ROW_BACK || kind == ROW_UNLOCKS)
+        return 0;                                      /* (Unlocks opens its page: the engine's) */
     if (!delta)
         return 1;
     switch (kind) {
@@ -794,8 +857,17 @@ static int pc_value_change(int row, int delta)
     case ROW_SCARABS: ngb_pc_set_setting(15, !ngb_pc_setting(15)); break;
     case ROW_ALLCOST: ngb_pc_set_setting(16, !ngb_pc_setting(16)); break;
     case ROW_GLOW:    ngb_pc_set_setting(18, !ngb_pc_setting(18)); break;
+    case ROW_LOADDETAIL: ngb_pc_set_setting(29, !ngb_pc_setting(29)); break;
+    case ROW_RTHREAD: ngb_pc_set_setting(30, !ngb_pc_setting(30)); break;
     case ROW_INFITEMS: ngb_pc_set_setting(21, !ngb_pc_setting(21)); break;
     case ROW_INFAMMO: ngb_pc_set_setting(22, !ngb_pc_setting(22)); break;
+    case ROW_MISSIONS:
+    case ROW_ARCADE:
+    case ROW_MOVIES: {
+        int which = 26 + kind_unlock(kind);
+        ngb_pc_set_setting(which, !ngb_pc_setting(which));
+        break;
+    }
     case ROW_HEALTH:
     case ROW_NINPO:
     case ROW_ESSENCE: {
@@ -811,6 +883,29 @@ static int pc_value_change(int row, int delta)
     }
     }
     return 1;
+}
+
+/* Cheats' page with Unlocks' rows (on) or its own, the cursor on row: the page's row table and last row
+ * swapped in place. Not a page of its own: the engine slides the whole screen out and in between two
+ * pages, and a page with fewer rows sat lower. */
+static void unl_show(int on, int row)
+{
+    uint32_t pg = s_pages_recomp + 0x18 * PAGE_CHEAT;
+    s_unl = on;
+    MEM32(pg + 0xC) = on ? s_rowtab_unl : s_rowtab_cheat;
+    MEM8(pg + 2) = (uint8_t)((on ? N_UNL : (int)sizeof s_rows_cheat) - 1);
+    if (row >= 0) {                                       /* (not as the menu closes) */
+        MEM8(MENU_STATE + 1) = MEM8(MENU_STATE + 2) = (uint8_t)row;
+        MEM16(0x8DE468) = (uint16_t)row;                  /* the drawer's copy: else a frame on the old row */
+    }
+}
+
+static void menu_sound(uint32_t which)
+{
+    PUSH32(esp, 0x40);
+    PUSH32(esp, which);
+    PUSH32(esp, 0x0017F54Eu); RECOMP_ABI_CALL(0x001E3400u, sub_001E3400);
+    esp = esp + 8;
 }
 
 /**
@@ -894,6 +989,11 @@ loc_0017F540: ;
     if (CMP_EQ(_fa, _fb)) goto loc_0017F567; /* je: equal / zero */
 
 loc_0017F545: ;
+    if (s_recomp && s_unl && MEM8(edi) == PAGE_CHEAT) {   /* PC: B on Unlocks' rows: Cheats' again, on Unlocks */
+        menu_sound(3);
+        unl_show(0, (int)sizeof s_rows_cheat - 2);
+        goto loc_0017F681;
+    }
     PUSH32(esp, 0x40);
     PUSH32(esp, 3);
     PUSH32(esp, 0x0017F54Eu); RECOMP_ABI_CALL(0x001E3400u, sub_001E3400); /* call 0x001E3400 */
@@ -992,6 +1092,13 @@ loc_0017F5E4: ;
     goto loc_0017F681;
 
 loc_0017F5F9: ;
+    if (s_recomp && MEM8(edi) == PAGE_CHEAT &&
+        (LO8(edx) == UNL_ACTION || (LO8(edx) == 0xFD && s_unl))) {   /* PC: Unlocks' rows, or Exit on them */
+        int open = LO8(edx) == UNL_ACTION;
+        menu_sound(open ? 5 : 3);
+        unl_show(open, open ? 0 : (int)sizeof s_rows_cheat - 2);
+        goto loc_0017F681;
+    }
     eax = ZX8(LO8(edx));
     _fb = (uint32_t)(0xFC) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* sub source, before the write */
     eax = eax - 0xFC;
@@ -1374,6 +1481,11 @@ loc_0021F11D: ;
         MEM32(esp + 0x1C) = (uint32_t)s_ours[page_now() - PAGE_GFX].n;
         MEM32(esp + 0x4C) = s_labels_ours[page_now() - PAGE_GFX];
     }
+    if (page_now() == PAGE_CHEAT && s_unl) {
+        MEM32(esp + 0x1C) = (uint32_t)N_UNL;
+        MEM32(esp + 0x4C) = s_labels_unl;
+    }
+
     ecx = ZX8(MEM8(0xDB9ADA));
     eax = MEM32(0xBCE018);
     edx = ((int32_t)eax < 0) ? 0xFFFFFFFF : 0; /* cdq */
@@ -1426,9 +1538,7 @@ loc_0021F14F: ;
     MEMF(esp + 0x5C) = xmm0.f[0]; /* movss */
     MEM32(0x43B47C) = eax;
     MEM32(0x43B480) = eax;
-    ebx = 0x70;
-    if ((int)MEM32(esp + 0x1C) > 7)
-        ebx = 0x70 - PC_RAISE;                   /* PC: more than seven rows, a little higher */
+    ebx = 0x70;                                  /* PC: every page level with the categories' top */
     MEM32(esp + 0x10) = 0;
     if (CMP_LE(_fas, _fbs)) goto loc_0021F5E7; /* jle: less or equal (signed <=) */
 
@@ -1878,8 +1988,8 @@ loc_0021F5BC: ;
 
 loc_0021F5BF: ;
     esi = MEM32(0x43B478);
-    if ((int)MEM32(esp + 0x1C) > 7)
-        esi -= PC_CLOSER;                        /* PC: and a little closer */
+    if ((int)MEM32(esp + 0x1C) > 7 || (s_recomp && page_now() == PAGE_CHEAT))
+        esi -= PC_CLOSER;                        /* PC: more than seven rows closer (Cheats' always: its Unlocks rows as its own) */
     eax = MEM32(esp + 0x10);
     ecx = MEM32(esp + 0x1C);
     _fb = (uint32_t)(esi) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
@@ -1946,7 +2056,9 @@ void sub_00220870(void)
                                            D_EXTRACOST & 0xFFFF, D_GLOW & 0xFFFF,
                                            D_QUICKFREEZE & 0xFFFF, D_QUICKSCALE & 0xFFFF,
                                            D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF, D_POSAUDIO & 0xFFFF,
-                                           D_HUD & 0xFFFF, D_AUDIOOUT & 0xFFFF };
+                                           D_HUD & 0xFFFF, D_AUDIOOUT & 0xFFFF, D_MISSIONS & 0xFFFF,
+                                           D_ARCADE & 0xFFFF, D_MOVIES & 0xFFFF, D_UNLOCKS & 0xFFFF,
+                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);

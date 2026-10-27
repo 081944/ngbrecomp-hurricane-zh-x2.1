@@ -6,6 +6,7 @@
 #include <dxgiformat.h>
 
 #include "core/log.h"
+#include "gpu/headers.h"
 #include "kernel/kernel.h"
 
 namespace gpu {
@@ -299,7 +300,7 @@ int AddRawBuffer(const State& s, const VertexShader& layout, const VertexShader:
     using namespace kernel;
     const auto& st = s.streams[size_t(in.stream)];
     uint32_t stride = StrideOf(s, layout, in);
-    const uint8_t* data = static_cast<const uint8_t*>(HostPtr(mem::ResourceData(st.vb)));
+    const uint8_t* data = static_cast<const uint8_t*>(ResourceHost(st.vb));
     int slot = int(out.buffer_count);
     if (dense) {
         out.buffers[out.buffer_count++] = {data + size_t(d.first_vertex) * stride, d.span * stride, stride};
@@ -390,9 +391,8 @@ bool AssembleConverted(const State& s, const Inputs& inputs, const DrawRange& d,
     for (int k = 0; k < nregs; k++) {
         const auto& in = inputs.layout.inputs[size_t(inputs.regs[k])];
         const auto& st = s.streams[size_t(in.stream)];
-        uint32_t data = mem::ResourceData(st.vb);
         uint32_t stride = StrideOf(s, inputs.layout, in);
-        const uint8_t* src = static_cast<const uint8_t*>(HostPtr(data + in.offset));
+        const uint8_t* src = ResourceHost(st.vb) + in.offset;
         for (uint32_t v = 0; v < n; v++) {
             uint32_t id = ranged ? d.first_vertex + v : seq[v];
             Convert(in.type, src + size_t(id) * stride, &out.vertices[(size_t(v) * nregs + k) * 4]);

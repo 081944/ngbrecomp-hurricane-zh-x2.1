@@ -1232,7 +1232,10 @@ static void lat_note(bool ext)
         if (now - last > gmax) gmax = now - last;
     }
     last = now;
-    if (getenv("NV2A_PACE_LOG")) {
+    static int pace_log = -1;
+    if (pace_log < 0)
+        pace_log = getenv("NV2A_PACE_LOG") != NULL;
+    if (pace_log) {
         extern volatile int64_t nv2a_vblank_us;
         static int pn;
         if (pn++ < 400)
@@ -1396,7 +1399,10 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
     {
         VkClearColorValue black = { .float32 = { 0, 0, 0, 1 } };
-        if (getenv("NV2A_TEST_COLOR"))      /* letterbox in blue: is this the window? */
+        static int test_color = -1;
+        if (test_color < 0)
+            test_color = getenv("NV2A_TEST_COLOR") != NULL;
+        if (test_color)      /* letterbox in blue: is this the window? */
             black.float32[2] = 0.6f;
         VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
         vkCmdClearColorImage(cmd, s_images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

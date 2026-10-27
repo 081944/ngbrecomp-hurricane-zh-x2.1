@@ -116,12 +116,18 @@ the New Game prologue and the story movies play, and Start, A or B ends any of t
 next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
 `--settings` shows the old settings screen before the game.
 
-All Difficulties (Gameplay, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
+All Difficulties (Cheats > Unlocks, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
 without clearing the one before (or dying for Ninja Dog). The game's menus ask one function (sub_001DB520, now in
 `src/cheats.c`) for their unlock flags -- 7-9 are those three, read from the system data --
 and with the setting on it answers yes for them; nothing is written, so the player's own record
 is untouched and turning it off puts back what they have earned. Off, Ninja Dog is as the game
-has it: offered after dying in chapter 1.
+has it: offered after dying in chapter 1. Missions, Arcade Ninja Gaiden and Movie Theater (Cheats >
+Unlocks, saved) answer yes for flags 10-12 the same way: the main menu's MISSIONS, ARCADE NINJA GAIDEN
+and MOVIE THEATER, which the game shows once earned (the list's entries 2, 4 and 5); a change made in
+RECOMP SETTINGS shows or hides them at once (`src/main_menu.c`). With Missions on every mission is
+offered too: the Missions menu asks a byte per mission (0xDB95AC + its number, bit 0 offered, bit 1
+cleared; the game offers ten as Missions is earned and the rest as missions are cleared), and its
+reads (four lifted functions in `src/main_menu.c`) see bit 0 set; nothing written there either.
 
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
@@ -131,7 +137,7 @@ Infinite Essence (0x589570, the game's cap of 99,999) and Golden Scarabs (enough
 inventory slots at 0x5891D0, item 0x59 -- to make 50 with those already given to Muramasa,
 0x589574: every one of his rewards at the next visit). The game guards its state with 24
 checksums (sub_00164E50) and returns to the title when one changes without the flag its own
-code sets (0x7F1A94 + n); a cheat that writes sets them all. Gameplay also has All
+code sets (0x7F1A94 + n); a cheat that writes sets them all. Unlocks also has All
 Costumes (saved): the Costume Selection at New Game offers every costume, as after clearing
 the game, through the same flag function as All Difficulties (flags 1-4). The game has eight costumes (chr_ryu.afs, chr_ryua-g.afs) and its Costume Selection
 lists five (0 and 4-7, the table at 0x3E9D10), the locked ones as white shapes; here it lists only
@@ -283,7 +289,10 @@ records how far into the frame the GPU got there, and over 94% the game lowers i
 swaps Ryu's shadow map for the round shadow under him (sub_001D5E30). The emulated GPU only reads the
 push buffer while the renderer draws, so that callback reports no GPU time (`ngb_gpu_frame_reached`,
 src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
-`NGB_GPU_LOAD=1` keeps the game's measurement.
+Graphics > Lower Detail Under Load keeps the game's measurement, which on a slower PC steadied the frame
+time (#114); `NGB_GPU_LOAD=1` or `0` overrides the setting.
+The weapon-hit sparks are lines the game draws 2.7 to 3 pixels wide; `NGB_SPARK_WIDTH=0.5` (0.1 to 1)
+makes them thinner, never under a pixel (#117).
 
 ## The renderer
 

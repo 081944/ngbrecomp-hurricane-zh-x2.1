@@ -198,3 +198,15 @@ debug knobs out once it is the default.
   draw's map piece, chunk and texture; a stepped frame (`NGB_D3D_STEP`) also writes
   `dump_dir/vertices_<frame>.txt`, every fixed-function draw's matrices, positions and guest call stack. F7 traces carry each point draw's state (`pt`: sprite, scaling, size, min, max, A B C,
   the vertex's attribute bits).
+
+## The render thread (2026-10-27, opt-in)
+
+Graphics > Experimental Render Thread (needs a restart), or `NGB_D3D_THREAD=1` (`0` off) over it, draws on a thread of its own (src/d3d/gpu/threaded.cpp, after TGP482's SDK
+render_thread.cpp): the title's thread records each call -- the state that changed, the resource headers
+it names (gpu/headers.h), its indices and rects, the vertices of a DrawVerticesUP, and the game's side of
+it (gpu::Peek: the map piece, the towers' chunk, the 2D and HUD layout flags; gpu::QuickPeek once a frame) --
+and the render thread draws the recording, a frame behind at most. xemu's push buffer reader is held back
+to what has been drawn (nv2a_pfifo_gate), so every fence and semaphore the title waits on follows the
+drawing; the title's progress reads (nv2a_user_read_hook) and the GPU wait hand over what it recorded.
+`NGB_D3D_THREAD=capture` replays each call at once on the title's thread (a test of the recording),
+`NGB_D3D_GATE=0` leaves the GPU emulation free. Attract demo: the title's thread 134 -> 110 ms/s.
