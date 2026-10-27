@@ -81,9 +81,9 @@ ctx	en	zh	use
 	Smoother Glow	柔和泛光	E
 	A softer, fainter glow on bright lights. Off: the console's.	亮光的泛光更柔和、更淡。关：主机原版	E
 	Lower Detail Under Load	性能模式	E
-	Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.	繁忙时降低细节，与 Xbox 原版一致；龙的影子可能闪烁	P
+	Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.	性能模式，影子可能闪。	E
 	Experimental Render Thread	绘图线程	E
-	Drawing on a thread of its own. May glitch. Needs restart.	在独立线程绘制。可能出错，需要重启	P
+	Drawing on a thread of its own. May glitch. Needs restart.	独立线程，需重启。	E
 	Unlocks	解锁	E
 	Difficulties, costumes and the main menu's extras, without earning them. Saved.	直接解锁难度、服装与主菜单内容，无需达成条件。会保存	E
 	Missions	任务	E
