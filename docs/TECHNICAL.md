@@ -291,6 +291,8 @@ push buffer while the renderer draws, so that callback reports no GPU time (`ngb
 src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
 Graphics > Lower Detail Under Load keeps the game's measurement, which on a slower PC steadied the frame
 time (#114); `NGB_GPU_LOAD=1` or `0` overrides the setting.
+The weapon-hit sparks are lines the game draws 2.7 to 3 pixels wide; `NGB_SPARK_WIDTH=0.5` (0.1 to 1)
+makes them thinner, never under a pixel (#117).
 
 ## The renderer
 

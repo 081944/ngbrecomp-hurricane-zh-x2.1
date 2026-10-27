@@ -13,6 +13,16 @@ inline bool SparkFixEnabled() {
     static const bool enabled=[] {const char* e=std::getenv("NGB_SPARK_ASPECT_FIX");return !(e && !std::strcmp(e,"0"));}();
     return enabled;
 }
+// The impact streaks' width (the wide lines the game draws at 2.7 to 3 pixels) times NGB_SPARK_WIDTH,
+// 0.1 to 1 (#117, Falleninmemary): 0.5 halves it. Never under a pixel.
+inline float SparkWidth() {
+    static const float width=[] {
+        const char* e=std::getenv("NGB_SPARK_WIDTH");
+        float v=e ? float(std::atof(e)) : 1.0f;
+        return v>0.0f ? std::clamp(v,0.1f,1.0f) : 1.0f;
+    }();
+    return width;
+}
 struct SparkEndpoint { float p[4],color[4]; };
 inline bool ReadSparkVertices(const Assembled& a,SparkEndpoint (&out)[2]) {
     if (a.topology!=Topology::Lines || a.pretransformed || a.regs!=9 || a.index_count || a.draw_count!=2) return false;
