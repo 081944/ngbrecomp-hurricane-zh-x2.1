@@ -339,6 +339,12 @@ and renders with the new one unseen, for comparing (`NGB_D3D_DUMP=dir` writes it
   Run it after the game reaches new code.
 - `XBOX_LOG_LEVEL=4` and `RECOMP_KERNEL_LOG_BUDGET=100000` give a full kernel and
   file trace.
+- `-DNGB_OPT_LEVEL=-O3` builds every target at another level (`-O2` by default; on the attract demo -O3
+  measured no different). `-DNGB_PGO=generate` builds a profile-recording binary: a training run writes
+  `$LLVM_PROFILE_FILE` when stopped with SIGINT or SIGTERM; `llvm-profdata merge` the runs and build with
+  `-DNGB_PGO=<file.profdata>` (the same clang version). Measured on the attract demo: about 4% less CPU,
+  not used for releases (each toolchain needs its own profile, and its compiler's choices in code the
+  training never ran are untested: one read a GPU register with a `bt` the MMIO decoder lacked).
 
 The defaults in `bringup_defaults()` (`src/main.c`) stand in for hardware that isn't
 modelled yet. Each one should disappear when the real thing exists.

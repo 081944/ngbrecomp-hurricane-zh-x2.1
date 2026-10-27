@@ -756,6 +756,18 @@ static void bringup_defaults(void)
     set_default("RECOMP_USB", "1");
 }
 
+#if defined(NGB_PGO_GENERATE)
+/* A profile-recording build (NGB_PGO=generate): the profile is written at exit(), which the game never
+ * reaches (it leaves with _exit, see feedback_on_signal); a training run ends with SIGINT or SIGTERM,
+ * and writes it here. */
+int __llvm_profile_write_file(void);
+static void pgo_on_signal(int sig)
+{
+    __llvm_profile_write_file();
+    _exit(128 + sig);
+}
+#endif
+
 #if defined(RECOMP_ICALL_FEEDBACK)
 /* A bring-up run usually ends at a timeout or ^C, not an orderly exit, and
  * atexit does not run on a signal. Dump on the way out of those too. */
@@ -1166,6 +1178,10 @@ int main(int argc, char **argv)
         signal(SIGINT, prof_exit_on_signal);
         signal(SIGTERM, prof_exit_on_signal);
     }
+#endif
+#if defined(NGB_PGO_GENERATE)
+    signal(SIGINT, pgo_on_signal);
+    signal(SIGTERM, pgo_on_signal);
 #endif
 #if defined(RECOMP_ICALL_FEEDBACK)
     RECOMP_ICALL_FEEDBACK_INIT();     /* atexit dump to icall_targets.dump */
