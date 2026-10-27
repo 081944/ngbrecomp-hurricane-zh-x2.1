@@ -18,7 +18,7 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
 - Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
-- 16:9, 16:10 and 21:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
+- 16:9, 16:10, 21:9 and 32:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
   corners, menus keep the game's own 16:9 look
 - Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
   controller, mouse support in the menus
@@ -91,7 +91,7 @@ of the pause menu. Changes apply at once and are saved.
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
   bright lights; off is the console's look)
-- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
+- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9, 32:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
   warnings and intro movies
 - **Sound**: Positional Audio (3D sounds placed left and right: Panning, the default; Console, through
@@ -155,8 +155,8 @@ the game was in.
 
 ## Known issues
 
-- At **21:9**, objects at the far left and right of the screen can appear a moment late (the game
-  decides what to draw for a narrower view).
+- At **21:9** and **32:9**, objects at the far left and right of the screen can appear a moment late (the
+  game decides what to draw for a narrower view).
 - At **10x render resolution with 8x anti-aliasing**, where the frame rate drops below 60, characters'
   shadows can flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
 - Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).

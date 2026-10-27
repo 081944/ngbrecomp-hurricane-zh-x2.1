@@ -206,7 +206,7 @@ static void value_text(int row, char *out, size_t n)
         snprintf(out, n, "%d x %d", w, h);
         break;
     }
-    case S_ASPECT:  snprintf(out, n, "%s", v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
+    case S_ASPECT:  snprintf(out, n, "%s", v == 4 ? "32:9" : v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
     case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
@@ -268,7 +268,7 @@ static void change(int row, int step)
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
     case S_ASPECT:
-        ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 3)) % 4);
+        ngb_pc_set_setting(row, (v + (step > 0 ? 1 : ASPECT_COUNT - 1)) % ASPECT_COUNT);
         break;
     case S_WINDOW: {
         int n = ngb_settings_size_count(v / 8);

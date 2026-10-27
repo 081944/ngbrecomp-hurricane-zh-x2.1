@@ -6,7 +6,7 @@
 #define NGB_LAUNCHER_H
 #include <stddef.h>
 
-enum { ASPECT_4_3, ASPECT_16_9, ASPECT_16_10, ASPECT_21_9, ASPECT_COUNT };
+enum { ASPECT_4_3, ASPECT_16_9, ASPECT_16_10, ASPECT_21_9, ASPECT_32_9, ASPECT_COUNT };
 
 typedef struct NgbSettings {
     int aspect;          /* ASPECT_* */

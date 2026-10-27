@@ -153,10 +153,10 @@ game puts it where OPTIONS was before it moved, the last entry: now EXIT TO DESK
 Difficulties' Ninja Dog the difficulty selection has five rows, a case the game never shows
 there: they are spaced closer (38 instead of 44) so the first clears the header.
 
-On a wide screen (16:9, 16:10, 21:9) the game is in its own widescreen mode the whole time, with
+On a wide screen (16:9, 16:10, 21:9, 32:9) the game is in its own widescreen mode the whole time, with
 its 3D drawn for the screen's shape (both of its aspect constants, 0x414AF4 and 0x414AF8, are that
 shape): every menu, the HUD, chapter cards and clear screens are the game's own 16:9 ones, drawn as it
-draws them for a widescreen TV, kept 16:9 (`src/d3d/vk/backend.cpp`): at 21:9 narrowed to the middle
+draws them for a widescreen TV, kept 16:9 (`src/d3d/vk/backend.cpp`): at 21:9 and 32:9 narrowed to the middle
 16:9, at 16:10 shortened to it, a 2D screen or menu whole there with bars beyond (at the sides at
 21:9, above and below at 16:10). The bars are filled with the screen's own colours: each side's edge,
 16 bands of it, sampled over the screen's first 2 s and then kept still, so a menu's animation does
@@ -185,7 +185,8 @@ its 4:3 mode for a 4:3 movie narrowed it twice, #28.) The mouse is mapped to the
 `NGB_HUD_RATIO_LOG=1` logs the 2D draws not drawn texel for pixel; `NGB_MODE_LOG=1` the mode each
 frame.
 Aspect ratio also offers 21:9 (64:27;
-window sizes 1720x720 to 5120x2160): the 3D widened as for 16:10, the game deciding what to
+window sizes 1720x720 to 5120x2160) and 32:9 (two 16:9 screens side by side, 2560x720 to 7680x2160, #74):
+the 3D widened as for 16:10, the game deciding what to
 draw for a narrower view, so objects at the far edges may appear late.
 
 The boot "Warnings" screen is always skipped (`NGB_KEEP_WARNINGS=1` shows it).

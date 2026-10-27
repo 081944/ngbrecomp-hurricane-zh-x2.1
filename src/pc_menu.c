@@ -152,7 +152,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define T_BORDERLESS 0x2012C
 #define T_ASPECT   0x2012D
 #define D_ASPECT   0x2012E
-#define T_ASPECT0  0x20170            /* + 0..3: 4:3, 16:9, 16:10, 21:9 (not in T_WSIZE0's 32) */
+#define T_ASPECT0  0x20170            /* + 0..4: 4:3, 16:9, 16:10, 21:9, 32:9 (not in T_WSIZE0's 32) */
 #define T_SKIP     0x20160
 #define T_LAUNCHER 0x20161
 #define T_YES      0x20162
@@ -194,7 +194,8 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_RTHREAD  0x201DF
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
-#define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" */
+#define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" (the first four aspects) */
+#define T_WSIZE4   0x201E0            /* + index: 32:9's, past T_WSIZE0's room */
 
 static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKFREEZE, "Quick Menu Pause" },
@@ -264,6 +265,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_ASPECT,  "Aspect Ratio" },
     { D_ASPECT,  "The shape of the picture and the window sizes offered." },
     { T_ASPECT0 + 0, "4:3" }, { T_ASPECT0 + 1, "16:9" }, { T_ASPECT0 + 2, "16:10" }, { T_ASPECT0 + 3, "21:9" },
+    { T_ASPECT0 + 4, "32:9" },
     { T_WINDOWSZ, "Window Size" },
     { D_WINDOWSZ, "The size of the window when not full screen." },
     { D_PC,      "Graphics and display settings of the PC version." },
@@ -374,6 +376,12 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
 }
 
 /* Once, before the Options menu is drawn: the text, the rows, our page. */
+/* A window size's text: the setting's value, aspect * 8 + its index */
+static uint32_t wsize_id(int v)
+{
+    return v < 4 * 8 ? T_WSIZE0 + (uint32_t)v : T_WSIZE4 + (uint32_t)(v - 4 * 8);
+}
+
 static void pc_menu_init(void)
 {
     if (s_ready)
@@ -383,13 +391,13 @@ static void pc_menu_init(void)
     /* Category 2's text table with ours after it. */
     uint32_t old = MEM32(0x436240 + 2 * 4);
     uint32_t count = MEM16(0x43626C + 2 * 2);
-    uint32_t add = sizeof s_text / sizeof s_text[0], extra = 4 * 8;
+    uint32_t add = sizeof s_text / sizeof s_text[0], extra = ASPECT_COUNT * 8;
     uint32_t tab = xbox_HeapAlloc(12 * (count + add + extra), 4);
     memcpy((void *)XBOX_PTR(tab), (void *)XBOX_PTR(old), 12 * count);
     for (uint32_t i = 0; i < add + extra; i++) {
         char sz[24];
         const char *text = i < add ? s_text[i].text : "";
-        uint32_t id = i < add ? s_text[i].id : T_WSIZE0 + (i - add);
+        uint32_t id = i < add ? s_text[i].id : wsize_id((int)(i - add));
         if (i >= add) {                                /* a window size, by aspect and place */
             int w, h, a = (int)(i - add) / 8, k = (int)(i - add) % 8;
             if (k < ngb_settings_size_count(a)) {
@@ -783,7 +791,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
         return v == 1 ? T_MAILBOX : v == 2 ? T_ADAPTIVE : v == 3 ? T_FIFO : T_OFF;
     }
     case ROW_FPS:     return ngb_pc_setting(5) ? T_ON : T_OFF;
-    case ROW_WINDOW:  return T_WSIZE0 + (uint32_t)ngb_pc_setting(6);
+    case ROW_WINDOW:  return wsize_id(ngb_pc_setting(6));
     case ROW_ASPECT:  return T_ASPECT0 + (uint32_t)ngb_pc_setting(7);
     case ROW_SKIP:    return ngb_pc_setting(8) ? T_YES : T_NO;
     case ROW_LAUNCHER: return ngb_pc_setting(9) ? T_YES : T_NO;
@@ -874,7 +882,7 @@ static int pc_value_change(int row, int delta)
         ngb_pc_set_setting(which, !ngb_pc_setting(which));
         break;
     }
-    case ROW_ASPECT:  ngb_pc_set_setting(7, (ngb_pc_setting(7) + (step > 0 ? 1 : 3)) % 4); break;
+    case ROW_ASPECT:  ngb_pc_set_setting(7, (ngb_pc_setting(7) + (step > 0 ? 1 : ASPECT_COUNT - 1)) % ASPECT_COUNT); break;
     case ROW_WINDOW: {
         int v = ngb_pc_setting(6), a = v / 8, n = ngb_settings_size_count(a);
         ngb_pc_set_setting(6, a * 8 + (v % 8 + step + n) % n);
@@ -2052,5 +2060,5 @@ float ngb_hud_shape(void)
     if (stretch)
         return 1.0f;
     int a = ngb_pc_setting(7);
-    return a == 1 ? 0.75f : a == 2 ? 0.8333333f : a == 3 ? 0.5625f : 1.0f;
+    return a == 1 ? 0.75f : a == 2 ? 0.8333333f : a == 3 ? 0.5625f : a == 4 ? 0.375f : 1.0f;
 }
