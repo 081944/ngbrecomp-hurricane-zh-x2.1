@@ -78,7 +78,7 @@ void ngb_pc_set_setting(int which, int value);
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
        S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT,
-       S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD,
+       S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD, S_INTERCEPT,
        S_UNLOCKS,                 /* not a setting: Cheats' row opening the Unlocks page */
        S_COUNT };
 
@@ -90,7 +90,7 @@ static const char *const s_label[S_COUNT] = {
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
     "Audio Output", "Missions", "Arcade Ninja Gaiden", "Movie Theater", "Lower Detail Under Load",
-    "Experimental Render Thread", "Unlocks",
+    "Experimental Render Thread", "Intercept", "Unlocks",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -124,6 +124,7 @@ static const char *const s_help[S_COUNT] = {
     "MOVIE THEATER in the main menu without earning it.",
     "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.",
     "Drawing on a thread of its own. May glitch. Needs restart.",
+    "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out).",
     "Difficulties, costumes and the main menu's extras, without earning them. Saved.",
 };
 
@@ -139,7 +140,7 @@ static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, S_LOADDETAIL, S_RTHREAD, -1 },   /* -1 ends a page shorter than CAT_ROWS */
     { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_SKIP, -1 },
     { S_POSAUDIO, S_AUDIOOUT, -1 },
-    { S_QUICKSCALE, S_QUICKFREEZE, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, S_INTERCEPT, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, S_UNLOCKS, -1 },
     { -1 },
     { S_ALLDIFF, S_ALLCOST, S_MISSIONS, S_ARCADE, S_MOVIES, -1 },
@@ -211,6 +212,7 @@ static void value_text(int row, char *out, size_t n)
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
     case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
+    case S_INTERCEPT: snprintf(out, n, "%s", v == 2 ? "Hurricane" : v ? "Black" : "Off"); break;
     case S_UNLOCKS: snprintf(out, n, "%s", ""); break;
     case S_SKIP:
     case S_ALLDIFF:
@@ -266,6 +268,7 @@ static void change(int row, int step)
         break;
     case S_POSAUDIO:
     case S_AUDIOOUT:
+    case S_INTERCEPT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
     case S_ASPECT:

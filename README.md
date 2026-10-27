@@ -98,7 +98,8 @@ of the pause menu. Changes apply at once and are saved.
   the sound chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
-  and items, and whether the game pauses while it is open
+  and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
+  Pack's guard counter Black left out: tap guard as an attack lands to turn it aside
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs.
   Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
   Missions (with every mission), Arcade Ninja Gaiden and Movie Theater without earning them
