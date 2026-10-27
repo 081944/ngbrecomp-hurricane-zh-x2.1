@@ -811,7 +811,7 @@ static int pc_value_change(int row, int delta)
 {
     int kind = row_kind(row);
     int step = delta > 0 ? 1 : -1;
-    if ((kind < ROW_RENDER || kind > ROW_ASPECT) && (kind < ROW_SKIP || kind > ROW_MOVIES))
+    if (kind < ROW_RENDER || kind == ROW_BACK || kind == ROW_UNLOCKS)
         return 0;                                      /* (Unlocks opens its page: the engine's) */
     if (!delta)
         return 1;
