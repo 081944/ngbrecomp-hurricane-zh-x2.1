@@ -86,12 +86,12 @@ ctx	en	zh	use
 	Drawing on a thread of its own. May glitch. Needs restart.	在独立线程绘制。可能出错，需要重启	P
 	Unlocks	解锁	E
 	Difficulties, costumes and the main menu's extras, without earning them. Saved.	直接解锁难度、服装与主菜单内容，无需达成条件。会保存	E
-	Missions	任务	P
-	MISSIONS in the main menu without earning it.	无需达成条件即可在主菜单使用任务模式。	P
-	Arcade Ninja Gaiden	街机版忍者龙剑传	P
-	ARCADE NINJA GAIDEN in the main menu without earning it.	无需达成条件即可在主菜单使用街机版忍者龙剑传。	P
-	Movie Theater	影像鉴赏	P
-	MOVIE THEATER in the main menu without earning it.	无需达成条件即可在主菜单使用影像鉴赏。	P
+	Missions	任务	E
+	MISSIONS in the main menu without earning it.	任务直接解锁。	E
+	Arcade Ninja Gaiden	街机	E
+	ARCADE NINJA GAIDEN in the main menu without earning it.	街机版直接解锁。	E
+	Movie Theater	影院	E
+	MOVIE THEATER in the main menu without earning it.	影像鉴赏直接解锁。	E
 	Quick Menu	快速菜单	E
 	A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.	用十字键选择武器、忍法与道具的菜单（按上或下打开），以此大小显示	E
 	Quick Menu Pause	快速菜单暂停	E
