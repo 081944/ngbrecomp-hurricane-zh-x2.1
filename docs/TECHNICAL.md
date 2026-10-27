@@ -264,7 +264,10 @@ With a PlayStation pad in use (SDL's controller type: a DualShock 3 or 4, a Dual
 that says so) the prompts are its buttons (#113): Xelu's PS3 set (`assets/prompts/ps`), the symbols in
 their colours on black as on the DualShock 2 of the game's time -- Cross, Circle, Square and Triangle for
 A, B, X and Y, L2 and R2 for the triggers, L1 and R1 for Black and White (the buttons they are on), over the
-pause menu's L and R plates too; the Controls page names them the same way. The game's Button Settings
+pause menu's L and R plates too (on a dark plate the size of the game's), and R1 drawn the size of L1 (the
+game draws White's icon smaller); the Controls page names them the same way. The Controls page shows the
+two-button actions (Ninpo, Wind Run) as the pad's button pictures, Xelu's Xbox 360 ones on an Xbox pad
+(`assets/prompts/xbox`). The game's Button Settings
 page keeps its picture of the Xbox controller. `NGB_PAD_PROMPTS=ps` shows them whatever the pad.
 
 In the game's menus (main menu, Options, the pause menu and its tabs, message boxes) the mouse

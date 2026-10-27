@@ -879,19 +879,17 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
                 snprintf(name, sizeof name, c == 2 ? "Press a button" : "Press a key");
             else if (fixed)
                 snprintf(name, sizeof name, r >= A_CAM_UP ? "R Stick" : "L Stick");
-            else if (combo && ngb_pad_prompts_ps()) {     /* the two buttons' pictures: their names do not fit */
+            else if (combo) {                              /* the two buttons' pictures, the pad's own */
                 const float k = (float)PAGE_TW / PAGE_W;
                 float at[4];
-                int sq = combo[0] == 'S';                  /* Square + Cross (Wind Run), Triangle + Circle (Ninpo) */
+                int ps = ngb_pad_prompts_ps(), wr = combo[0] == 'X' || combo[0] == 'S';   /* Wind Run, else Ninpo */
                 picture_icon(px, PAGE_TW, PAGE_TH, (cx - 25) * k, (y + 5) * k, (cx - 6) * k, (y + ROW_H - 5) * k,
-                             sq ? "PS3_Square" : "PS3_Triangle", at);
+                             wr ? (ps ? "PS3_Square" : "360_X") : (ps ? "PS3_Triangle" : "360_Y"), at);
                 picture_icon(px, PAGE_TW, PAGE_TH, (cx + 6) * k, (y + 5) * k, (cx + 25) * k, (y + ROW_H - 5) * k,
-                             sq ? "PS3_Cross" : "PS3_Circle", at);
+                             wr ? (ps ? "PS3_Cross" : "360_A") : (ps ? "PS3_Circle" : "360_B"), at);
                 page_text_fit(px, m, "+", cx, y + 18, 15, 0x6E6E78, 1, w - 6);
                 continue;
-            } else if (combo)
-                snprintf(name, sizeof name, "%s", combo);
-            else
+            } else
                 ngb_bind_input_name(ngb_bind_get(r, c), name, sizeof name);
             page_text_fit(px, m, name, cx, y + 18, 15,
                           on && capturing ? 0xF5EB5A : on ? 0xFFFFFF : fixed || combo ? 0x6E6E78 : 0xC8C8D0, 1, w - 6);
@@ -1505,9 +1503,19 @@ static int tk_ready(void)
         uint32_t *px = calloc(64 * KS * 32 * KS, sizeof *px);
         float at[4];
         /* the prompts' keys (21 x 23 cells), larger */
-        if (t) {
-            picture_icon(px, 64 * KS, 32 * KS, 0, 0, 21 * KS, 23 * KS, "PS3_L2", at);
-            picture_icon(px, 64 * KS, 32 * KS, 32 * KS, 0, 53 * KS, 23 * KS, "PS3_R2", at);
+        if (t) {                  /* on a dark plate of their own: the pictures are wider than tall, the game's
+                                   * L and R plates square, and showed above and below them */
+            for (int i = 0; i < 2; i++) {
+                float x0 = (float)(i * 32 * KS), r = 4.0f * KS;
+                for (int Y = 0; Y < 23 * KS; Y++)
+                    for (int X = 0; X < 21 * KS; X++) {
+                        float dx = fmaxf(0, fmaxf(r - X, X + 1 - (21 * KS - r))),
+                              dy = fmaxf(0, fmaxf(r - Y, Y + 1 - (23 * KS - r)));
+                        if (dx * dx + dy * dy <= r * r)
+                            px[Y * 64 * KS + (int)x0 + X] = 0xFF26262Bu;
+                    }
+                picture_icon(px, 64 * KS, 32 * KS, x0 + KS, KS, x0 + 20 * KS, 22 * KS, i ? "PS3_R2" : "PS3_L2", at);
+            }
         } else {
             key_icon(px, 64 * KS, 32 * KS, 0, 0, 21 * KS, 23 * KS, SDL_SCANCODE_Q);
             key_icon(px, 64 * KS, 32 * KS, 32 * KS, 0, 53 * KS, 23 * KS, SDL_SCANCODE_E);
@@ -1629,6 +1637,31 @@ static int ps_make(int slot, uint32_t entry, uint32_t hdr)
     return ok;
 }
 
+/* White's icon (sprite 0xC) is drawn at about half the size of Black's (0xB), as the Xbox controller's
+ * White button is smaller; as R1 it is drawn the size of L1: its definition's texture size (which, with
+ * its corners, is the size it is drawn at, about its middle) made Black's drawn size over its own corners.
+ * The game's back when the pad's own icons are. */
+static void ps_white_size(uint32_t def, int big)
+{
+    static uint16_t orig[2];
+    static int grown;
+    if (!def || big == grown)
+        return;
+    uint32_t b = sprite_def(0xB);
+    if (big && b) {
+        orig[0] = MEM16(def + 0x14);
+        orig[1] = MEM16(def + 0x16);
+        float w = (MEMF(b + 8) - MEMF(b)) * MEM16(b + 0x14), h = (MEMF(b + 12) - MEMF(b + 4)) * MEM16(b + 0x16);
+        MEM16(def + 0x14) = (uint16_t)lroundf(w / (MEMF(def + 8) - MEMF(def)));
+        MEM16(def + 0x16) = (uint16_t)lroundf(h / (MEMF(def + 12) - MEMF(def + 4)));
+        grown = 1;
+    } else if (!big) {
+        MEM16(def + 0x14) = orig[0];
+        MEM16(def + 0x16) = orig[1];
+        grown = 0;
+    }
+}
+
 /* Each button icon the game queues, before the keyboard's (kc_check): the PlayStation pictures while a
  * PlayStation pad is in use, else the game's own back. */
 static void ps_check(uint32_t id)
@@ -1644,8 +1677,12 @@ static void ps_check(uint32_t id)
     if ((xbox_InputKeyboardActive() && !getenv("NGB_PAD_PROMPTS")) || !ngb_pad_prompts_ps()) {
         if (ours)
             MEM32(entry) = s_ps[slot].orig;
+        if (slot == 2)
+            ps_white_size(def, 0);
         return;
     }
+    if (slot == 2)
+        ps_white_size(def, 1);
     if (!ours)                    /* (the keys' texture there: the game's is the one it replaced) */
         s_ps[slot].orig = slot == 0 && s_kc_made > 0 && (now == s_kc[0].hdr || now == s_kc[1].hdr) ? s_kc_orig
                                                                                                    : now;
