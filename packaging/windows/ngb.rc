@@ -15,8 +15,8 @@ BEGIN
       VALUE "FileDescription", "Ninja Gaiden Black Hurricane (static recompilation)"
       VALUE "ProductName", "Ninja Gaiden Black Hurricane"
       VALUE "OriginalFilename", "ngb-hurricane-zh-x2.1.exe"
-      VALUE "FileVersion", "0.9.36-t2"
-      VALUE "ProductVersion", "0.9.36-t2"
+      VALUE "FileVersion", "0.9.36-t3"
+      VALUE "ProductVersion", "0.9.36-t3"
     END
   END
   BLOCK "VarFileInfo"
