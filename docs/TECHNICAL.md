@@ -283,6 +283,9 @@ two-button actions (Ninpo, Wind Run) as the pad's button pictures, Xelu's Xbox 3
 page keeps its picture of the Xbox controller. The Controls page's Button Prompts picks the set: Auto (the
 device in use, as above), Xbox, PlayStation or PC (the keys), saved in `controls.ini` (`button_prompts`).
 `NGB_PAD_PROMPTS=ps` shows the PlayStation's whatever the setting, any other value the Xbox's.
+The techniques' "hold the button" icons (sprites 0x1CE-0x1D3) are a texture of their own, six
+cells with an arrow over the button: with PlayStation or PC prompts each button is redrawn as that set's,
+the game's arrow kept over it (`hold_check`, #125); the keys are play's, not the menu's.
 
 In the game's menus (main menu, Options, the pause menu and its tabs, message boxes) the mouse
 points: the game's own cursor follows it onto the item under it (a press of the pad at a time,

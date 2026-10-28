@@ -114,7 +114,8 @@ were.
 ## Controls
 
 A controller works as on the Xbox. The keyboard and mouse can be used at any time — the game follows
-whichever was touched last, and its button prompts change to match.
+whichever was touched last, and its button prompts change to match (or stay on one set: "Button
+Prompts" on the "Controls" page, Auto, Xbox, PlayStation or PC).
 
 | Action | Keys | | Action | Keys |
 |---|---|---|---|---|
