@@ -31,7 +31,7 @@ static void config_path(char *out, size_t n, int make_dir)
     snprintf(out, n, "%s/settings.ini", dir);
 }
 
-static const char *const ASPECT_NAMES[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+static const char *const ASPECT_NAMES[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9", "32:9" };
 
 /* Window sizes offered for each aspect ratio, smallest first. */
 static const int SIZES_4_3[][2] = {
@@ -45,11 +45,14 @@ static const int SIZES_16_10[][2] = {
     { 2560, 1600 }, { 3840, 2400 }, { 0, 0 } };
 static const int SIZES_21_9[][2] = {     /* the "21:9" of the displays: 64:27 (2560 x 1080), 43:18 (3440 x 1440) */
     { 1720, 720 }, { 2560, 1080 }, { 3440, 1440 }, { 5120, 2160 }, { 0, 0 } };
+static const int SIZES_32_9[][2] = {     /* two 16:9 screens side by side (#74) */
+    { 2560, 720 }, { 3840, 1080 }, { 5120, 1440 }, { 7680, 2160 }, { 0, 0 } };
 
 static const int (*sizes_for(int aspect))[2]
 {
     return aspect == ASPECT_4_3 ? SIZES_4_3
-         : aspect == ASPECT_16_10 ? SIZES_16_10 : aspect == ASPECT_21_9 ? SIZES_21_9 : SIZES_16_9;
+         : aspect == ASPECT_16_10 ? SIZES_16_10 : aspect == ASPECT_21_9 ? SIZES_21_9
+         : aspect == ASPECT_32_9 ? SIZES_32_9 : SIZES_16_9;
 }
 
 static int nsizes(int aspect)
@@ -200,6 +203,8 @@ void ngb_settings_load(NgbSettings *s)
             s->detail_under_load = atoi(val) != 0;
         } else if (!strcmp(key, "render_thread")) {
             s->render_thread = atoi(val) != 0;
+        } else if (!strcmp(key, "intercept")) {
+            s->intercept = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -248,6 +253,7 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
     fprintf(f, "detail_under_load = %d\n", s->detail_under_load);
     fprintf(f, "render_thread = %d\n", s->render_thread);
+    fprintf(f, "intercept = %d\n", s->intercept);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "audio_output = %d\n", s->audio_output);
@@ -264,6 +270,7 @@ double ngb_settings_aspect_ratio(const NgbSettings *s)
     case ASPECT_4_3:   return 4.0 / 3.0;
     case ASPECT_16_10: return 16.0 / 10.0;
     case ASPECT_21_9:  return 64.0 / 27.0;
+    case ASPECT_32_9:  return 32.0 / 9.0;
     default:           return 16.0 / 9.0;
     }
 }
@@ -412,7 +419,7 @@ void ngb_settings_change(NgbSettings *s, int row, int dir)
 
 void ngb_settings_row_text(const NgbSettings *s, int row, const char **label, char *val, size_t n)
 {
-    static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+    static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9", "32:9" };
     /* the game draws a 720x480 picture at every aspect (480p); the scale multiplies it (#105) */
     static const char *const SCALE_LABEL[10] = {
         "1x 720x480", "2x 1440x960", "3x 2160x1440", "4x 2880x1920", "5x 3600x2400",

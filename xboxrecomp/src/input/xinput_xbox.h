@@ -105,6 +105,8 @@ DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration);
 int xbox_InputControllerPresent(void);
 /* The keyboard and mouse are the device in use (last touched), not a pad. */
 int xbox_InputKeyboardActive(void);
+/* The pad in use is a PlayStation one (its button prompts). */
+int xbox_InputPadPlayStation(void);
 /* The mouse's recent motion as a stick, full deflection at `full` px/s. */
 void xbox_InputMouseStick(float full, short *x, short *y);
 

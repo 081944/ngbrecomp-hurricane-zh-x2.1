@@ -65,7 +65,7 @@ enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
        ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO, ROW_POSAUDIO, ROW_HUD, ROW_AUDIOOUT,
-       ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD,
+       ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD, ROW_INTERCEPT,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -81,7 +81,7 @@ static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHA
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_HUD, ROW_SKIP,
                                        ROW_BACK };
 static const uint8_t s_rows_sound[] = { ROW_POSAUDIO, ROW_AUDIOOUT, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_INTERCEPT, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO,
                                         ROW_UNLOCKS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
@@ -153,7 +153,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define T_BORDERLESS 0x2012C
 #define T_ASPECT   0x2012D
 #define D_ASPECT   0x2012E
-#define T_ASPECT0  0x20170            /* + 0..3: 4:3, 16:9, 16:10, 21:9 (not in T_WSIZE0's 32) */
+#define T_ASPECT0  0x20170            /* + 0..4: 4:3, 16:9, 16:10, 21:9, 32:9 (not in T_WSIZE0's 32) */
 #define T_SKIP     0x20160
 #define T_LAUNCHER 0x20161
 #define T_YES      0x20162
@@ -193,9 +193,13 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_LOADDETAIL 0x201DD
 #define T_RTHREAD  0x201DE            /* Render Thread, experimental (src/d3d/gpu/threaded.cpp) */
 #define D_RTHREAD  0x201DF
+#define T_INTERCEPT 0x201E8           /* Intercept (src/intercept.c, #109) */
+#define D_INTERCEPT 0x201E9
+#define T_INTERCEPT0 0x201EA          /* + 0..2: Off, Black, Hurricane Pack */
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
-#define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" */
+#define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" (the first four aspects) */
+#define T_WSIZE4   0x201E0            /* + index: 32:9's, past T_WSIZE0's room */
 
 static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKFREEZE, "Quick Menu Pause" },
@@ -241,6 +245,9 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_LOADDETAIL, "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker." },
     { T_RTHREAD, "Experimental Render Thread" },
     { D_RTHREAD, "Drawing on a thread of its own. May glitch. Needs restart." },
+    { T_INTERCEPT, "Intercept" },
+    { D_INTERCEPT, "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out)." },
+    { T_INTERCEPT0 + 0, "Off" }, { T_INTERCEPT0 + 1, "Black" }, { T_INTERCEPT0 + 2, "Hurricane" },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
     { T_MSAA0 + 0, "Off" }, { T_MSAA0 + 1, "2x" }, { T_MSAA0 + 2, "4x" }, { T_MSAA0 + 3, "8x" },
@@ -265,6 +272,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_ASPECT,  "Aspect Ratio" },
     { D_ASPECT,  "The shape of the picture and the window sizes offered." },
     { T_ASPECT0 + 0, "4:3" }, { T_ASPECT0 + 1, "16:9" }, { T_ASPECT0 + 2, "16:10" }, { T_ASPECT0 + 3, "21:9" },
+    { T_ASPECT0 + 4, "32:9" },
     { T_WINDOWSZ, "Window Size" },
     { D_WINDOWSZ, "The size of the window when not full screen." },
     { D_PC,      "Graphics and display settings of the PC version." },
@@ -367,7 +375,8 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
                                    T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO, T_POSAUDIO, T_HUD,
-                                   T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD };
+                                   T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD,
+                                   T_INTERCEPT };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -375,6 +384,12 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
 }
 
 /* Once, before the Options menu is drawn: the text, the rows, our page. */
+/* A window size's text: the setting's value, aspect * 8 + its index */
+static uint32_t wsize_id(int v)
+{
+    return v < 4 * 8 ? T_WSIZE0 + (uint32_t)v : T_WSIZE4 + (uint32_t)(v - 4 * 8);
+}
+
 static void pc_menu_init(void)
 {
     if (s_ready)
@@ -384,13 +399,13 @@ static void pc_menu_init(void)
     /* Category 2's text table with ours after it. */
     uint32_t old = MEM32(0x436240 + 2 * 4);
     uint32_t count = MEM16(0x43626C + 2 * 2);
-    uint32_t add = sizeof s_text / sizeof s_text[0], extra = 4 * 8;
+    uint32_t add = sizeof s_text / sizeof s_text[0], extra = ASPECT_COUNT * 8;
     uint32_t tab = xbox_HeapAlloc(12 * (count + add + extra), 4);
     memcpy((void *)XBOX_PTR(tab), (void *)XBOX_PTR(old), 12 * count);
     for (uint32_t i = 0; i < add + extra; i++) {
         char sz[24];
         const char *text = i < add ? s_text[i].text : "";
-        uint32_t id = i < add ? s_text[i].id : T_WSIZE0 + (i - add);
+        uint32_t id = i < add ? s_text[i].id : wsize_id((int)(i - add));
         if (i >= add) {                                /* a window size, by aspect and place */
             int w, h, a = (int)(i - add) / 8, k = (int)(i - add) % 8;
             if (k < ngb_settings_size_count(a)) {
@@ -784,7 +799,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
         return v == 1 ? T_MAILBOX : v == 2 ? T_ADAPTIVE : v == 3 ? T_FIFO : T_OFF;
     }
     case ROW_FPS:     return ngb_pc_setting(5) ? T_ON : T_OFF;
-    case ROW_WINDOW:  return T_WSIZE0 + (uint32_t)ngb_pc_setting(6);
+    case ROW_WINDOW:  return wsize_id(ngb_pc_setting(6));
     case ROW_ASPECT:  return T_ASPECT0 + (uint32_t)ngb_pc_setting(7);
     case ROW_SKIP:    return ngb_pc_setting(8) ? T_YES : T_NO;
     case ROW_LAUNCHER: return ngb_pc_setting(9) ? T_YES : T_NO;
@@ -797,6 +812,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_GLOW:    return ngb_pc_setting(18) ? T_ON : T_OFF;
     case ROW_LOADDETAIL: return ngb_pc_setting(29) ? T_ON : T_OFF;
     case ROW_RTHREAD: return ngb_pc_setting(30) ? T_ON : T_OFF;
+    case ROW_INTERCEPT: return T_INTERCEPT0 + (uint32_t)ngb_pc_setting(31);
     case ROW_INFITEMS: return ngb_pc_setting(21) ? T_ON : T_OFF;
     case ROW_INFAMMO: return ngb_pc_setting(22) ? T_ON : T_OFF;
     case ROW_MISSIONS:
@@ -859,6 +875,7 @@ static int pc_value_change(int row, int delta)
     case ROW_GLOW:    ngb_pc_set_setting(18, !ngb_pc_setting(18)); break;
     case ROW_LOADDETAIL: ngb_pc_set_setting(29, !ngb_pc_setting(29)); break;
     case ROW_RTHREAD: ngb_pc_set_setting(30, !ngb_pc_setting(30)); break;
+    case ROW_INTERCEPT: ngb_pc_set_setting(31, (ngb_pc_setting(31) + (step > 0 ? 1 : 2)) % 3); break;
     case ROW_INFITEMS: ngb_pc_set_setting(21, !ngb_pc_setting(21)); break;
     case ROW_INFAMMO: ngb_pc_set_setting(22, !ngb_pc_setting(22)); break;
     case ROW_MISSIONS:
@@ -875,7 +892,7 @@ static int pc_value_change(int row, int delta)
         ngb_pc_set_setting(which, !ngb_pc_setting(which));
         break;
     }
-    case ROW_ASPECT:  ngb_pc_set_setting(7, (ngb_pc_setting(7) + (step > 0 ? 1 : 3)) % 4); break;
+    case ROW_ASPECT:  ngb_pc_set_setting(7, (ngb_pc_setting(7) + (step > 0 ? 1 : ASPECT_COUNT - 1)) % ASPECT_COUNT); break;
     case ROW_WINDOW: {
         int v = ngb_pc_setting(6), a = v / 8, n = ngb_settings_size_count(a);
         ngb_pc_set_setting(6, a * 8 + (v % 8 + step + n) % n);
@@ -2058,7 +2075,7 @@ void sub_00220870(void)
                                            D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF, D_POSAUDIO & 0xFFFF,
                                            D_HUD & 0xFFFF, D_AUDIOOUT & 0xFFFF, D_MISSIONS & 0xFFFF,
                                            D_ARCADE & 0xFFFF, D_MOVIES & 0xFFFF, D_UNLOCKS & 0xFFFF,
-                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF };
+                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF, D_INTERCEPT & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);
@@ -2126,5 +2143,5 @@ float ngb_hud_shape(void)
     if (stretch)
         return 1.0f;
     int a = ngb_pc_setting(7);
-    return a == 1 ? 0.75f : a == 2 ? 0.8333333f : a == 3 ? 0.5625f : 1.0f;
+    return a == 1 ? 0.75f : a == 2 ? 0.8333333f : a == 3 ? 0.5625f : a == 4 ? 0.375f : 1.0f;
 }

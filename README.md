@@ -180,7 +180,18 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
 updates on top of one add `-1`, `-2`, ... Releases taken over since 2026-10-26 add `-t` after the number.
-The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.36-t3`.
+The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.39-t`.
+
+## Changes in 0.9.39-t
+
+- Merged ngbrecomp 0.9.37–0.9.39: 32:9, button prompts (Auto / Xbox / PlayStation / PC), the
+  Intercept choice (Black's or the Hurricane Pack's), a guard held through the quick menu stays held,
+  the Screen Adjustment fix, the HUD stays in the biggest fights, and the build's optimisation/PGO
+  options.
+- Kept the Hurricane control policy: no Invert Camera / First-Person / Start in Third Person rows
+  (x2.1 has its own camera option); Button Prompts is added after Camera Sensitivity.
+- Recompiled the upstream changed manual functions (Screen Adjustment's backward copy, the new
+  Intercept and render-list code).
 
 ## Changes in 0.9.36-t
 

@@ -133,6 +133,20 @@ static int regular_play(void)
            (MEM8(0xDB9894) == 2 || MEM8(0xDB9894) == 3) && MEM8(0x4B7640) < 0x20 &&
            MEM16(0x58A566 + MEM8(0x4B7640) * 0x210u) != 0;
 }
+/* The pad's held buttons (0xD219A1) that Guard takes: the game's Button Settings (0xDB9420) give it
+ * button 0-7 (that bit), X + A (8: bits 0 and 2) or Y + B (9: bits 1 and 3); sub_000DFCF0 reads them so. */
+static unsigned guard_bits(void)
+{
+    static const unsigned char pair[2] = { 0x05, 0x0A };
+    unsigned any = 0, bits = 0;
+    for (unsigned i = 0; i < 10; i++)
+    {
+        if (MEM32(0xDB9420 + i * 4) == 7)
+            bits |= i < 8 ? 1u << i : pair[i - 8];
+        any |= MEM32(0xDB9420 + i * 4);
+    }
+    return any ? bits : 1u << 6;   /* the table not set yet: the default, LT */
+}
 static int can_pause(void) { return regular_play() && (s_pause || (call(sub_00166BD0) & 255)); }
 static void pause_menu(int pause)
 {
@@ -146,9 +160,14 @@ static void pause_menu(int pause)
         /* Native input histories keep action transitions as well as the
          * current pad state. Flush them as the ordinary pause exit does. */
         GuestContext c = save_context();
+        /* A guard held through the menu stays held: with it clear for a frame,
+         * Ryu drops his block and nearby essence flies to him (#124). It stays
+         * in the held state sub_00032460 copies to the input history too, or
+         * the next frame reads it as a fresh press (an Intercept, with it on). */
+        unsigned bits = guard_bits();
         for (unsigned i = 0; i < 5; i++)
         {
-            MEM32(0xD219A0 + i * 0x78u) = 0;
+            MEM32(0xD219A0 + i * 0x78u) &= bits << 8;
             MEM32(0xD219A8 + i * 0x78u) = 0;
             MEM8(0xD21A16 + i * 0x78u) = 1;
         }

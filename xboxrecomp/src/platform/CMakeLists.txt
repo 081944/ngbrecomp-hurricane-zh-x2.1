@@ -44,5 +44,5 @@ else()
     find_package(Threads REQUIRED)
     # m: _clearfp/_controlfp sit on <fenv.h>.
     target_link_libraries(platform PUBLIC Threads::Threads m)
-    target_compile_options(platform PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
+    target_compile_options(platform PRIVATE -Wall -Wextra -Wno-unused-parameter ${XBOXRECOMP_OPT_LEVEL})
 endif()

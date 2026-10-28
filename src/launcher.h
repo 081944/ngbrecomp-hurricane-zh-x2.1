@@ -6,7 +6,7 @@
 #define NGB_LAUNCHER_H
 #include <stddef.h>
 
-enum { ASPECT_4_3, ASPECT_16_9, ASPECT_16_10, ASPECT_21_9, ASPECT_COUNT };
+enum { ASPECT_4_3, ASPECT_16_9, ASPECT_16_10, ASPECT_21_9, ASPECT_32_9, ASPECT_COUNT };
 
 typedef struct NgbSettings {
     int aspect;          /* ASPECT_* */
@@ -32,6 +32,7 @@ typedef struct NgbSettings {
     int smooth_glow;        /* the glow's continuous filtering (src/d3d/vk/glow_filter.h, #64) */
     int detail_under_load;  /* the game's own detail lowering when the GPU looks busy (src/d3d/d3d.c, #50, #114) */
     int render_thread;      /* the renderer on a thread of its own (src/d3d/gpu/threaded.cpp), experimental */
+    int intercept;          /* Gameplay > Intercept (src/intercept.c, #109): 0 off, 1 Black's, 2 the Hurricane Pack's */
     /* Hard, Very Hard and Master Ninja offered without clearing the one before */
 } NgbSettings;
 

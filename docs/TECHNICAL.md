@@ -129,6 +129,18 @@ offered too: the Missions menu asks a byte per mission (0xDB95AC + its number, b
 cleared; the game offers ten as Missions is earned and the rest as missions are cleared), and its
 reads (four lifted functions in `src/main_menu.c`) see bit 0 set; nothing written there either.
 
+Intercept (Gameplay; `src/intercept.c`, #109): Hurricane Pack 1's guard counter. Black kept its
+Technique scroll (item 0x26), Ryu's move and its karma, and removed one instruction: in sub_0001ACD0
+(Ryu's next action from his guard, `bl`), a guard raised under 6 ticks before an attack lands, with guard
+pressed this tick and not in the 14 before, set the action to 0x0D; the code still branches around where it
+was. The option puts it back, and lets Ryu do it without the scroll. Black uses Black's own move for it
+(state 0x8EC); Hurricane switches four of Ryu's move records and five bytes of his loaded character data
+(chr_dat2, at *0x4B7528) to the Hurricane Pack's move (0x99), once a frame and only while they hold one
+kind's values. While it is on, the Intercept karma (1000 each, at most 50 a battle, in battles
+with a countdown: sub_002EBB00) is paid on every difficulty, not only Very Hard and Master Ninja, and the
+battle's results show the "Intercept" line again (sub_00208120, from the counts Black still keeps at
+0x8DB734; Black only stopped drawing it).
+
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
 frame -- the game keeps it per segment at 0x58A534, maxima at 0x58A524, and 0x58A566 is their
@@ -153,10 +165,10 @@ game puts it where OPTIONS was before it moved, the last entry: now EXIT TO DESK
 Difficulties' Ninja Dog the difficulty selection has five rows, a case the game never shows
 there: they are spaced closer (38 instead of 44) so the first clears the header.
 
-On a wide screen (16:9, 16:10, 21:9) the game is in its own widescreen mode the whole time, with
+On a wide screen (16:9, 16:10, 21:9, 32:9) the game is in its own widescreen mode the whole time, with
 its 3D drawn for the screen's shape (both of its aspect constants, 0x414AF4 and 0x414AF8, are that
 shape): every menu, the HUD, chapter cards and clear screens are the game's own 16:9 ones, drawn as it
-draws them for a widescreen TV, kept 16:9 (`src/d3d/vk/backend.cpp`): at 21:9 narrowed to the middle
+draws them for a widescreen TV, kept 16:9 (`src/d3d/vk/backend.cpp`): at 21:9 and 32:9 narrowed to the middle
 16:9, at 16:10 shortened to it, a 2D screen or menu whole there with bars beyond (at the sides at
 21:9, above and below at 16:10). The bars are filled with the screen's own colours: each side's edge,
 16 bands of it, sampled over the screen's first 2 s and then kept still, so a menu's animation does
@@ -185,14 +197,16 @@ its 4:3 mode for a 4:3 movie narrowed it twice, #28.) The mouse is mapped to the
 `NGB_HUD_RATIO_LOG=1` logs the 2D draws not drawn texel for pixel; `NGB_MODE_LOG=1` the mode each
 frame.
 Aspect ratio also offers 21:9 (64:27;
-window sizes 1720x720 to 5120x2160): the 3D widened as for 16:10, the game deciding what to
+window sizes 1720x720 to 5120x2160) and 32:9 (two 16:9 screens side by side, 2560x720 to 7680x2160, #74):
+the 3D widened as for 16:10, the game deciding what to
 draw for a narrower view, so objects at the far edges may appear late.
 
 The boot "Warnings" screen is always skipped (`NGB_KEEP_WARNINGS=1` shows it).
 
 For glitches that only show in play: F7 records the next 300 frames to `~/ngb-trace-<n>/` -- a
 small picture of each frame and a line per draw (its state: targets, textures, combiner stages,
-blending, fog, vertex colour, clears) in `draws.txt` (`NGB_TRACE_FRAMES=<n>` frames;
+blending, fog, vertex colour, clears, and `stk`: the game's return addresses on its stack, innermost
+first, which say what drew it) in `draws.txt` (`NGB_TRACE_FRAMES=<n>` frames;
 `NGB_TRACE_PRE=1` only the screen-space draws and the first draw after each target change;
 `NGB_TRACE_NOPIC=1` no pictures, `=copy` pictures only around a copy into a 512x512 target, the
 cut cross-fade's). F8 appends Ryu's position to `ngb_positions.txt`
@@ -258,6 +272,20 @@ game's button prompts are keys and mouse buttons instead -- Xelu's dark keyboard
 of, its blank key with the key's name; `src/pause_tab.c`), in play the ones bound to each action, in
 the menus the mouse's buttons (left to choose, right to go back), K, Space, Shift and Q/E;
 `NGB_PAD_PROMPTS=1` keeps the pad's.
+With a PlayStation pad in use (SDL's controller type: a DualShock 3 or 4, a DualSense, or an adapter
+that says so) the prompts are its buttons (#113): Xelu's PS3 set (`assets/prompts/ps`), the symbols in
+their colours on black as on the DualShock 2 of the game's time -- Cross, Circle, Square and Triangle for
+A, B, X and Y, L2 and R2 for the triggers, L1 and R1 for Black and White (the buttons they are on), over the
+pause menu's L and R plates too (on a dark plate the size of the game's), and R1 drawn the size of L1 (the
+game draws White's icon smaller); the Controls page names them the same way. The Controls page shows the
+two-button actions (Ninpo, Wind Run) as the pad's button pictures, Xelu's Xbox 360 ones on an Xbox pad
+(`assets/prompts/xbox`). The game's Button Settings
+page keeps its picture of the Xbox controller. The Controls page's Button Prompts picks the set: Auto (the
+device in use, as above), Xbox, PlayStation or PC (the keys), saved in `controls.ini` (`button_prompts`).
+`NGB_PAD_PROMPTS=ps` shows the PlayStation's whatever the setting, any other value the Xbox's.
+The techniques' "hold the button" icons (sprites 0x1CE-0x1D3) are a texture of their own, six
+cells with an arrow over the button: with PlayStation or PC prompts each button is redrawn as that set's,
+the game's arrow kept over it (`hold_check`, #125); the keys are play's, not the menu's.
 
 In the game's menus (main menu, Options, the pause menu and its tabs, message boxes) the mouse
 points: the game's own cursor follows it onto the item under it (a press of the pad at a time,
@@ -291,6 +319,13 @@ push buffer while the renderer draws, so that callback reports no GPU time (`ngb
 src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
 Graphics > Lower Detail Under Load keeps the game's measurement, which on a slower PC steadied the frame
 time (#114); `NGB_GPU_LOAD=1` or `0` overrides the setting.
+
+The game draws each frame from render lists it builds as trees of nodes, all cut from one pool of
+768 (src/render_list.c). When the pool is used up a node is silently left out, and the HUD, the 2D
+layer and the screen effects go in last: in a fight with enough enemies, blood and sparks for 768
+nodes before them, the HUD disappeared for the busiest ten or twenty frames of a multi-kill, its
+sprites piling up until a quieter frame drew them all at once (#96). sub_00308BF0, the allocating
+insert, gives out 4096 more nodes of ours after the game's; `NGB_NODE_POOL=0` keeps the game's limit.
 The weapon-hit sparks are lines the game draws 2.7 to 3 pixels wide; `NGB_SPARK_WIDTH=0.5` (0.1 to 1)
 makes them thinner, never under a pixel (#117).
 
@@ -321,6 +356,12 @@ and renders with the new one unseen, for comparing (`NGB_D3D_DUMP=dir` writes it
   Run it after the game reaches new code.
 - `XBOX_LOG_LEVEL=4` and `RECOMP_KERNEL_LOG_BUDGET=100000` give a full kernel and
   file trace.
+- `-DNGB_OPT_LEVEL=-O3` builds every target at another level (`-O2` by default; on the attract demo -O3
+  measured no different). `-DNGB_PGO=generate` builds a profile-recording binary: a training run writes
+  `$LLVM_PROFILE_FILE` when stopped with SIGINT or SIGTERM; `llvm-profdata merge` the runs and build with
+  `-DNGB_PGO=<file.profdata>` (the same clang version). Measured on the attract demo: about 4% less CPU,
+  not used for releases (each toolchain needs its own profile, and its compiler's choices in code the
+  training never ran are untested: one read a GPU register with a `bt` the MMIO decoder lacked).
 
 The defaults in `bringup_defaults()` (`src/main.c`) stand in for hardware that isn't
 modelled yet. Each one should disappear when the real thing exists.

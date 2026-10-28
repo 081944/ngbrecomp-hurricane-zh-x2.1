@@ -37,6 +37,20 @@ set(XBOXRECOMP_NV2A_VK ${NGB_NV2A_VK} CACHE BOOL "" FORCE)
 set(XBOXRECOMP_SDL_BACKENDS ON CACHE BOOL "" FORCE)   # Windows: same SDL audio/input as Linux
 set(XBOXRECOMP_WIN_VCPU ON CACHE BOOL "" FORCE)        # Windows: one virtual CPU, as on Linux
 
+# Optimisation: the level every target compiles at (the targets' own setting: CMake's Release -O3 comes
+# before it), and profile-guided optimisation -- NGB_PGO=generate builds a binary that records where its
+# time goes (LLVM_PROFILE_FILE), NGB_PGO=<file.profdata> one built with that profile (docs/TECHNICAL.md).
+set(NGB_OPT_LEVEL "-O2" CACHE STRING "optimisation level for every target (-O2, -O3)")
+set(NGB_PGO "" CACHE STRING "profile-guided optimisation: empty, generate, or a .profdata file")
+if(NGB_PGO STREQUAL "generate")
+    add_compile_options(-fprofile-instr-generate)
+    add_compile_definitions(NGB_PGO_GENERATE)   # src/main.c: the profile written on SIGINT/SIGTERM
+    add_link_options(-fprofile-instr-generate)
+elseif(NGB_PGO)
+    add_compile_options(-fprofile-instr-use=${NGB_PGO} -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date
+                        -Wno-backend-plugin)
+endif()
+
 set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/xboxrecomp" CACHE PATH
     "Path to the xboxrecomp toolkit root directory")
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
@@ -76,7 +90,9 @@ endforeach()
 
 # The keyboard and mouse prompts (Xelu's free prompts, CC0: assets/prompts/License-Xelu.txt), the dark
 # set and its blank key: each embedded, and a table of them by file name (src/pause_tab.c).
-file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png)
+file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png
+                       ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/ps/*.png    # PlayStation buttons (#113)
+                       ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/xbox/*.png) # the Controls page's Xbox combos
 set(key_decls "")
 set(key_rows "")
 list(LENGTH NGB_KEY_PNGS key_count)
@@ -110,6 +126,8 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/menu_font.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/fps_text.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hud.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/intercept.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/render_list.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/playtime.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/quick_select.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main_menu.c
@@ -150,7 +168,7 @@ else()
     # Lifted code is one big function per guest routine, so the flags that
     # make a function's codegen superlinear are capped.
     target_compile_options(ngb_gen PRIVATE
-        -O2 -fno-strict-aliasing -fwrapv
+        ${NGB_OPT_LEVEL} -fno-strict-aliasing -fwrapv
         -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable
         -Wno-parentheses-equality -Wno-tautological-compare
         -Wno-incompatible-pointer-types-discards-qualifiers
@@ -182,7 +200,7 @@ if(NGB_NV2A_VK)
         target_link_libraries(ngb_d3d PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
     endif()
     target_compile_features(ngb_d3d PRIVATE cxx_std_20)
-    target_compile_options(ngb_d3d PRIVATE -O2 -fno-strict-aliasing)
+    target_compile_options(ngb_d3d PRIVATE ${NGB_OPT_LEVEL} -fno-strict-aliasing)
 endif()
 
 # ── DirectSound on a host mixer (src/audio, src/audio/NOTICE) ────
@@ -193,7 +211,7 @@ target_include_directories(ngb_audio PRIVATE src/audio src/d3d/compat
     $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>
     ${XBOXRECOMP_DIR}/src)
 target_compile_features(ngb_audio PRIVATE cxx_std_20)
-target_compile_options(ngb_audio PRIVATE -O2 -fno-strict-aliasing)
+target_compile_options(ngb_audio PRIVATE ${NGB_OPT_LEVEL} -fno-strict-aliasing)
 
 # ── Executable ──────────────────────────────────────────────────
 
@@ -280,7 +298,7 @@ function(ngb_arcade_program target output gen_dir xbe dsound)
         target_compile_options(${target}_gen PRIVATE /bigobj /O2)
     else()
         target_compile_options(${target}_gen PRIVATE
-            -O2 -fno-strict-aliasing -fwrapv
+            ${NGB_OPT_LEVEL} -fno-strict-aliasing -fwrapv
             -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable
             -Wno-parentheses-equality -Wno-tautological-compare
             -Wno-incompatible-pointer-types-discards-qualifiers)

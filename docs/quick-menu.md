@@ -151,7 +151,7 @@ When the quick menu or the code around it changes:
    fire later. Equip melee/projectile weapons and Ninpo repeatedly; the model is
    visible and collision intact. Health/ninpo use plays the native sound and takes
    exactly one item. Check the title/loading/cutscene/native-menu guards and rebinding.
-4. Inspect the composition at 4:3, 16:9, 16:10 and 21:9, low and high render scales:
+4. Inspect the composition at 4:3, 16:9, 16:10, 21:9 and 32:9, low and high render scales:
    blur/dimming only once the action ends with Pause On, never while waiting or with
    Pause Off, the menu sharp. Every Quick Menu size and Off, saved and reloaded. Off
    must not leave a hidden pause, draw, consume gameplay controls or run a pending
