@@ -19,13 +19,13 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
 - Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
 - 16:9, 16:10, 21:9 and 32:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
-  corners, menus keep the game's own 16:9 look
+  corners, menus keep the game's own 16:9 look and an optional HUD-free view
 - Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
   controller, mouse support in the menus
 - Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
 - Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
-  7.1 output; an optional HUD-free view
+  7.1 output
 - Smooth frame pacing and low input latency; shaders prepared in the background
 
 ## Getting started
