@@ -184,14 +184,14 @@ The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.39-t`.
 
 ## Changes in 0.9.39-t
 
-- Merged ngbrecomp 0.9.37–0.9.39: 32:9, button prompts (Auto / Xbox / PlayStation / PC), the
-  Intercept choice (Black's or the Hurricane Pack's), a guard held through the quick menu stays held,
-  the Screen Adjustment fix, the HUD stays in the biggest fights, and the build's optimisation/PGO
-  options.
+- Merged ngbrecomp 0.9.37–0.9.39: 32:9, button prompts (Auto / Xbox / PlayStation / PC), a guard
+  held through the quick menu stays held, the Screen Adjustment fix, the HUD stays in the biggest
+  fights, and the build's optimisation/PGO options. Upstream's duplicate PC Intercept row is not
+  included: vb-zh-x2.1 already has the game's own Intercept switch.
 - Kept the Hurricane control policy: no Invert Camera / First-Person / Start in Third Person rows
   (x2.1 has its own camera option); Button Prompts is added after Camera Sensitivity.
-- Recompiled the upstream changed manual functions (Screen Adjustment's backward copy, the new
-  Intercept and render-list code).
+- Recompiled the upstream changed manual functions (Screen Adjustment's backward copy and the new
+  render-list code).
 
 ## Changes in 0.9.36-t
 

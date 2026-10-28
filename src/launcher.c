@@ -203,8 +203,6 @@ void ngb_settings_load(NgbSettings *s)
             s->detail_under_load = atoi(val) != 0;
         } else if (!strcmp(key, "render_thread")) {
             s->render_thread = atoi(val) != 0;
-        } else if (!strcmp(key, "intercept")) {
-            s->intercept = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -253,7 +251,6 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
     fprintf(f, "detail_under_load = %d\n", s->detail_under_load);
     fprintf(f, "render_thread = %d\n", s->render_thread);
-    fprintf(f, "intercept = %d\n", s->intercept);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "audio_output = %d\n", s->audio_output);

@@ -65,7 +65,7 @@ enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_RENDER, ROW_TEXTURE, ROW_SHADOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_WINDOW, ROW_ASPECT, ROW_BACK,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
        ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO, ROW_POSAUDIO, ROW_HUD, ROW_AUDIOOUT,
-       ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD, ROW_INTERCEPT,
+       ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -81,7 +81,7 @@ static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHA
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_HUD, ROW_SKIP,
                                        ROW_BACK };
 static const uint8_t s_rows_sound[] = { ROW_POSAUDIO, ROW_AUDIOOUT, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_INTERCEPT, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO,
                                         ROW_UNLOCKS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
@@ -193,9 +193,6 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_LOADDETAIL 0x201DD
 #define T_RTHREAD  0x201DE            /* Render Thread, experimental (src/d3d/gpu/threaded.cpp) */
 #define D_RTHREAD  0x201DF
-#define T_INTERCEPT 0x201E8           /* Intercept (src/intercept.c, #109) */
-#define D_INTERCEPT 0x201E9
-#define T_INTERCEPT0 0x201EA          /* + 0..2: Off, Black, Hurricane Pack */
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
 #define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" (the first four aspects) */
@@ -245,9 +242,6 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_LOADDETAIL, "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker." },
     { T_RTHREAD, "Experimental Render Thread" },
     { D_RTHREAD, "Drawing on a thread of its own. May glitch. Needs restart." },
-    { T_INTERCEPT, "Intercept" },
-    { D_INTERCEPT, "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out)." },
-    { T_INTERCEPT0 + 0, "Off" }, { T_INTERCEPT0 + 1, "Black" }, { T_INTERCEPT0 + 2, "Hurricane" },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
     { T_MSAA0 + 0, "Off" }, { T_MSAA0 + 1, "2x" }, { T_MSAA0 + 2, "4x" }, { T_MSAA0 + 3, "8x" },
@@ -375,8 +369,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_FPS, T_WINDOWSZ, T_ASPECT, 0x20005, T_SKIP, T_LAUNCHER, T_MSAA,
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
                                    T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO, T_POSAUDIO, T_HUD,
-                                   T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD,
-                                   T_INTERCEPT };
+                                   T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -812,7 +805,6 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_GLOW:    return ngb_pc_setting(18) ? T_ON : T_OFF;
     case ROW_LOADDETAIL: return ngb_pc_setting(29) ? T_ON : T_OFF;
     case ROW_RTHREAD: return ngb_pc_setting(30) ? T_ON : T_OFF;
-    case ROW_INTERCEPT: return T_INTERCEPT0 + (uint32_t)ngb_pc_setting(31);
     case ROW_INFITEMS: return ngb_pc_setting(21) ? T_ON : T_OFF;
     case ROW_INFAMMO: return ngb_pc_setting(22) ? T_ON : T_OFF;
     case ROW_MISSIONS:
@@ -875,7 +867,6 @@ static int pc_value_change(int row, int delta)
     case ROW_GLOW:    ngb_pc_set_setting(18, !ngb_pc_setting(18)); break;
     case ROW_LOADDETAIL: ngb_pc_set_setting(29, !ngb_pc_setting(29)); break;
     case ROW_RTHREAD: ngb_pc_set_setting(30, !ngb_pc_setting(30)); break;
-    case ROW_INTERCEPT: ngb_pc_set_setting(31, (ngb_pc_setting(31) + (step > 0 ? 1 : 2)) % 3); break;
     case ROW_INFITEMS: ngb_pc_set_setting(21, !ngb_pc_setting(21)); break;
     case ROW_INFAMMO: ngb_pc_set_setting(22, !ngb_pc_setting(22)); break;
     case ROW_MISSIONS:
@@ -2075,7 +2066,7 @@ void sub_00220870(void)
                                            D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF, D_POSAUDIO & 0xFFFF,
                                            D_HUD & 0xFFFF, D_AUDIOOUT & 0xFFFF, D_MISSIONS & 0xFFFF,
                                            D_ARCADE & 0xFFFF, D_MOVIES & 0xFFFF, D_UNLOCKS & 0xFFFF,
-                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF, D_INTERCEPT & 0xFFFF };
+                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);

@@ -126,7 +126,6 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/menu_font.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/fps_text.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hud.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/intercept.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/render_list.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/playtime.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/quick_select.c

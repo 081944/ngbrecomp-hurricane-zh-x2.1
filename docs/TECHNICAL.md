@@ -129,18 +129,6 @@ offered too: the Missions menu asks a byte per mission (0xDB95AC + its number, b
 cleared; the game offers ten as Missions is earned and the rest as missions are cleared), and its
 reads (four lifted functions in `src/main_menu.c`) see bit 0 set; nothing written there either.
 
-Intercept (Gameplay; `src/intercept.c`, #109): Hurricane Pack 1's guard counter. Black kept its
-Technique scroll (item 0x26), Ryu's move and its karma, and removed one instruction: in sub_0001ACD0
-(Ryu's next action from his guard, `bl`), a guard raised under 6 ticks before an attack lands, with guard
-pressed this tick and not in the 14 before, set the action to 0x0D; the code still branches around where it
-was. The option puts it back, and lets Ryu do it without the scroll. Black uses Black's own move for it
-(state 0x8EC); Hurricane switches four of Ryu's move records and five bytes of his loaded character data
-(chr_dat2, at *0x4B7528) to the Hurricane Pack's move (0x99), once a frame and only while they hold one
-kind's values. While it is on, the Intercept karma (1000 each, at most 50 a battle, in battles
-with a countdown: sub_002EBB00) is paid on every difficulty, not only Very Hard and Master Ninja, and the
-battle's results show the "Intercept" line again (sub_00208120, from the counts Black still keeps at
-0x8DB734; Black only stopped drawing it).
-
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
 frame -- the game keeps it per segment at 0x58A534, maxima at 0x58A524, and 0x58A566 is their
