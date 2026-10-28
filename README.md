@@ -19,7 +19,7 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
 - Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
 - 16:9, 16:10, 21:9 and 32:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
-  corners, menus keep the game's own 16:9 look and an optional HUD-free view
+  corners, optional HUD-free view, menus keep the game's own 16:19
 - Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
   controller, mouse support in the menus
 - Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
