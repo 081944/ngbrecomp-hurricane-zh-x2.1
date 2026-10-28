@@ -1714,6 +1714,107 @@ static void ps_check(uint32_t id)
     MEM32(entry) = s_ps[slot].t.hdr;
 }
 
+/* ---------- "hold" prompts ---------- */
+
+/* The techniques' "hold the button" icons (sprites 0x1CE-0x1D3, #125) are a texture of their own: X Y B A L R
+ * cells 21 wide, a down arrow (rows 2-16) over the button (rows 13-29). With PlayStation or keyboard
+ * prompts each button is that one's picture instead, the game's arrow over it. They are play's buttons,
+ * so the keyboard's are play's keys, not the menu's. */
+static struct {
+    GuestTex t[2];                /* 0 PlayStation, 1 the keys */
+    uint32_t orig;                /* the game's texture header in the table */
+    int made[2];                  /* 0 not yet, 1 made, -1 could not */
+    unsigned gen;                 /* the bindings the keys' one was made from */
+} s_hold;
+
+/* Whether the cell's pixel (x, y) is the arrow: its shaft, then its head narrowing to the tip. */
+static int hold_arrow(int x, int y)
+{
+    if (y < 2 || y > 16)
+        return 0;
+    if (y <= 8)
+        return x >= 6 && x <= 14;
+    if (y <= 11)
+        return x >= 3 && x <= 17;
+    return x >= y - 8 && x <= 28 - y;
+}
+
+static int hold_make(int keys, uint32_t entry, uint32_t hdr)
+{
+    static const char *const ps[6] = { "PS3_Square", "PS3_Triangle", "PS3_Circle", "PS3_Cross", "PS3_L2", "PS3_R2" };
+    static const int play_b[6] = { 2, 3, 1, 0, 6, 7 };   /* X Y B A L R */
+    int w, h;
+    uint32_t *game = read_texture(hdr, MEM32(entry + 4), &w, &h);
+    if (!game)
+        return 0;
+    if (w < 6 * 21 || h < 30) {
+        free(game);
+        return 0;
+    }
+    uint32_t *px = calloc((size_t)w * KS * h * KS, sizeof *px);
+    float at[4];
+    for (int i = 0; i < 6; i++) {
+        float x0 = (float)(i * 21 * KS), y0 = 14.0f * KS, x1 = x0 + 21 * KS, y1 = 31.5f * KS;
+        if (keys) {
+            int in = ngb_bind_prompt(play_b[i]);
+            if (in)
+                key_icon(px, w * KS, h * KS, x0, y0, x1, y1, in);
+        } else {
+            picture_icon(px, w * KS, h * KS, x0, y0, x1, y1, ps[i], at);
+        }
+    }
+    /* The game's arrow over them, two rows higher (the top two are clear): a PlayStation button is
+     * smaller than the Xbox one, so its symbol sits higher and the arrow's tip would cover it. */
+    for (int Y = 0; Y < (h - 2) * KS; Y++)
+        for (int X = 0; X < 6 * 21 * KS; X++) {
+            int gx = X / KS, gy = Y / KS + 2;
+            uint32_t c = game[gy * w + gx];
+            if (!hold_arrow(gx % 21, gy) || (c >> 24) < 8)
+                continue;
+            float a = (c >> 24) / 255.0f;
+            uint32_t d = px[Y * w * KS + X];
+            float da = (d >> 24) / 255.0f, oa = a + da * (1 - a);
+            uint32_t m = mix(d, c & 0xFFFFFF, a / oa);
+            px[Y * w * KS + X] = (uint32_t)lroundf(oa * 255) << 24 | (m & 0xFFFFFF);
+        }
+    free(game);
+    GuestTex *t = &s_hold.t[keys];
+    int ok = t->hdr || make_texture(t, w * KS, h * KS, MEM32(hdr + 0xC) & 0xFF);
+    if (ok)
+        upload(t, px);
+    free(px);
+    return ok;
+}
+
+static void hold_check(uint32_t id)
+{
+    if (id < 0x1CE || id > 0x1D3)
+        return;
+    uint32_t def = sprite_def(id), y = sprite_def(0x1CF);
+    if (!def || !y || MEM32(def + 0x10) != MEM32(y + 0x10))   /* (the cells of one texture only) */
+        return;
+    uint32_t entry = 0x8DBB28 + MEM32(def + 0x10) * 8, now = MEM32(entry);
+    int ours = now && (now == s_hold.t[0].hdr || now == s_hold.t[1].hdr);
+    int kind = ngb_prompts_keys() ? 1 : ngb_pad_prompts_ps() ? 0 : -1;
+    if (kind < 0 || s_hold.made[kind] < 0) {
+        if (ours)
+            MEM32(entry) = s_hold.orig;               /* the controller's icons back */
+        return;
+    }
+    if (!ours)
+        s_hold.orig = now;
+    if (!s_hold.made[kind] || (kind == 1 && s_hold.gen != ngb_bind_generation())) {
+        if (kind == 1)                                /* (the keys' picture is the one the bindings make) */
+            s_hold.gen = ngb_bind_generation();
+        s_hold.made[kind] = hold_make(kind, entry, s_hold.orig) ? 1 : -1;
+        if (s_hold.made[kind] < 0) {
+            MEM32(entry) = s_hold.orig;
+            return;
+        }
+    }
+    MEM32(entry) = s_hold.t[kind].hdr;
+}
+
 /* ---------- making it ---------- */
 
 uint32_t *ngb_guest_texture(uint32_t hdr, uint32_t pal_hdr, int *w, int *h);
@@ -5126,6 +5227,7 @@ void sub_002216B0(void)
         ngb_title_seen();
     }
     ps_check(MEM32(p) & 0xFFFF);                       /* a PlayStation pad's buttons (#113) */
+    hold_check(MEM32(p) & 0xFFFF);                     /* the techniques' "hold" icons too (#125) */
     kc_check(MEM32(p) & 0xFFFF);                       /* keys for the button icons (font glyphs too) */
     {   /* Our pages (Settings, Exit): the Weapon page's category strip (sprites 0x186-0x187, a dark band
          * with a light underline) is still drawn under them; above 1x its underline showed as a line
