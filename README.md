@@ -159,10 +159,7 @@ the game was in.
 
 - At **21:9** and **32:9**, objects at the far left and right of the screen can appear a moment late (the
   game decides what to draw for a narrower view).
-- At **10x render resolution with 8x anti-aliasing**, where the frame rate drops below 60, characters'
-  shadows can flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
 - Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
-- Opening a menu or the map can shift the whole picture by a few pixels until it closes (#99).
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 
