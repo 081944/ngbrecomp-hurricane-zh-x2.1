@@ -2154,7 +2154,9 @@ static void pt_draw(void)
         play_sound(3);
         key = 0;
     }
-    if ((key == K_OK || key == K_RIGHT || key == K_LEFT) && s_row >= 0 && s_row < n &&
+    /* (not Controls': its rows outnumber the table's -- read past it, a row of its list could come out as
+     * the Unlocks row, and A on Invert Camera X opened Unlocks instead, #129) */
+    if ((key == K_OK || key == K_RIGHT || key == K_LEFT) && s_cat != CAT_CTL && s_row >= 0 && s_row < n &&
         s_cat_rows[s_cat][s_row] == S_UNLOCKS) {     /* Cheats' Unlocks row: its page */
         if (key != K_LEFT) {
             s_cat = CAT_UNL;
