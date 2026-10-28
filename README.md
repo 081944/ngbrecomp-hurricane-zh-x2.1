@@ -14,8 +14,6 @@ resolutions, widescreen and ultrawide, keyboard and mouse, rebindable controls a
 sound, movies, text): on first start it asks for your disc image and installs the game from it. It is made for the **retail USA
 release** (NTSC-U, title ID `5443000D`) and checks for it.
 
-If you'd like to support the project: [ko-fi.com/gamboozino](https://ko-fi.com/gamboozino)
-
 ## Features
 
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
