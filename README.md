@@ -14,6 +14,8 @@ resolutions, widescreen and ultrawide, keyboard and mouse, rebindable controls a
 sound, movies, text): on first start it asks for your disc image and installs the game from it. It is made for the **retail USA
 release** (NTSC-U, title ID `5443000D`) and checks for it.
 
+If you'd like to support the project: [ko-fi.com/gamboozino](https://ko-fi.com/gamboozino)
+
 ## Features
 
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
@@ -222,7 +224,8 @@ and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
 Code:
 
 - [akirahayabusa](https://github.com/akirahayabusa): the freeze in scenes with the sun (#40), folders
-  with non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42)
+  with non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42); and the Hurricane
+  patch (vb-zh x2.1), whose Intercept switch showed where Black had left the mechanic out (#109, #132)
 - [ManemanFTW](https://github.com/ManemanFTW) (Manuel Flores): the Windows start-up hang (#9) and the
   audio crackling on Windows (#34)
 - [HammerD72](https://github.com/HammerD72): the audio timing fix (#32); the two spots where the game
