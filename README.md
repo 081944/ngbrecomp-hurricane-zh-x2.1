@@ -180,9 +180,9 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
 updates on top of one add `-1`, `-2`, ... Releases taken over since 2026-10-26 add `-t` after the number.
-The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.39-t`.
+The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.39-t2`.
 
-## Changes in 0.9.39-t
+## Changes in 0.9.39-t2
 
 - Merged ngbrecomp 0.9.37–0.9.39: 32:9, button prompts (Auto / Xbox / PlayStation / PC), a guard
   held through the quick menu stays held, the Screen Adjustment fix, the HUD stays in the biggest
