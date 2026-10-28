@@ -232,3 +232,7 @@ cat	Controls	按键	P
 	Optional changes to how the game plays, each off unless chosen: the Quick Menu.	可选的玩法改动，默认关闭。	E
 	Resolution, texture filtering, anti-aliasing, shadows, the glow, and two options for slower PCs.	分辨率、纹理、抗锯齿、阴影、泛光等。	E
 	Help for a hard spot: health, ninpo, essence, items and projectiles. Not saved. And the unlocks.	难关助力与解锁，不保存。	E
+	Intercept	交差之法	E
+	Black	原版	E
+	Hurricane	飓风包	E
+	Button Prompts	按键	E
