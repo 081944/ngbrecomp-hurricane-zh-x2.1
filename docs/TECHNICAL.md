@@ -144,6 +144,15 @@ with a countdown: sub_002EBB00) is paid on every difficulty, not only Very Hard 
 battle's results show the "Intercept" line again (sub_00208120, from the counts Black still keeps at
 0x8DB734; Black only stopped drawing it).
 
+Essence-Only Charging (Gameplay; `src/ut_charge.c`, #120): while Ryu is in a charging action (kind 0xB9,
+the player block's +4 at 0x4968B0), sub_00023520 counts its frames in 0x5895E4 and raises the charge
+level 0x5895E2 when the count reaches either of two marks (0x5895E6, 0x5895E8: about 100 and 220 frames,
+from sub_00029140); the release picks the plain attack, the Ultimate Technique or the stronger one by that
+level (script opcode 0x83 in sub_00016300; for the Dragon Sword actions 0x20A, 0x20D and 0x20F). Essence
+absorbed while charging (sub_001E2EB0) raises the level itself and sets the count just past that level's
+mark (0x65, 0xDD). With the option on, the count's steps of a few frames are taken back each frame, so only
+essence raises the level.
+
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
 frame -- the game keeps it per segment at 0x58A534, maxima at 0x58A524, and 0x58A566 is their

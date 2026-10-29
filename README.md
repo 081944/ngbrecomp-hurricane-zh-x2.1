@@ -100,7 +100,8 @@ of the pause menu. Changes apply at once and are saved.
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output; a change needs a restart of the game)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
-  Pack's guard counter Black left out: tap guard as an attack lands to turn it aside
+  Pack's guard counter Black left out: tap guard as an attack lands to turn it aside; **Essence-Only
+  Charging**, Ultimate Techniques charged only by absorbing essence, not by holding attack (#120)
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs;
   all weapons (every melee and projectile weapon at its highest level; turned off, it takes back what it
   gave and puts back your own levels and pickups; a save made while it is on keeps the weapons)
