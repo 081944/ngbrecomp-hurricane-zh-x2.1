@@ -1,13 +1,14 @@
 // DirectSound (XDK 5849) on a host mixer: the title's sound buffers read from guest memory as they play, mixed into
 // 48 kHz stereo or 5.1 for SDL's output. Modelled on SCDA-XBERecomp's xdk/dsound.cpp (see NOTICE): its buffers, 3D pass,
 // mix bins and I3DL2 reverb, ported to this title's library (tools/dsound_symbols.txt: the calls it makes, buffers
-// only, no streams) and given the sound chip's HRTF filters for Positional Audio's "Console" choice.
+// only, no streams) and given the sound chip's HRTF filters for Positional Audio's "Console" choice ("Clear": their
+// levels alone).
 //
 // The emulated sound chip (xboxrecomp/src/apu) is not started with this; NGB_AUDIO_ENGINE=apu goes back to it.
 // 5.1 by Audio Output, on Auto when the default output device has six channels or more (the title is told its
 // speakers are surround, and mixes for them); NGB_AUDIO_CHANNELS=2 or 6 overrides it. NGB_DSOUND_LOG=1 logs the
 // calls as they first come (2 every volume change too, 3 every Lock); NGB_DSOUND_WAV=<file> writes what plays
-// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out (comparing).
+// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out, NGB_DSOUND_XTALK=0 the crosstalk effect (comparing).
 #include <SDL.h>
 
 #include <algorithm>
@@ -69,7 +70,7 @@ constexpr uint32_t kDsErrInvalidCall = 0x88780032u, kEFail = 0x80004005u;
 
 std::atomic<int> g_positional{2};
 bool g_surround = false;
-int g_output_choice = 0;  // Audio Output: 0 auto, 1 stereo, 2 5.1 (dsound_hle_set_output)  // the output is 5.1: FL FR C LFE BL BR, SDL's order and the mix bins'  // Positional Audio: 0 off, 1 console (the HRTF filters), 2 panning
+int g_output_choice = 0;  // Audio Output: 0 auto, 1 stereo, 2 5.1 (dsound_hle_set_output)  // the output is 5.1: FL FR C LFE BL BR, SDL's order and the mix bins'  // Positional Audio: 0 off, 1 console (the HRTF filters), 2 clear (their levels)
 int g_log = -1;
 
 bool Log() {
@@ -91,7 +92,7 @@ struct Ear {
 };
 struct EarPair {
     Ear e[2];  // left, right
-    float pan[2] = {1, 1};  // "Panning": each ear's level from its filter's strength, at constant power
+    float pan[2] = {1, 1};  // "Clear": each ear's level from its filter's strength, at constant power
 };
 
 struct Voice {
@@ -348,6 +349,28 @@ struct Reverb {
     }
 } g_reverb;
 
+// dsstdfx's crosstalk effect (the image's last: the four 3D submixes in, the front and back pairs out), as
+// SCDA-XBERecomp has it from the image: each side of a pair takes the other side's output of 11 samples before
+// through a one pole filter, -0.77 of it at low frequencies -- what keeps the HRTF's two ears apart on speakers
+// (the filters give the far ear the more bass, this takes it back out of the near one). It runs on the reverb
+// as well, which the image writes into the same bins. "Console" alone: "Clear" and "Off" are not the console's
+// speaker pipeline, and on its own it thins centred sounds by 5 dB.
+struct CrossFeed {
+    static constexpr uint32_t kDelay = 11;
+    static constexpr float kPole = 0.924f, kFeed = -0.0585f;  // image coefficients 0x7645A1, 0xF88313
+    float s[2] = {}, past[2][kDelay] = {};
+    uint32_t at = 0;
+    void Run(float& left, float& right) {
+        s[0] = kPole * s[0] + kFeed * past[1][at] + 1e-20f;  // the offset keeps silence out of denormals
+        s[1] = kPole * s[1] + kFeed * past[0][at] + 1e-20f;
+        left += s[0];
+        right += s[1];
+        past[0][at] = left;
+        past[1][at] = right;
+        at = (at + 1) % kDelay;
+    }
+} g_front_feed, g_back_feed;
+
 // ── 3D: where a voice is, as the library's 3D pass works it out ──
 
 float Dot(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
@@ -396,10 +419,14 @@ EarPair Ears(float azimuth, float elevation) {
         for (int i = 0; i < kHrtfTaps; i++) ear.tap[i] = (t[i] & 0x80 ? -float(t[i] & 0x7F) : float(t[i])) / 128.0f;
         ear.delay = t[31];
     }
+    // "Clear": the filters' strengths as the ears' levels, a few dB apart (a pan by the direction with the
+    // table's delay between the ears was tried for 0.9.40 and heard as worse). Each ear gets its filter's
+    // RMS gain, so a 3D sound is as loud as through the filters: 0.9.39 scaled the pair to 0 dB, which left
+    // them 2-5 dB under "Console" and the other sounds
     float e[2] = {};
     for (int c = 0; c < 2; c++)
         for (int i = 0; i < kHrtfTaps; i++) e[c] += p.e[c].tap[i] * p.e[c].tap[i];
-    for (int c = 0; c < 2; c++) p.pan[c] = e[0] + e[1] > 0 ? std::sqrt(2 * e[c] / (e[0] + e[1])) : 1.0f;
+    for (int c = 0; c < 2; c++) p.pan[c] = e[0] + e[1] > 0 ? std::sqrt(e[c]) : 1.0f;
     return p;
 }
 
@@ -555,7 +582,7 @@ void ReadFrame(Voice& v, const Cursor& at, float x[2]) {
     }
 }
 
-// a mono 3D voice through one ear's filter (or its "Panning" level), from its recent samples
+// a mono 3D voice through one ear's filter (or its "Clear" level), from its recent samples
 float EarOut(const Voice& v, const Ear& e, float pan, int mode) {
     auto at = [&](int back) { return v.ear[(v.ear_pos - 1 - back) % kEarLength]; };
     if (mode == 2) return pan * at(0);
@@ -631,7 +658,8 @@ void MixVoice(Voice& v, float* out, float* send, uint32_t frames, int mode) {
     }
 }
 
-// 48 kHz: the voices, the reverb, the 3D submixes onto the speakers' pairs; stereo folds the centre and the back pair
+// 48 kHz: the voices, the reverb, "Console"'s crosstalk effect on the 3D submixes, those onto the speakers' pairs; stereo folds
+// the centre and the back pair
 // into the front (and drops the sub)
 void Render(float* out, uint32_t frames) {
     static std::vector<float> lanes, send;
@@ -644,6 +672,12 @@ void Render(float* out, uint32_t frames) {
             if (v.playing) MixVoice(v, lanes.data(), send.data(), frames, mode);
         static const bool reverb = !(std::getenv("NGB_DSOUND_REVERB") && *std::getenv("NGB_DSOUND_REVERB") == '0');
         if (reverb) g_reverb.Run(send.data(), lanes.data(), frames);
+    }
+    static const bool xtalk = !(std::getenv("NGB_DSOUND_XTALK") && *std::getenv("NGB_DSOUND_XTALK") == '0');
+    for (uint32_t i = 0; xtalk && g_positional.load() == 1 && i < frames; i++) {
+        float* m = &lanes[size_t(i) * kLanes];
+        g_front_feed.Run(m[kBinCrosstalkFrontLeft], m[kBinCrosstalkFrontRight]);
+        g_back_feed.Run(m[kBinCrosstalkBackLeft], m[kBinCrosstalkBackRight]);
     }
     if (g_surround) {
         for (uint32_t i = 0; i < frames; i++) {

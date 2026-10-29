@@ -43,18 +43,21 @@ loop region, pitch, volume and mix bins -- a bin a buffer lists twice plays twic
 slot, and each bin takes its headroom, the library's one step unless the program sets it: the game sets
 none, the arcade leaves it), position notifications (the arcade's double buffer: set at its next
 `DirectSoundDoWork`, on its own thread), the library's 3D pass (distance, rolloff, the direction by its own octant estimate), and dsstdfx's
-I3DL2 reverb on the send bin 10 with the room the game sets per area. The sound chip is not emulated.
+I3DL2 reverb on the send bin 10 with the room the game sets per area, and dsstdfx's crosstalk effect on the 3D
+submixes (bins 6 to 9, the reverb's too; "Console" only) before they reach the speakers: each side takes the other's output of 11
+samples before through a one pole filter (0x7645A1, 0xF88313 in the image's code, which the library decrypts as it
+loads it). The sound chip is not emulated.
 Positional Audio places a mono 3D sound through the library's own HRTF tables (0x395430 the filter per
 direction, 0x383E70 the filters: 31 sign and magnitude taps per ear, the far ear's delay in its last
-byte): "Console" filters it as the chip does, "Panning" takes only each ear's level from its filter, "Off"
-plays it centred. Audio Output (Sound; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
+byte): "Console" filters it as the chip does and runs the crosstalk stage, "Clear" (the default; "Panning" before 0.9.40)
+takes only each ear's level from its filter (its RMS gain, so it is as loud as through the filters; before 0.9.40 the pair was scaled to 0 dB, 2-5 dB quieter), "Off" plays it centred. Audio Output (Sound; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
 Stereo, 5.1, or Auto: 5.1 when the default output device has six channels or more. On 5.1 the program is
 told its speakers are surround (with Dolby Digital) and mixes for them, and the output is FL FR C LFE BL
 BR; on stereo the centre is folded into the front pair. `NGB_AUDIO_CHANNELS=2|6` overrides it,
 `NGB_AUDIO_ENGINE=apu` goes back to the recompiled library on the emulated chip (xemu's voice
 processor, 0.9.29 and before: no reverb, no 5.1). `NGB_DSOUND_LOG=1` logs the calls (`=3` every Lock, `=2` every volume
 change too), `NGB_DSOUND_WAV=<file>` records what plays (either engine), `NGB_DSOUND_REVERB=0` leaves the
-reverb out.
+reverb out, `NGB_DSOUND_XTALK=0` the crosstalk effect.
 
 `kill -USR1 <pid>` (Linux) prints the guest thread's host backtrace, every lifted function a named
 `sub_XXXXXXXX`, and its guest registers -- use it instead of gdb, which swallows the TF single-steps
