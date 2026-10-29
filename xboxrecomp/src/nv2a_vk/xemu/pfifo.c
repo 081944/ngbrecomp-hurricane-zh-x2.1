@@ -106,16 +106,16 @@ void pfifo_kick(NV2AState *d)
  * the console's GPU's would -- else the title reused vertex and texture memory still to be drawn. on: read up to
  * put, a DMA_PUT the title set (the pusher stops there exactly: PUT is at a method's end); off: as far as the
  * title has put. */
-static uint32_t s_gate_put;
-static int s_gate_on;
+/* one word, on in the high half: the pusher reads it without the lock, and two words could be seen one old and
+ * one new (the gate closing at exit: on with put 0, the pusher running on to 0 through stale words) */
+static uint64_t s_gate;
 void nv2a_pfifo_gate(int on, uint32_t put)
 {
     NV2AState *d = g_nv2a;
     if (!d)
         return;
     qemu_mutex_lock(&d->pfifo.lock);
-    qatomic_set(&s_gate_put, put);
-    qatomic_set(&s_gate_on, on);
+    __atomic_store_n(&s_gate, ((uint64_t)(on != 0) << 32) | put, __ATOMIC_RELEASE);
     pfifo_kick(d);
     qemu_mutex_unlock(&d->pfifo.lock);
 }
@@ -382,7 +382,8 @@ static void pfifo_run_pusher(NV2AState *d)
             batch = 0;
         }
         uint32_t dma_get_v = *dma_get;
-        uint32_t dma_put_v = qatomic_read(&s_gate_on) ? qatomic_read(&s_gate_put) : qatomic_read(dma_put);
+        uint64_t gate = __atomic_load_n(&s_gate, __ATOMIC_ACQUIRE);
+        uint32_t dma_put_v = (gate >> 32) ? (uint32_t)gate : qatomic_read(dma_put);
         if (dma_get_v == dma_put_v) break;
         if (dma_get_v >= dma_len) {
             assert(!"Dma value is out of range in PFIFO pusher");

@@ -70,6 +70,9 @@ public:
     virtual void WaitFence(uint32_t) {}
     virtual bool Busy(uint32_t /*resource*/) { return false; }
     virtual void WaitResource(uint32_t /*resource*/) {}
+    // after Present, out of every lock (d3d.c, the Swap hook's host section over): a renderer drawing on a thread of
+    // its own waits here for the frame before, giving the virtual CPU to the title's other threads meanwhile
+    virtual void FrameWait() {}
     // the title's visibility tests: the draws between counted, the count written to the report slot
     // (guest address) once known, as the GPU would
     virtual void VisibilityBegin() {}

@@ -103,6 +103,7 @@ static void push_dump(void)
 /* The Direct3D renderer (src/d3d/hle.cpp): the call's registers and stack
  * pointer; nonzero when it took the call (the recompiled body is skipped). */
 int d3d_hle_call(int fn, uint32_t regs[8]);
+void d3d_hle_frame_wait(void);
 void d3d_hle_after(int fn, const uint32_t regs[8]);
 static int s_hle = -1;
 /* The renderer takes host locks shared with the NV2A renderer's thread; a
@@ -272,6 +273,8 @@ int d3d_hook(int fn)
         compat_host_enter();
         int took = d3d_hle_call(fn, regs);
         compat_host_leave();
+        if (fn == D3DF_D3DDevice_Swap)
+            d3d_hle_frame_wait();   /* the frame before drawn: no lock held, the virtual CPU free to give away */
         if (took) {
             eax = regs[0];                       /* its return value */
             esp = regs[4];                       /* its stack (ret n) */

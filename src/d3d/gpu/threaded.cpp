@@ -19,6 +19,8 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+
+#include "platform/vcpu.h"   // the title's wait for a frame gives the virtual CPU away meanwhile
 #include <unordered_map>
 #include <vector>
 
@@ -44,6 +46,7 @@ namespace {
 
 // commands handed over at once, so the render thread keeps close behind
 constexpr uint32_t kBatchCommands = 64;
+constexpr size_t kFreeBatches = 64;   // spare batches kept for reuse
 // the render thread, waiting with nothing queued, takes what the title has recorded so far after this long: the
 // title may be waiting on memory the GPU emulation writes (a semaphore) behind calls it has not handed over
 constexpr auto kIdleTake = std::chrono::microseconds(1500);
@@ -113,32 +116,74 @@ std::vector<Range> StateRanges() {
 constexpr size_t kPiece = 64;
 
 class Recorded;
-Recorded* g_recorded;   // for the title's progress reads (nv2a_user_read_hook)
+std::atomic<Recorded*> g_recorded{nullptr};   // for the title's progress reads (nv2a_user_read_hook)
+std::atomic<int> g_hook_busy{0};              // guest threads inside the hook, which the destructor lets out first
+#if XBOX_HAS_VCPU
+extern "C" void compat_host_enter(void);   // a host section: not parked while holding cap_ (xboxrecomp win32_compat.h)
+extern "C" void compat_host_leave(void);
+#else
+static inline void compat_host_enter(void) {}
+static inline void compat_host_leave(void) {}
+#endif
+// A long wait is logged, never ended: the F1 menu holds the render thread on purpose (present_sdl.c overlay_run),
+// and a minimized window or a first shader build can hold it a while too
+constexpr int kStallLogSeconds = 10;
 
 class Recorded final : public Backend {
 public:
     Recorded(std::unique_ptr<Backend> inner, bool thread) : inner_(std::move(inner)), ranges_(StateRanges()), thread_(thread) {
         cur_ = NewBatch();
         if (thread_) {
-            g_recorded = this;
+            g_recorded.store(this);
             Gate(1, nv2a_pfifo_put());   // what the title put before the first recording: read
-            nv2a_user_read_hook = [] { if (g_recorded) g_recorded->TitleWaits(); };
-            std::thread([this] { Run(); }).detach();
+            // from guest code (the title polling the GPU's progress): a host section around it, or a guest thread
+            // parked here holding cap_ froze the next one to make a Direct3D call (it holds the CPU and g_lock)
+            nv2a_user_read_hook = [] {
+                g_hook_busy.fetch_add(1);
+                compat_host_enter();
+                if (Recorded* r = g_recorded.load()) r->TitleWaits();
+                compat_host_leave();
+                g_hook_busy.fetch_sub(1);
+            };
+            std::thread t([this] { Run(); });
+            render_ = t.get_id();
+            t.detach();
         }
     }
+    // Only exit() comes here (the game leaves by _exit): the thread is stopped and waited for, so nothing of this is
+    // freed under it. A guest thread in the hook is let out first.
     ~Recorded() override {
         if (!thread_) return;
         nv2a_user_read_hook = nullptr;
-        g_recorded = nullptr;
+        g_recorded.store(nullptr);
+        for (int i = 0; g_hook_busy.load(); i++) {   // (a thread held in the hook past 5 s: leaving, not freeing)
+            if (i >= 50000) {
+                std::fprintf(stderr, "[D3D] a thread still in the progress hook after 5 s: leaving\n");
+                std::fflush(nullptr);
+                std::_Exit(1);
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
         {
             std::lock_guard lock(m_);
             stop_ = true;
         }
         cv_.notify_all();
         nv2a_pfifo_gate(0, 0);
+        if (std::this_thread::get_id() == render_) {
+            // exit() on the render thread itself (a fatal renderer error, its message already shown): Run never
+            // resumes, and the title's thread may be waiting on what this would free -- leaving now
+            std::fflush(nullptr);
+            std::_Exit(1);
+        }
         std::unique_lock lock(m_);
-        // at exit the thread may be gone mid-batch: then the renderer is left, not freed under it
-        if (!done_cv_.wait_for(lock, std::chrono::milliseconds(500), [&] { return exited_; })) (void)inner_.release();
+        if (!done_cv_.wait_for(lock, std::chrono::seconds(5), [&] { return exited_; })) {
+            // held in a GPU wait that is not ending: the process goes now, as the game's own exit does, rather than
+            // free the queue and the renderer under the thread
+            std::fprintf(stderr, "[D3D] the render thread did not stop in 5 s: leaving\n");
+            std::fflush(nullptr);
+            std::_Exit(1);
+        }
     }
 
     bool Init(uint32_t width, uint32_t height) override { return inner_->Init(width, height); }
@@ -208,11 +253,18 @@ public:
             cur_->cmds.push_back(c);
             id = Submit();
         }
-        // the title records one frame while the one before it draws
+        // the title records one frame while the one before it draws: the wait for that one in FrameWait, which
+        // the hook calls once g_lock and the host section are let go -- the wait gives the virtual CPU away, and
+        // another guest thread taking it and then g_lock (a Direct3D call: the in-game menu's) froze the game
         if (thread_) {
-            Wait(last_present_);
+            frame_wait_ = last_present_;
             last_present_ = id;
         }
+    }
+    void FrameWait() override {
+        uint64_t id = frame_wait_;
+        frame_wait_ = 0;
+        if (thread_ && id) Wait(id);
     }
 
     void Sync(uint32_t data, uint32_t size) override {
@@ -423,15 +475,37 @@ private:
         }
     }
 
-    // the title waits for a batch drawn (recording)
+    // the title waits for a batch drawn (recording), holding no lock (FrameWait). It keeps the virtual CPU
+    // (platform/vcpu.h) meanwhile, as before 0.9.40: giving it to the title's other threads (NGB_D3D_WAIT_RELEASE=1,
+    // tried for the sound skipping with the drawing behind, #126) made play stutter and answer late, the title
+    // waiting for the CPU back every frame. A wait that goes on for kStallLogSeconds is logged, then every so
+    // often: a frozen game's log says which frame the render thread is held on.
     void Wait(uint64_t id, bool hand_over = true) {
         if (!id || done_.load() >= id) return;
-        if (hand_over && id >= cur_->id) {
+        if (hand_over && id > submitted_.load()) {   // the batch being recorded: handed over
             std::lock_guard lock(cap_);
             id = Submit();
         }
-        std::unique_lock lock(m_);
-        done_cv_.wait(lock, [&] { return done_.load() >= id; });
+#if XBOX_HAS_VCPU
+        static const bool release = std::getenv("NGB_D3D_WAIT_RELEASE") && *std::getenv("NGB_D3D_WAIT_RELEASE") == '1';
+        if (release) vcpu_block_begin();
+#endif
+        {
+            std::unique_lock lock(m_);
+            auto since = std::chrono::steady_clock::now();
+            int logged = 0;
+            while (!done_cv_.wait_for(lock, std::chrono::seconds(1), [&] { return done_.load() >= id; })) {
+                int s = int(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - since).count());
+                if (s >= kStallLogSeconds * (logged + 1)) {
+                    logged++;
+                    std::fprintf(stderr, "[D3D] frame %llu not drawn after %d s: the render thread is held up (drawn %llu)\n",
+                                 (unsigned long long)id, s, (unsigned long long)done_.load());
+                }
+            }
+        }
+#if XBOX_HAS_VCPU
+        if (release) vcpu_block_end();
+#endif
     }
 
     void Recycle(Batch* b) {
@@ -441,6 +515,10 @@ private:
         b->ps.clear();
         b->quick.clear();
         std::lock_guard lock(m_);
+        if (free_.size() >= kFreeBatches) {   // a backlog's worth kept, not the peak's for good
+            delete b;
+            return;
+        }
         free_.push_back(b);
     }
 
@@ -541,13 +619,13 @@ private:
     // the title's side (cap_: a call being recorded; the render thread takes the batch under it too)
     std::recursive_mutex cap_;
     Batch* cur_ = nullptr;
-    std::thread::id title_;
+    std::thread::id title_, render_;
     State sent_;   // the state as the renderer will have it
     std::unordered_map<uint32_t, HeaderCopy> sent_headers_;
     std::vector<HeaderSend> pending_headers_;
     Peek sent_peek_;
     bool peek_sent_ = false;
-    uint64_t next_id_ = 0, last_present_ = 0;
+    uint64_t next_id_ = 0, last_present_ = 0, frame_wait_ = 0;
     std::atomic<uint64_t> submitted_{0};   // the last batch handed over
 
     // the renderer's side

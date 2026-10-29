@@ -136,8 +136,8 @@ void ngb_settings_load(NgbSettings *s)
     s->msaa = 1;
     s->shadow_scale = 4;
     s->quick_menu_freeze = 1;
-    s->positional_audio = 2;  /* panning: 3D sounds placed without the filters' duller sound (#30, #86) */
-    s->show_hud = 1;  /* the console's HRTF placement of 3D sounds (#30) */
+    s->positional_audio = 2;  /* clear: 3D sounds placed without the filters' duller sound (#30, #86, #126) */
+    s->show_hud = 1;
     s->quick_menu_scale = 0;    /* the quick menu off unless chosen (Gameplay) */
     s->skip_intro = 0;
     s->show_launcher = 1;
@@ -148,6 +148,7 @@ void ngb_settings_load(NgbSettings *s)
     if (!f)
         return;
     s->width = s->height = 0;
+    int defaults = 0;   /* the defaults the file was written under (0: before 0.9.40, 3: 0.9.40) */
     while (fgets(line, sizeof line, f)) {
         char key[64], val[128];
         if (sscanf(line, " %63[^= ] = %127[^\r\n]", key, val) != 2)
@@ -195,11 +196,13 @@ void ngb_settings_load(NgbSettings *s)
         } else if (!strcmp(key, "show_hud")) {
             s->show_hud = atoi(val) != 0;
         } else if (!strcmp(key, "positional_audio")) {
-            s->positional_audio = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 off, 1 console, 2 panning */
+            s->positional_audio = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 off, 1 console, 2 clear */
         } else if (!strcmp(key, "smoother_glow")) {
             s->smooth_glow = atoi(val) != 0;
         } else if (!strcmp(key, "detail_under_load")) {
             s->detail_under_load = atoi(val) != 0;
+        } else if (!strcmp(key, "defaults")) {
+            defaults = atoi(val);
         } else if (!strcmp(key, "render_thread")) {
             s->render_thread = atoi(val) != 0;
         } else if (!strcmp(key, "intercept")) {
@@ -219,6 +222,13 @@ void ngb_settings_load(NgbSettings *s)
         }
     }
     fclose(f);
+    /* defaults 1 and 2 were builds between 0.9.39 and 0.9.40, never released, that had turned the Multithreaded
+     * Renderer on and (1) made Console the Positional Audio default: both back */
+    if (defaults == 1 || defaults == 2) {
+        s->render_thread = 0;
+        if (defaults == 1 && s->positional_audio == 1)
+            s->positional_audio = 2;
+    }
     snap_size(s);
 }
 
@@ -234,6 +244,7 @@ void ngb_settings_save(const NgbSettings *s)
         return;
     }
     fprintf(f, "# Ninja Gaiden Black settings (the settings screen writes this file)\n");
+    fprintf(f, "defaults = 3\n");
     fprintf(f, "aspect = %s\n", ASPECT_NAMES[s->aspect]);
     fprintf(f, "window = %dx%d\n", s->width, s->height);
     fprintf(f, "fullscreen = %d\n", s->fullscreen);

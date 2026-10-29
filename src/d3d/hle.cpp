@@ -23,6 +23,8 @@
 #include "kernel/kernel.h"
 
 extern "C" uint32_t xbox_HeapAlloc(uint32_t size, uint32_t align);
+extern "C" int ngb_render_threaded;  // src/pc_menu.c reads it: the Multithreaded Renderer is drawing
+extern "C" { int ngb_render_threaded = 0; }
 
 using kernel::HostPtr;
 using kernel::R32;
@@ -593,11 +595,12 @@ void Start() {
         std::fprintf(stderr, "[D3D] renderer init failed\n");
         if (!g_mirror) ngb_renderer_fatal("The renderer could not start on this GPU (details above in the log).");
     }
-    // Graphics > Render Thread (experimental), or NGB_D3D_THREAD=1 or 0 over it; NGB_D3D_THREAD=capture: the
+    // Graphics > Multithreaded Renderer (off by default: for slower CPUs), or NGB_D3D_THREAD=1 or 0 over it; NGB_D3D_THREAD=capture: the
     // renderer draws from a recording of the calls on the title's thread (src/d3d/gpu/threaded.cpp)
     const char* thread = std::getenv("NGB_D3D_THREAD");
     if (g_backend && (thread ? std::strcmp(thread, "0") != 0 : ngb_pc_setting(30) != 0)) {
         g_backend = gpu::CreateThreadedBackend(std::move(g_backend));
+        __atomic_store_n(&ngb_render_threaded, 1, __ATOMIC_RELAXED);
         std::fprintf(stderr, "[D3D] drawing from a recording of the calls\n");
     }
     std::fprintf(stderr, "[D3D] renderer on (%s)\n", g_mirror ? "mirroring the NV2A emulation" : "drawing to the window");
@@ -608,6 +611,12 @@ void Start() {
 extern "C" int d3d_hle_call(int fn, uint32_t regs[8]) {
     if (!g_started) Start();
     return Before(fn, Call{regs}) ? 1 : 0;
+}
+
+// after the Swap hook, out of g_lock and the host section (src/d3d/d3d.c): the frame wait (gpu::Backend::FrameWait).
+// g_backend is set once, at the first call, by this same thread.
+extern "C" void d3d_hle_frame_wait(void) {
+    if (g_backend) g_backend->FrameWait();
 }
 
 // D3DDevice_BeginVisibilityTest, inlined into the title (src/d3d/d3d_hooks.c)

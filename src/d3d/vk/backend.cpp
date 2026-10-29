@@ -230,6 +230,9 @@ extern "C" int ngb_2d_screen_frame(int threed);   // src/pc_menu.c: a 2D screen 
 // 2D screen, which the game draws in its widescreen mode)
 extern "C" {
 int ngb_frame_draws = 0, ngb_frame_3d_draws = 0;
+// the last presented frame's verdict, for the title's thread when a render thread draws (the counts above are
+// then a frame the title has already moved past, part drawn): 1 a 2D screen
+int ngb_frame_done_2d = 0;
 }
 int g_step_frame = -1;
 // F7 (src/ingame_menu.c): record the next frames -- each a small picture, and every draw a line -- to
@@ -1395,12 +1398,14 @@ void VulkanBackend::VisResults(int slot) {
         auto it = vis_sum_.find(e.first);
         uint32_t count = it == vis_sum_.end() ? 0 : uint32_t(std::lround(it->second));
         if (it != vis_sum_.end()) vis_sum_.erase(it);
+        // the title's thread reads the slot meanwhile (with the render thread, frames later than it ended the
+        // test): the count and the end word first, the stamp that says the report is in last, in one store
         uint8_t* p = static_cast<uint8_t*>(HostPtr(e.second));
         uint64_t stamp = 0x0011223344556677ull;
         uint32_t done = 0;
-        std::memcpy(p, &stamp, 8);
         std::memcpy(p + 8, &count, 4);
         std::memcpy(p + 12, &done, 4);
+        __atomic_store_n(reinterpret_cast<uint64_t*>(p), stamp, __ATOMIC_RELEASE);
         static const bool log = std::getenv("NGB_VIS_LOG") != nullptr;
         if (log) std::fprintf(stderr, "[VIS] test %u: %u pixels -> %08X\n", e.first, count, e.second);
     }
@@ -4027,6 +4032,7 @@ void VulkanBackend::Present(const Surface& front) {
     pic_tex_ = 0;
     pic_x1_ = -1;
     offscreen3d_ = 0;
+    __atomic_store_n(&ngb_frame_done_2d, ngb_frame_draws > 0 && ngb_frame_3d_draws < 30, __ATOMIC_RELAXED);
     ngb_frame_draws = ngb_frame_3d_draws = 0;
     hud_cover_ = 0;
     if (trace_) {

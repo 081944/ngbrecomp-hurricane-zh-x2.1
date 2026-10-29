@@ -186,10 +186,15 @@ if(NGB_NV2A_VK)
         src/d3d/gpu/threaded.cpp)
     target_include_directories(ngb_d3d PRIVATE
         src
-        src/d3d src/d3d/compat ${XBOXRECOMP_DIR}/src/nv2a_vk/host
+        src/d3d src/d3d/compat ${XBOXRECOMP_DIR}/src ${XBOXRECOMP_DIR}/src/nv2a_vk/host
         ${XRTP}/Vulkan-Headers/include ${XRTP}/volk ${XRTP}/VulkanMemoryAllocator/include)
     target_compile_definitions(ngb_d3d PRIVATE VK_NO_PROTOTYPES
         VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0)
+    # the virtual CPU on Windows (platform's XBOX_WIN_VCPU, without its wait wrappers): the render thread's frame
+    # wait hands it over there too (src/d3d/gpu/threaded.cpp)
+    if(WIN32 AND XBOXRECOMP_WIN_VCPU)
+        target_compile_definitions(ngb_d3d PRIVATE XBOX_WIN_VCPU)
+    endif()
     if(APPLE)
         target_link_libraries(ngb_d3d PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
     endif()
