@@ -752,6 +752,15 @@ static void bringup_defaults(void)
     if (!dsound_host_mixer()) {
         set_default("RECOMP_AC97_READY", "1");
         set_default("RECOMP_DSP_ACK", "0x86BF8810");   /* contiguous memory starts at 64 MB */
+    } else if (getenv("RECOMP_AC97_READY")) {
+        /* Left in the environment, it would unmap the chip's registers with no model behind them: the USB
+         * interrupt routine's read of one (0xFE80200C) then faults at boot (#136). */
+        fprintf(stderr, "[BOOT] RECOMP_AC97_READY ignored: DirectSound runs on the host mixer\n");
+#if defined(_WIN32)
+        _putenv_s("RECOMP_AC97_READY", "");
+#else
+        unsetenv("RECOMP_AC97_READY");
+#endif
     }
     set_default("RECOMP_USB", "1");
 }
