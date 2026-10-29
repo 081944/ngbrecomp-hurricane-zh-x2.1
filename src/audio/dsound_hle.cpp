@@ -103,7 +103,7 @@ struct Voice {
     uint32_t rate = 48000;
     // the buffer
     uint32_t data = 0, bytes = 0, loop_start = 0, loop_len = 0;
-    uint32_t owned = 0;  // memory made with the buffer (a size and no data)
+    uint32_t owned = 0, owned_bytes = 0;  // memory made with the buffer (a size and no data)
     bool playing = false, looping = false;
     double pos = 0;  // frames
     uint32_t freq = 0;
@@ -139,6 +139,11 @@ struct Voice {
 std::recursive_mutex g_lock;
 std::map<uint32_t, Voice> g_voices;
 std::vector<uint32_t> g_free_objects;  // released buffers' objects, for the next
+// released buffers' memory by size, for the next buffers: the title creates and releases a buffer for many of the
+// sounds it streams, and that memory was never given back, so the heap ran out after a few hours of play (#137).
+// It is kept here rather than freed: the guest heap neither splits nor joins blocks, so a freed block went to the
+// next small allocation and the next buffer took new memory all the same.
+std::multimap<uint32_t, uint32_t> g_spare_memory;
 std::vector<uint32_t> g_events;        // notifications reached, set at the next DirectSoundDoWork (the title's thread)
 float g_listener[3] = {}, g_front[3] = {0, 0, 1}, g_top[3] = {0, 1, 0};
 // IDirectSound_SetMixBinHeadroom: a step halves the bin; the library starts bins 0..30 at 1 and 31 at 0
@@ -861,6 +866,28 @@ uint32_t NewObject() {
     return xbox_HeapAlloc(0x40, 16);
 }
 
+// a buffer's own memory, zeroed: the smallest released block it fits in, if there is one
+uint32_t OwnedMemory(Voice& v, uint32_t bytes) {
+    auto it = g_spare_memory.lower_bound(bytes);
+    uint32_t va = 0, size = bytes;
+    if (it != g_spare_memory.end()) {
+        size = it->first;
+        va = it->second;
+        g_spare_memory.erase(it);
+    } else {
+        va = xbox_HeapAlloc(bytes, 16);
+    }
+    if (va) std::memset(HostPtr(va), 0, bytes);
+    v.owned = va;
+    v.owned_bytes = va ? size : 0;
+    return va;
+}
+
+void SpareOwned(Voice& v) {
+    if (v.owned) g_spare_memory.emplace(v.owned_bytes, v.owned);
+    v.owned = v.owned_bytes = 0;
+}
+
 uint32_t NewBuffer(uint32_t desc, uint32_t out) {
     Start();
     uint32_t obj = NewObject();
@@ -875,8 +902,7 @@ uint32_t NewBuffer(uint32_t desc, uint32_t out) {
     v.is3d = flags & 0x10;
     v.headroom = DefaultHeadroom(flags);
     if (bytes) {
-        v.data = v.owned = xbox_HeapAlloc(bytes, 16);
-        if (v.data) std::memset(HostPtr(v.data), 0, bytes);
+        v.data = OwnedMemory(v, bytes);
         v.bytes = v.loop_len = bytes;
     }
     W32(out, obj);
@@ -1002,6 +1028,7 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
             *r = uint32_t(v.refs);
             return 1;
         }
+        SpareOwned(v);
         g_free_objects.push_back(v.obj);
         g_voices.erase(v.obj);
         return 1;
@@ -1009,8 +1036,9 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
         return 1;
     case DSF_IDirectSoundBuffer_SetBufferData:
         if (a[1] == v.data && a[2] == v.bytes) return 1;
+        if (v.owned && a[1] != v.owned) SpareOwned(v);  // the title's own memory, or a new size: ours is unused
         v.data = a[1];
-        if (!a[1] && a[2]) v.data = v.owned = xbox_HeapAlloc(a[2], 16);  // a size and no data
+        if (!a[1] && a[2]) v.data = OwnedMemory(v, a[2]);  // a size and no data
         v.bytes = v.loop_len = a[2];
         v.loop_start = 0;
         v.pos = 0;
