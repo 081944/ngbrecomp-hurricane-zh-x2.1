@@ -78,7 +78,7 @@ void ngb_pc_set_setting(int which, int value);
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
        S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT,
-       S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD, S_INTERCEPT,
+       S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD, S_INTERCEPT, S_ALLWEAP,
        S_UNLOCKS,                 /* not a setting: Cheats' row opening the Unlocks page */
        S_COUNT };
 
@@ -90,7 +90,7 @@ static const char *const s_label[S_COUNT] = {
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
     "Audio Output", "Missions", "Arcade Ninja Gaiden", "Movie Theater", "Lower Detail Under Load",
-    "Experimental Render Thread", "Intercept", "Unlocks",
+    "Multithreaded Renderer", "Intercept", "All Weapons", "Unlocks",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -116,21 +116,22 @@ static const char *const s_help[S_COUNT] = {
     "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size.",
     "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only.",
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
-    "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer.",
+    "Sounds placed left and right. Clear: by level only. Console: as the Xbox on speakers, duller.",
     "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.",
     "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. From the next start.",
     "MISSIONS in the main menu without earning it.",
     "ARCADE NINJA GAIDEN in the main menu without earning it.",
     "MOVIE THEATER in the main menu without earning it.",
     "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.",
-    "Drawing on a thread of its own. May glitch. Needs restart.",
+    "Drawing on a thread of its own, for slower CPUs. May have bugs. Needs restart.",
     "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out).",
+    "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.",
     "Difficulties, costumes and the main menu's extras, without earning them. Saved.",
 };
 
 /* The categories: the strip's words, their rows. */
 #define CATS 6
-#define CAT_ROWS 8
+#define CAT_ROWS 9
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 #define CAT_CHEAT 4
 #define CAT_UNL CATS              /* Unlocks: a page of Cheats' (its row S_UNLOCKS), not on the strip */
@@ -141,7 +142,7 @@ static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
     { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_SKIP, -1 },
     { S_POSAUDIO, S_AUDIOOUT, -1 },
     { S_QUICKSCALE, S_QUICKFREEZE, S_INTERCEPT, -1 },
-    { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, S_UNLOCKS, -1 },
+    { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, S_ALLWEAP, S_UNLOCKS, -1 },
     { -1 },
     { S_ALLDIFF, S_ALLCOST, S_MISSIONS, S_ARCADE, S_MOVIES, -1 },
 };
@@ -210,7 +211,7 @@ static void value_text(int row, char *out, size_t n)
     }
     case S_ASPECT:  snprintf(out, n, "%s", v == 4 ? "32:9" : v == 3 ? "21:9" : v == 2 ? "16:10" : v ? "16:9" : "4:3"); break;
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
-    case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Panning" : v ? "Console" : "Off"); break;
+    case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Clear" : v ? "Console" : "Off"); break;
     case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
     case S_INTERCEPT: snprintf(out, n, "%s", v == 2 ? "Hurricane" : v ? "Black" : "Off"); break;
     case S_UNLOCKS: snprintf(out, n, "%s", ""); break;

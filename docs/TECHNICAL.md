@@ -150,7 +150,18 @@ frame -- the game keeps it per segment at 0x58A534, maxima at 0x58A524, and 0x58
 sum; a single blow taking all of it at once still kills), Infinite Ninpo (0x58A56C/0x58A56E),
 Infinite Essence (0x589570, the game's cap of 99,999) and Golden Scarabs (enough in the bag --
 inventory slots at 0x5891D0, item 0x59 -- to make 50 with those already given to Muramasa,
-0x589574: every one of his rewards at the next visit). The game guards its state with 24
+0x589574: every one of his rewards at the next visit). All Weapons puts every melee and projectile
+weapon Black gives in the bag, or raises it, at its highest level (a weapon's count is its level; Lunar
+and Kitetsu are one item a level, 0x12B/0x133/0x134 and 0x182/0x0CC/0x183, and a lower one held
+becomes the top one), with a full stack of what it fires once a game is loaded: the Strongbow, the
+bows for explosive arrows (0x0E2) and APFSDS cores (0x029), the Spear Gun, both shuriken, incendiary
+shuriken and smoke bombs. The original's Bow (0x08D) and Plasma Saber (0x0CE) are left out, as
+Black replaces them with the Strongbow and the Mk.II. Turned off, it takes them back: what the player had
+of each before is kept, with what the game gives meanwhile (sub_00154300: a Lunar picked up goes into
+the cheat's while it is on), and put back -- a weapon held is put back once Ryu holds another, nothing
+under the pause menu. The slots it writes carry a mark in their fourth byte (the game leaves it alone and
+saves it): a record is only applied to slots with its mark, so a save loaded meanwhile is never touched.
+The game guards its state with 24
 checksums (sub_00164E50) and returns to the title when one changes without the flag its own
 code sets (0x7F1A94 + n); a cheat that writes sets them all. Unlocks also has All
 Costumes (saved): the Costume Selection at New Game offers every costume, as after clearing

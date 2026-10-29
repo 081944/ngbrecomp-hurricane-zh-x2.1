@@ -90,17 +90,20 @@ of the pause menu. Changes apply at once and are saved.
 
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
-  bright lights; off is the console's look)
+  bright lights; off is the console's look), Lower Detail Under Load, Multithreaded Renderer (drawing on a
+  thread of its own, for slower CPUs; off unless chosen, may have bugs)
 - **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9, 32:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
   warnings and intro movies
-- **Sound**: Positional Audio (3D sounds placed left and right: Panning, the default; Console, through
-  the sound chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo
+- **Sound**: Positional Audio (3D sounds placed left and right: Clear, the default, by level only;
+  Console, through the sound chip's filters and speaker crosstalk as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
   Pack's guard counter Black left out: tap guard as an attack lands to turn it aside
-- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs.
+- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs;
+  all weapons (every melee and projectile weapon at its highest level; turned off, it takes back what it
+  gave and puts back your own levels and pickups)
   Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
   Missions (with every mission), Arcade Ninja Gaiden and Movie Theater without earning them
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera

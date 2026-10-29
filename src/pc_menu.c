@@ -65,6 +65,7 @@ enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
        ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO, ROW_POSAUDIO, ROW_HUD, ROW_AUDIOOUT,
        ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD, ROW_INTERCEPT,
+       ROW_ALLWEAP,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -82,7 +83,7 @@ static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_
 static const uint8_t s_rows_sound[] = { ROW_POSAUDIO, ROW_AUDIOOUT, ROW_BACK };
 static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_INTERCEPT, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO,
-                                        ROW_UNLOCKS, ROW_BACK };
+                                        ROW_ALLWEAP, ROW_UNLOCKS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
 static const uint8_t s_rows_unl[] = { ROW_ALLDIFF, ROW_ALLCOST, ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_BACK };
 static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
@@ -110,7 +111,7 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define T_QUICKSCALE0 0x201C2        /* + (150 - size) / 25: 150%, 125%, 100% ... 25%, Off (+6) */
 #define T_POSAUDIO 0x201C9            /* Positional Audio (the APU's HRTF filters, #30) */
 #define D_POSAUDIO 0x201CA
-#define T_POSCONSOLE 0x201CD          /* Positional Audio's values: Console, Panning */
+#define T_POSCONSOLE 0x201CD          /* Positional Audio's values: Console, Clear */
 #define T_POSPAN   0x201CE
 #define T_HUD      0x201CB            /* the HUD on or off (src/hud.c, #80) */
 #define D_HUD      0x201CC
@@ -190,11 +191,13 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_UNLOCKS  0x201DB
 #define T_LOADDETAIL 0x201DC          /* Lower Detail Under Load (src/d3d/d3d.c) */
 #define D_LOADDETAIL 0x201DD
-#define T_RTHREAD  0x201DE            /* Render Thread, experimental (src/d3d/gpu/threaded.cpp) */
+#define T_RTHREAD  0x201DE            /* Multithreaded Renderer (src/d3d/gpu/threaded.cpp) */
 #define D_RTHREAD  0x201DF
 #define T_INTERCEPT 0x201E8           /* Intercept (src/intercept.c, #109) */
 #define D_INTERCEPT 0x201E9
 #define T_INTERCEPT0 0x201EA          /* + 0..2: Off, Black, Hurricane Pack */
+#define T_ALLWEAP  0x201ED            /* All Weapons (a cheat, src/cheats.c) */
+#define D_ALLWEAP  0x201EE
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
 #define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" (the first four aspects) */
@@ -204,7 +207,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_QUICKFREEZE, "Quick Menu Pause" },
     { T_POSAUDIO, "Positional Audio" },
     { T_POSCONSOLE, "Console" },
-    { T_POSPAN, "Panning" },
+    { T_POSPAN, "Clear" },
     { T_HUD, "HUD" },
     { D_HUD, "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen." },
     { T_AUDIOOUT, "Audio Output" },
@@ -212,7 +215,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_AUTO, "Auto" },
     { T_STEREO, "Stereo" },
     { T_SURROUND, "5.1" },
-    { D_POSAUDIO, "Sounds placed left and right. Console: the sound chip's filters. Panning: their placement only, clearer." },
+    { D_POSAUDIO, "Sounds placed left and right. Clear: by level only. Console: as the Xbox on speakers, duller." },
     { T_QUICKSCALE, "Quick Menu" },
     { D_QUICKSCALE, "A d-pad menu of weapons, Ninpo and items (Up and Down open it), at this size." },
     { D_GAMEPLAY, "Optional changes to how the game plays, each off unless chosen: the Quick Menu." },
@@ -242,10 +245,12 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_GLOW,    "A softer, fainter glow on bright lights. Off: the console's." },
     { T_LOADDETAIL, "Lower Detail Under Load" },
     { D_LOADDETAIL, "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker." },
-    { T_RTHREAD, "Experimental Render Thread" },
-    { D_RTHREAD, "Drawing on a thread of its own. May glitch. Needs restart." },
+    { T_RTHREAD, "Multithreaded Renderer" },
+    { D_RTHREAD, "Drawing on a thread of its own, for slower CPUs. May have bugs. Needs restart." },
     { T_INTERCEPT, "Intercept" },
     { D_INTERCEPT, "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out)." },
+    { T_ALLWEAP, "All Weapons" },
+    { D_ALLWEAP, "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back." },
     { T_INTERCEPT0 + 0, "Off" }, { T_INTERCEPT0 + 1, "Black" }, { T_INTERCEPT0 + 2, "Hurricane" },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
@@ -375,7 +380,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
                                    T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO, T_POSAUDIO, T_HUD,
                                    T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD,
-                                   T_INTERCEPT };
+                                   T_INTERCEPT, T_ALLWEAP };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -580,13 +585,18 @@ void ngb_aspect_menu_running(void)
 
 /* Each frame's end (src/cheats.c, at Swap): the next frame's mode -- a menu marks itself again; a
  * frame of next to no 3D (the renderer's count, src/d3d/vk/backend.cpp) is a 2D screen. */
-extern int ngb_frame_draws, ngb_frame_3d_draws;
+extern int ngb_frame_draws, ngb_frame_3d_draws, ngb_frame_done_2d, ngb_render_threaded;
 void ngb_aspect_frame_end(void)
 {
 
     s_menu_last = s_menu_now;   /* a menu last frame: the mode kept, so it never flips within a frame */
     s_menu_now = 0;
-    s_screen_2d = ngb_frame_draws > 0 && ngb_frame_3d_draws < 30;
+    /* with the Multithreaded Renderer the counts belong to a frame the render thread is still drawing (or has
+     * just cleared): the last frame it presented decides, one frame later */
+    if (__atomic_load_n(&ngb_render_threaded, __ATOMIC_RELAXED))
+        s_screen_2d = __atomic_load_n(&ngb_frame_done_2d, __ATOMIC_RELAXED);
+    else
+        s_screen_2d = ngb_frame_draws > 0 && ngb_frame_3d_draws < 30;
 }
 
 /* For the renderer and the mouse: the game is in its widescreen mode on a wide screen, its 2D drawn
@@ -814,6 +824,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_INTERCEPT: return T_INTERCEPT0 + (uint32_t)ngb_pc_setting(31);
     case ROW_INFITEMS: return ngb_pc_setting(21) ? T_ON : T_OFF;
     case ROW_INFAMMO: return ngb_pc_setting(22) ? T_ON : T_OFF;
+    case ROW_ALLWEAP: return ngb_pc_setting(32) ? T_ON : T_OFF;
     case ROW_MISSIONS:
     case ROW_ARCADE:
     case ROW_MOVIES:  return ngb_pc_setting(26 + kind_unlock(row_kind(row))) ? T_YES : T_NO;
@@ -877,6 +888,7 @@ static int pc_value_change(int row, int delta)
     case ROW_INTERCEPT: ngb_pc_set_setting(31, (ngb_pc_setting(31) + (step > 0 ? 1 : 2)) % 3); break;
     case ROW_INFITEMS: ngb_pc_set_setting(21, !ngb_pc_setting(21)); break;
     case ROW_INFAMMO: ngb_pc_set_setting(22, !ngb_pc_setting(22)); break;
+    case ROW_ALLWEAP: ngb_pc_set_setting(32, !ngb_pc_setting(32)); break;
     case ROW_MISSIONS:
     case ROW_ARCADE:
     case ROW_MOVIES: {
@@ -2006,7 +2018,8 @@ void sub_00220870(void)
                                            D_INFITEMS & 0xFFFF, D_INFAMMO & 0xFFFF, D_POSAUDIO & 0xFFFF,
                                            D_HUD & 0xFFFF, D_AUDIOOUT & 0xFFFF, D_MISSIONS & 0xFFFF,
                                            D_ARCADE & 0xFFFF, D_MOVIES & 0xFFFF, D_UNLOCKS & 0xFFFF,
-                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF, D_INTERCEPT & 0xFFFF };
+                                           D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF, D_INTERCEPT & 0xFFFF,
+                                           D_ALLWEAP & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);
