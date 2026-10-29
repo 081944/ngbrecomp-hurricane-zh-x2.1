@@ -103,7 +103,7 @@ of the pause menu. Changes apply at once and are saved.
   Pack's guard counter Black left out: tap guard as an attack lands to turn it aside
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs;
   all weapons (every melee and projectile weapon at its highest level; turned off, it takes back what it
-  gave and puts back your own levels and pickups)
+  gave and puts back your own levels and pickups; a save made while it is on keeps the weapons)
   Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
   Missions (with every mission), Arcade Ninja Gaiden and Movie Theater without earning them
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera

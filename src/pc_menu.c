@@ -250,7 +250,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_INTERCEPT, "Intercept" },
     { D_INTERCEPT, "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out)." },
     { T_ALLWEAP, "All Weapons" },
-    { D_ALLWEAP, "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back." },
+    { D_ALLWEAP, "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.\nA save made while it is on keeps them." },
     { T_INTERCEPT0 + 0, "Off" }, { T_INTERCEPT0 + 1, "Black" }, { T_INTERCEPT0 + 2, "Hurricane" },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },

@@ -125,7 +125,7 @@ static const char *const s_help[S_COUNT] = {
     "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.",
     "Drawing on a thread of its own, for slower CPUs. May have bugs. Needs restart.",
     "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out).",
-    "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.",
+    "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.\nA save made while it is on keeps them.",
     "Difficulties, costumes and the main menu's extras, without earning them. Saved.",
 };
 

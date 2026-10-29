@@ -160,7 +160,8 @@ Black replaces them with the Strongbow and the Mk.II. Turned off, it takes them 
 of each before is kept, with what the game gives meanwhile (sub_00154300: a Lunar picked up goes into
 the cheat's while it is on), and put back -- a weapon held is put back once Ryu holds another, nothing
 under the pause menu. The slots it writes carry a mark in their fourth byte (the game leaves it alone and
-saves it): a record is only applied to slots with its mark, so a save loaded meanwhile is never touched.
+saves it): a record is only applied to slots with its mark, so a save loaded meanwhile is never touched. A save
+made while it is on keeps the weapons: the record is the session's, so after a restart they are the save's own.
 The game guards its state with 24
 checksums (sub_00164E50) and returns to the title when one changes without the flag its own
 code sets (0x7F1A94 + n); a cheat that writes sets them all. Unlocks also has All
