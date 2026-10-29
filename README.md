@@ -97,7 +97,7 @@ of the pause menu. Changes apply at once and are saved.
   warnings and intro movies
 - **Sound**: Positional Audio (3D sounds placed left and right: Clear, the default, by level only;
   Console, through the sound chip's filters and speaker crosstalk as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
-  or 5.1; Auto is 5.1 on a 5.1 or 7.1 output)
+  or 5.1; Auto is 5.1 on a 5.1 or 7.1 output; a change needs a restart of the game)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
   Pack's guard counter Black left out: tap guard as an attack lands to turn it aside

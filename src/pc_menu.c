@@ -211,7 +211,7 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { T_HUD, "HUD" },
     { D_HUD, "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen." },
     { T_AUDIOOUT, "Audio Output" },
-    { D_AUDIOOUT, "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. From the next start." },
+    { D_AUDIOOUT, "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. Needs a restart of the game." },
     { T_AUTO, "Auto" },
     { T_STEREO, "Stereo" },
     { T_SURROUND, "5.1" },

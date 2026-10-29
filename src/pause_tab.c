@@ -118,7 +118,7 @@ static const char *const s_help[S_COUNT] = {
     "Shuriken, smoke bombs, arrows and spears are not used up. For this session only.",
     "Sounds placed left and right. Clear: by level only. Console: as the Xbox on speakers, duller.",
     "The health and Ninpo bar, weapons and the rest drawn over play. Off: a clear screen.",
-    "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. From the next start.",
+    "Speakers. Auto: 5.1 when the output device has 5.1 or 7.1 channels, else stereo. Needs a restart of the game.",
     "MISSIONS in the main menu without earning it.",
     "ARCADE NINJA GAIDEN in the main menu without earning it.",
     "MOVIE THEATER in the main menu without earning it.",

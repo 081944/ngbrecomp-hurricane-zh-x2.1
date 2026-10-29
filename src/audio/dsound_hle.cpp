@@ -419,14 +419,14 @@ EarPair Ears(float azimuth, float elevation) {
         for (int i = 0; i < kHrtfTaps; i++) ear.tap[i] = (t[i] & 0x80 ? -float(t[i] & 0x7F) : float(t[i])) / 128.0f;
         ear.delay = t[31];
     }
-    // "Clear": the filters' strengths as the ears' levels, a few dB apart (a pan by the direction with the
-    // table's delay between the ears was tried for 0.9.40 and heard as worse). Each ear gets its filter's
-    // RMS gain, so a 3D sound is as loud as through the filters: 0.9.39 scaled the pair to 0 dB, which left
-    // them 2-5 dB under "Console" and the other sounds
+    // "Clear": the filters' strengths as the ears' levels, a few dB apart, the pair scaled to constant power
+    // (0 dB). 0.9.40 gave each ear its filter's RMS gain instead, +2 to +5 dB by direction, most where the
+    // filters carry the most bass; it was heard as boomy and muffled. A pan by the direction with the table's
+    // delay between the ears was also tried for 0.9.40 and heard as worse.
     float e[2] = {};
     for (int c = 0; c < 2; c++)
         for (int i = 0; i < kHrtfTaps; i++) e[c] += p.e[c].tap[i] * p.e[c].tap[i];
-    for (int c = 0; c < 2; c++) p.pan[c] = e[0] + e[1] > 0 ? std::sqrt(e[c]) : 1.0f;
+    for (int c = 0; c < 2; c++) p.pan[c] = e[0] + e[1] > 0 ? std::sqrt(2 * e[c] / (e[0] + e[1])) : 1.0f;
     return p;
 }
 
