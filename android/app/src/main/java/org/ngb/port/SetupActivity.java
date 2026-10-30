@@ -59,6 +59,12 @@ public final class SetupActivity extends Activity {
     private static native long[] nativeInstallProgress();
     private static native String nativeInstallError();
 
+    static {
+        // The small setup library (src/android_setup.c), not the game's
+        // libmain.so: this process never loads that one.
+        System.loadLibrary("ngbsetup");
+    }
+
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         File base = getExternalFilesDir(null);

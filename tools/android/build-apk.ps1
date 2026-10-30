@@ -32,6 +32,7 @@ $native = Join-Path $root 'build/android-package/jniLibs/arm64-v8a'
 New-Item -ItemType Directory -Force $native | Out-Null
 Copy-Item -LiteralPath (Join-Path $build 'libmain.so') -Destination $native
 Copy-Item -LiteralPath (Join-Path $root 'build/android-deps/arm64-v8a/install/lib/libSDL2.so') -Destination $native
+Copy-Item -LiteralPath (Join-Path $build 'libngbsetup.so') -Destination $native
 Copy-Item -LiteralPath (Join-Path $build 'libngb_vulkan.so') -Destination $native
 Copy-Item -LiteralPath (Join-Path $build 'libngb_sdl_vulkan.so') -Destination $native
 Get-ChildItem -LiteralPath (Join-Path $build 'driver-hooks') -Filter '*.so' |
@@ -39,7 +40,7 @@ Get-ChildItem -LiteralPath (Join-Path $build 'driver-hooks') -Filter '*.so' |
 # Keep the original symbol-rich libraries for debugging; strip only the copies
 # staged for the APK. Gradle does not always locate an NDK for prebuilt libraries.
 $strip = Join-Path $Ndk 'toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-strip.exe'
-Invoke-Checked $strip @('--strip-debug', (Join-Path $native 'libmain.so'), (Join-Path $native 'libSDL2.so'))
+Invoke-Checked $strip @('--strip-debug', (Join-Path $native 'libmain.so'), (Join-Path $native 'libSDL2.so'), (Join-Path $native 'libngbsetup.so'))
 Invoke-Checked $Gradle @('-p', (Join-Path $root 'android'), 'assembleDebug', '--console', 'plain')
 $apk = Join-Path $root 'android/app/build/outputs/apk/debug/app-debug.apk'
 if (-not (Test-Path -LiteralPath $apk)) { throw 'Gradle did not produce the expected APK.' }

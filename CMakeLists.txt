@@ -223,6 +223,10 @@ if(ANDROID)
     add_library(${PROJECT_NAME} SHARED ${NGB_HOST_SOURCES} src/android.c)
     target_link_libraries(${PROJECT_NAME} PRIVATE ngb_vulkan)
     target_compile_definitions(${PROJECT_NAME} PRIVATE main=SDL_main)
+    # The setup UI runs in its own process and must not load the whole game
+    # library: a small standalone library for the SAF ISO import instead.
+    add_library(ngbsetup SHARED src/install.c src/android_setup.c)
+    target_include_directories(ngbsetup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_executable(ngb_shader_probe EXCLUDE_FROM_ALL tools/android/shader_probe.cpp src/d3d/vk/spirv.cpp)
     target_include_directories(ngb_shader_probe PRIVATE src/d3d)
     target_compile_features(ngb_shader_probe PRIVATE cxx_std_20)
