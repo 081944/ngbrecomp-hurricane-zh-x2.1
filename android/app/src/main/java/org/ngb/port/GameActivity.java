@@ -5,8 +5,8 @@ import org.libsdl.app.SDLActivity;
 
 public final class GameActivity extends SDLActivity {
     private VirtualPad pad;
+    private TouchMenu touchMenu;
     private static native void surfaceAvailable(boolean available);
-    private static native void nativeOpenMenu();
     @Override protected org.libsdl.app.SDLSurface createSDLSurface(android.content.Context context) {
         return new org.libsdl.app.SDLSurface(context) {
             @Override public void surfaceDestroyed(android.view.SurfaceHolder holder) {
@@ -26,15 +26,22 @@ public final class GameActivity extends SDLActivity {
             pad = new VirtualPad(this);
             mLayout.addView(pad, new android.widget.RelativeLayout.LayoutParams(
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-            // One-touch access to the in-game RECOMP SETTINGS overlay: during
-            // gameplay Start would open the pause menu and Back+Start is the
-            // game's soft reset, so the touch overlay gets its own button.
+            // One-touch access to the touch settings drawer: during gameplay
+            // Start would open the pause menu and Back+Start is the game's
+            // soft reset, so the touch overlay gets its own button.
             android.widget.Button menu = new android.widget.Button(this);
             menu.setText("☰");
             menu.setTextSize(16f);
             menu.setAllCaps(false);
             menu.setAlpha(0.5f);
-            menu.setOnClickListener(v -> nativeOpenMenu());
+            menu.setOnClickListener(v -> {
+                if (touchMenu == null) touchMenu = new TouchMenu(this);
+                if (touchMenu.getParent() == null)
+                    mLayout.addView(touchMenu, new android.widget.RelativeLayout.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+                touchMenu.toggle();
+            });
             android.widget.RelativeLayout.LayoutParams menuLayout =
                     new android.widget.RelativeLayout.LayoutParams(
                             android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -75,6 +82,19 @@ public final class GameActivity extends SDLActivity {
                 silentTest))
             throw new IllegalStateException("无法初始化游戏路径");
         return new String[] {game.getAbsolutePath()};
+    }
+
+    /** Called by TouchMenu after DriverStore.select: relaunch this activity
+     * in a fresh process (onDestroy kills this one) with the new driver. */
+    void restartForDriver() {
+        android.app.PendingIntent relaunch = android.app.PendingIntent.getActivity(this, 1001,
+                getIntent(), android.app.PendingIntent.FLAG_IMMUTABLE);
+        android.app.AlarmManager alarms =
+                (android.app.AlarmManager) getSystemService(ALARM_SERVICE);
+        if (alarms != null)
+            alarms.set(android.app.AlarmManager.ELAPSED_REALTIME,
+                    android.os.SystemClock.elapsedRealtime() + 600, relaunch);
+        finishAffinity();
     }
 
     @Override protected void onDestroy() {

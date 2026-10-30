@@ -3,8 +3,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include <dlfcn.h>
 #include <android/log.h>
+#include <SDL.h>
 #include <vulkan/vulkan.h>
 #include "android_vulkan.h"
 extern void xbox_AndroidTouchSet(unsigned buttons, int lx, int ly, int rx, int ry);
@@ -24,6 +26,32 @@ Java_org_ngb_port_GameActivity_nativeOpenMenu(JNIEnv *env, jclass cls)
 {
     (void)env; (void)cls;
     ngb_menu_open();
+}
+
+/* ---------- the touch menu (TouchMenu.java) ---------- */
+
+extern int ngb_pc_setting(int which);          /* src/ingame_menu.c */
+
+/* Reading is side-effect-free enough (atomics, a one-time settings load);
+ * changes go through SDL_PushEvent so ngb_pc_set_setting runs on the
+ * presenter's thread, where the overlay menu applies its own. */
+JNIEXPORT jint JNICALL
+Java_org_ngb_port_TouchMenu_nativeGetSetting(JNIEnv *env, jclass cls, jint which)
+{
+    (void)env; (void)cls;
+    return ngb_pc_setting(which);
+}
+
+JNIEXPORT void JNICALL
+Java_org_ngb_port_TouchMenu_nativeSetSetting(JNIEnv *env, jclass cls,
+    jint which, jint value)
+{
+    (void)env; (void)cls;
+    SDL_Event e = {.type = SDL_USEREVENT};
+    e.user.code = 0x4E47;                      /* 'NG', see nv2a_window_event_hook */
+    e.user.data1 = (void *)(intptr_t)which;
+    e.user.data2 = (void *)(intptr_t)value;
+    SDL_PushEvent(&e);
 }
 
 JNIEXPORT jstring JNICALL

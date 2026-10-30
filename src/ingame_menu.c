@@ -1213,6 +1213,14 @@ void nv2a_window_event_hook(const void *sdl_event)
     const SDL_Event *ev = sdl_event;
     extern int ngb_quick_event(const void *event);
     if (ngb_quick_event(ev)) return;
+    /* The Android touch menu (android/app/.../TouchMenu.java) applies its
+     * settings here, on the presenter's thread, the same thread the overlay
+     * menu applies its own on: which and value ride in user.data1/2. */
+    if (ev->type == SDL_USEREVENT && ev->user.code == 0x4E47) {
+        extern void ngb_pc_set_setting(int which, int value);
+        ngb_pc_set_setting((int)(intptr_t)ev->user.data1, (int)(intptr_t)ev->user.data2);
+        return;
+    }
     if (ev->type == SDL_KEYDOWN && ev->key.keysym.sym == SDLK_F7 && !ev->key.repeat) {
         extern volatile int ngb_trace_request;   /* src/d3d/vk/backend.cpp: record the next frames */
         ngb_trace_request = 1;
