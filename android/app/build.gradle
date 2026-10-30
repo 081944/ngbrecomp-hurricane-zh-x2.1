@@ -7,8 +7,8 @@ android {
         applicationId 'org.ngb.port'
         minSdk 30
         targetSdk 35
-        versionCode 1
-        versionName '0.1.0-dev'
+        versionCode 2
+        versionName '0.2.0-zh-x2.1'
         testInstrumentationRunner 'org.ngb.port.DriverInstrumentation'
         ndk { abiFilters 'arm64-v8a' }
     }
@@ -20,5 +20,10 @@ android {
         androidTest { assets.srcDir rootProject.file('../build/android-driver-tests') }
     }
     buildTypes { release { minifyEnabled false } }
+    compileOptions {
+        // The Java sources carry the Chinese UI strings; do not let javac
+        // fall back to the Windows code page.
+        encoding 'UTF-8'
+    }
     packaging { jniLibs { useLegacyPackaging true } }
 }

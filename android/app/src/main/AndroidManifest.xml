@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.vulkan.level" android:required="true" android:version="1" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
-    <application android:label="Ninja Gaiden Black" android:allowBackup="false"
+    <application android:label="忍者龙剑传 黑之章 汉化版" android:allowBackup="false"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:hasCode="true" android:appCategory="game">
         <activity android:name=".SetupActivity" android:exported="true"

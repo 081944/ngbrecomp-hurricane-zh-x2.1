@@ -91,6 +91,15 @@ public final class SetupActivity extends Activity {
         return xbeState == 0;
     }
 
+    /** The versionName from build.gradle, so the screen cannot drift from it. */
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
     /** The window always has content: a blank root is what reads as a black screen. */
     private void buildUi() {
         LinearLayout layout = new LinearLayout(this);
@@ -98,9 +107,14 @@ public final class SetupActivity extends Activity {
         int padding = (int)(24 * getResources().getDisplayMetrics().density);
         layout.setPadding(padding, padding, padding, padding);
         TextView title = new TextView(this);
-        title.setText("Ninja Gaiden Black");
+        title.setText("忍者龙剑传 黑之章");
         title.setTextSize(28);
         layout.addView(title);
+        TextView edition = new TextView(this);
+        edition.setText("飓风版[中英] vb-zh-x2.1　·　安卓版 " + versionName());
+        edition.setTextSize(14);
+        edition.setPadding(0, (int)(2 * getResources().getDisplayMetrics().density), 0, 0);
+        layout.addView(edition);
         status = new TextView(this);
         status.setTextSize(17);
         layout.addView(status);
