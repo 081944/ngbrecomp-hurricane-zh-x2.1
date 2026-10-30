@@ -492,30 +492,76 @@ void nv2a_vk_progress(void)
     }
 }
 
-/* Until *word is no more than `ahead` behind `put`, as the title's loop compares. */
+/* Until *word is no more than `ahead` behind `put`, as the title's loop compares.
+ * Linux and macOS: asleep with the virtual CPU let go; the thread has it back within a tenth of a
+ * millisecond of the wake. Windows: asleep with the virtual CPU kept, and handed to any thread ready
+ * after each wake or millisecond (vcpu_yield_any), as the title's polling loop does it (RECOMP_SPIN).
+ * Let go there, getting it back took up to a quantum (10 ms) now and then -- a holder in a DLL can't be
+ * redirected (vcpu.c) -- and 0.9.20's players saw the Game Over fade drop from 30 to 17 fps (#43) and
+ * play turn choppy (#17). NGB_GPU_WAIT_RELEASE=1 or 0: let go, or kept, on either. */
+static int wait_release(void)
+{
+    static int release = -1;
+    if (release < 0) {
+        const char *e = getenv("NGB_GPU_WAIT_RELEASE");
+#if defined(_WIN32)
+        release = e && *e == '1';
+#else
+        release = !(e && *e == '0');
+#endif
+    }
+    return release;
+}
+
+/* A millisecond from now, for pthread_cond_timedwait: a lost wake-up costs no more. */
+static void in_a_ms(struct timespec *ts)
+{
+    clock_gettime(CLOCK_REALTIME, ts);
+    ts->tv_nsec += 1000000;
+    if (ts->tv_nsec >= 1000000000) {
+        ts->tv_sec++;
+        ts->tv_nsec -= 1000000000;
+    }
+}
+
 void nv2a_vk_wait_progress(const uint32_t *word, uint32_t put, uint32_t ahead)
 {
+    extern void (*nv2a_user_read_hook)(void);   /* xemu/user.c: a renderer holding the pusher back hands over */
     if (put - __atomic_load_n(word, __ATOMIC_SEQ_CST) <= ahead)
         return;
+    if (nv2a_user_read_hook)
+        nv2a_user_read_hook();
+    int release = wait_release();
 #if XBOX_HAS_VCPU
-    vcpu_block_begin();
+    if (release)
+        vcpu_block_begin();
+    else
+        vcpu_quiet_begin();
 #endif
     pthread_mutex_lock(&s_progress_lock);
     __atomic_add_fetch(&s_progress_waiters, 1, __ATOMIC_SEQ_CST);
     while (put - __atomic_load_n(word, __ATOMIC_SEQ_CST) > ahead) {
-        struct timespec ts;   /* a millisecond at most: a lost wake-up costs no more */
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_nsec += 1000000;
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
+        struct timespec ts;
+        in_a_ms(&ts);
         pthread_cond_timedwait(&s_progress_cond, &s_progress_lock, &ts);
+#if XBOX_HAS_VCPU
+        if (!release && put - __atomic_load_n(word, __ATOMIC_SEQ_CST) > ahead) {
+            /* still waiting: whoever is ready runs first (the CPU comes back when it blocks or
+             * after a quantum, as from the title's own loop) */
+            pthread_mutex_unlock(&s_progress_lock);
+            vcpu_yield_any();
+            vcpu_quiet_begin();
+            pthread_mutex_lock(&s_progress_lock);
+        }
+#endif
     }
     __atomic_sub_fetch(&s_progress_waiters, 1, __ATOMIC_SEQ_CST);
     pthread_mutex_unlock(&s_progress_lock);
 #if XBOX_HAS_VCPU
-    vcpu_block_end();
+    if (release)
+        vcpu_block_end();
+    else
+        vcpu_quiet_end();
 #endif
 }
 
@@ -524,6 +570,18 @@ void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead)
 {
     nv2a_vk_wait_progress(&s_nv2a.pfifo.regs[NV_PFIFO_CACHE1_DMA_GET], put, ahead);
 }
+
+/* A register access is a host section around the lock: a guest thread is never parked holding it. A hook inside
+ * (the port's renderer handing its recording over as the title reads DMA_GET) leaves a host section of its own,
+ * and at depth 0 that gave the CPU away under the lock; the GPU's interrupt then took the CPU and waited for the
+ * lock, and the title waited for the CPU (Windows, Multithreaded Renderer: the game froze, #138). */
+#if XBOX_HAS_VCPU
+void compat_host_enter(void);
+void compat_host_leave(void);
+#else
+static inline void compat_host_enter(void) {}
+static inline void compat_host_leave(void) {}
+#endif
 
 uint64_t nv2a_vk_mmio_read(uint32_t off, unsigned size)
 {
@@ -538,9 +596,11 @@ uint64_t nv2a_vk_mmio_read(uint32_t off, unsigned size)
     b = block_for(off, &rel);
     if (!b)
         return 0;
+    compat_host_enter();
     bql_lock();
     v = b->ops.read(&s_nv2a, rel, size);
     bql_unlock();
+    compat_host_leave();
     return v;
 }
 
@@ -559,9 +619,11 @@ void nv2a_vk_mmio_write(uint32_t off, uint64_t val, unsigned size)
     b = block_for(off, &rel);
     if (!b)
         return;
+    compat_host_enter();
     bql_lock();
     b->ops.write(&s_nv2a, rel, val, size);
     bql_unlock();
+    compat_host_leave();
 }
 
 /* The xbox kernel's AvSetDisplayMode programs the CRTC for a mode; no kernel

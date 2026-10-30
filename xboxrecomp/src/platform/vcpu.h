@@ -56,6 +56,11 @@ void vcpu_block_end(void);
 void vcpu_yield(void);
 /* Let any ready thread run, lower priorities included (NtYieldExecution). */
 void vcpu_yield_any(void);
+/* Around a host wait that keeps the CPU: no preemption is forced on the thread meanwhile (on Windows a
+ * redirect into a wait that is in a DLL fails and is retried every quantum); it yields by itself
+ * (vcpu_yield_any) between its sleeps. */
+void vcpu_quiet_begin(void);
+void vcpu_quiet_end(void);
 
 void vcpu_set_priority(vcpu_thread *t, int priority);
 int  vcpu_get_priority(vcpu_thread *t);

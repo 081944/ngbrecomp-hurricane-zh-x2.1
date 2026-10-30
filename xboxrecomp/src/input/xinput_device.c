@@ -225,6 +225,11 @@ int xbox_InputKeyboardActive(void)
     return !xbox_InputControllerPresent();
 }
 
+int xbox_InputPadPlayStation(void)   /* XInput: Xbox pads only */
+{
+    return 0;
+}
+
 void xbox_InputMouseStick(float full, short *x, short *y)
 {
     (void)full;
@@ -275,6 +280,10 @@ DWORD xbox_InputGetCapabilities(DWORD dwPort, DWORD dwFlags, XBOX_INPUT_CAPABILI
 #include <SDL.h>
 
 static SDL_GameController *g_pads[XBOX_MAX_CONTROLLERS];
+/* Each slot's joystick instance and SDL controller type, cached on the window's thread (open_controllers),
+ * for xbox_InputPadPlayStation; -1 an empty slot. */
+static volatile int g_pad_id[XBOX_MAX_CONTROLLERS] = { -1, -1, -1, -1 };
+static volatile int g_pad_type[XBOX_MAX_CONTROLLERS];
 static BOOL  g_controller_connected[XBOX_MAX_CONTROLLERS];
 static DWORD g_packet[XBOX_MAX_CONTROLLERS];
 
@@ -294,6 +303,7 @@ static void open_controllers(void)
             SDL_GameControllerClose(g_pads[s]);
             g_pads[s] = NULL;
             g_controller_connected[s] = FALSE;
+            g_pad_id[s] = -1;
         }
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
         SDL_JoystickID id;
@@ -313,6 +323,10 @@ static void open_controllers(void)
             break;
         g_pads[s] = SDL_GameControllerOpen(i);
         g_controller_connected[s] = g_pads[s] != NULL;
+        if (g_pads[s]) {
+            g_pad_type[s] = (int)SDL_GameControllerGetType(g_pads[s]);
+            g_pad_id[s] = (int)SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(g_pads[s]));
+        }
         if (g_pads[s])
             fprintf(stderr, "[INPUT] pad %d: %s\n", s + 1,
                     SDL_GameControllerName(g_pads[s]));
@@ -325,6 +339,7 @@ static void open_controllers(void)
  * known (the keyboard while no controller is connected). */
 static volatile int g_kbm_active = -1;
 static volatile int g_hotplug;
+static volatile int g_pad_last = -1;   /* the joystick instance of the pad last touched */
 
 /* The window's thread, after it pumped SDL's events (outside its locks). */
 void xbox_InputHotplugPoll(void)
@@ -368,10 +383,13 @@ static int SDLCALL pad_event_watch(void *unused, SDL_Event *ev)
         break;
     case SDL_CONTROLLERBUTTONDOWN:
         set_kbm(0);
+        __atomic_store_n(&g_pad_last, (int)ev->cbutton.which, __ATOMIC_RELEASE);
         break;
     case SDL_CONTROLLERAXISMOTION:
-        if (abs(ev->caxis.value) > 12000)
+        if (abs(ev->caxis.value) > 12000) {
             set_kbm(0);
+            __atomic_store_n(&g_pad_last, (int)ev->caxis.which, __ATOMIC_RELEASE);
+        }
         break;
     }
     return 0;
@@ -381,6 +399,19 @@ int xbox_InputKeyboardActive(void)
 {
     int v = __atomic_load_n(&g_kbm_active, __ATOMIC_ACQUIRE);
     return v < 0 ? !xbox_InputControllerPresent() : v;
+}
+
+/* The pad in use (last touched; before any, the first connected) is a PlayStation one -- a DualShock 3 or 4,
+ * a DualSense, or an adapter that says so -- for its button prompts. */
+int xbox_InputPadPlayStation(void)
+{
+    int id = __atomic_load_n(&g_pad_last, __ATOMIC_ACQUIRE);
+    for (int s = 0; s < XBOX_MAX_CONTROLLERS; s++)
+        if (g_pad_id[s] >= 0 && (id < 0 || g_pad_id[s] == id)) {
+            int t = g_pad_type[s];
+            return t == SDL_CONTROLLER_TYPE_PS3 || t == SDL_CONTROLLER_TYPE_PS4 || t == SDL_CONTROLLER_TYPE_PS5;
+        }
+    return 0;
 }
 
 /* The mouse's motion as a stick: its speed over the last ~10 ms, filtered,

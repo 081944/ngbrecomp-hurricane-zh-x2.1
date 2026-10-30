@@ -211,6 +211,21 @@ static inline int mmio_emulate(PCONTEXT ctx, uint32_t off, void *dev,
             ctx->Rip += prefix + 2 + mlen;
             return 1;
         }
+        if (op[1] == 0xBA && ((op[2] >> 3) & 7) >= 4) {   /* BT/BTS/BTR/BTC r/m, imm8 */
+            /* a register's bit tested (and set, cleared or flipped): CF is the bit as it was. A compiler
+             * picks BT for "(reg >> n) & 1" (a profile-guided build did, for a GPU register's busy bit). */
+            int op4 = (op[2] >> 3) & 7;
+            uint64_t m, bit;
+            mlen = mmio_modrm_len(op + 2, rex_b);
+            bit  = op[2 + mlen] & (size * 8 - 1);
+            m    = rd(dev, off, size);
+            ctx->EFlags = (ctx->EFlags & ~0x0001u) | (uint32_t)((m >> bit) & 1);   /* CF */
+            if (op4 != 4)
+                wr(dev, off, op4 == 5 ? m | (1ULL << bit) : op4 == 6 ? m & ~(1ULL << bit) : m ^ (1ULL << bit),
+                   size);
+            ctx->Rip += prefix + 2 + mlen + 1;
+            return 1;
+        }
         return 0;
 
     /* ALU r, r/m: the register is the destination, the device only read. */

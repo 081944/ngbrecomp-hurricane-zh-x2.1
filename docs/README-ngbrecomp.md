@@ -18,16 +18,15 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
 - Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
-- 16:9, 16:10 and 21:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
-  corners, menus keep the game's own 16:9 look
+- 16:9, 16:10, 21:9 and 32:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
+  corners, optional HUD-free view, menus keep the game's own 16:19
 - Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
   controller, mouse support in the menus
-- Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
+- Skippable intros, movies and cutscenes (an option), unlock-all options for difficulties and costumes, optional cheats
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
 - Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
-  7.1 output; an optional HUD-free view
-- Smooth frame pacing and low input latency; shaders prepared in the background (no first-time
-  stutter)
+  7.1 output
+- Smooth frame pacing and low input latency; shaders prepared in the background
 
 ## Getting started
 
@@ -91,16 +90,24 @@ of the pause menu. Changes apply at once and are saved.
 
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
-  bright lights; off is the console's look)
-- **Display & Audio**: aspect ratio (4:3, 16:9, 16:10, 21:9), window size, windowed / fullscreen /
-  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off,
-  Positional Audio (3D sounds placed left and right: Panning, the default; Console, through the sound
-  chip's filters as on the Xbox, a little duller; Off, centred), Audio Output (Auto, Stereo or 5.1; Auto
-  is 5.1 on a 5.1 or 7.1 output)
-- **Startup**: skip the warnings and intro movies, all difficulties from the start, all costumes
+  bright lights; off is the console's look), Lower Detail Under Load, Multithreaded Renderer (drawing on a
+  thread of its own, for slower CPUs; off unless chosen, may have bugs)
+- **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9, 32:9), window size, windowed / fullscreen /
+  borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
+  warnings and intro movies
+- **Sound**: Positional Audio (3D sounds placed left and right: Clear, the default, by level only;
+  Console, through the sound chip's filters as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
+  or 5.1; Auto is 5.1 on a 5.1 or 7.1 output; a change needs a restart of the game)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
-  and items, and whether the game pauses while it is open
-- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs
+  and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
+  Pack's guard counter Black left out: tap guard as an attack lands to turn it aside; **Essence-Only
+  Charging**, Ultimate Techniques charged only by absorbing essence, not by holding attack (#120); **Skip Any
+  Cutscene**, Start skipping movies and in-game cutscenes not yet watched (#139)
+- **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs;
+  all weapons (every melee and projectile weapon at its highest level; turned off, it takes back what it
+  gave and puts back your own levels and pickups; a save made while it is on keeps the weapons)
+  Its **Unlocks** page (saved): all difficulties from the start, all costumes, and the main menu's
+  Missions (with every mission), Arcade Ninja Gaiden and Movie Theater without earning them
 - **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
   inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The
   bindings follow the game's own Button Settings: an action keeps its key or button whatever the
@@ -112,7 +119,8 @@ were.
 ## Controls
 
 A controller works as on the Xbox. The keyboard and mouse can be used at any time — the game follows
-whichever was touched last, and its button prompts change to match.
+whichever was touched last, and its button prompts change to match (or stay on one set: "Button
+Prompts" on the "Controls" page, Auto, Xbox, PlayStation or PC).
 
 | Action | Keys | | Action | Keys |
 |---|---|---|---|---|
@@ -139,7 +147,8 @@ melee weapon; Up and Down then change category, Left and Right choose, A / Enter
 Escape closes. Its keys are in Controls.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
-Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
+With Skip Any Cutscene (Gameplay), movies and in-game cutscenes can be skipped with Start (or
+its key), watched before or not.
 
 Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 
@@ -154,10 +163,7 @@ the game was in.
 
 ## Known issues
 
-- At **21:9**, objects at the far left and right of the screen can appear a moment late (the game
-  decides what to draw for a narrower view).
-- At **10x render resolution with 8x anti-aliasing**, where the frame rate drops below 60, characters'
-  shadows can flicker (#53). 4x anti-aliasing at 10x, or 8x at 8x, does not do it.
+- Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 
@@ -220,7 +226,8 @@ and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
 Code:
 
 - [akirahayabusa](https://github.com/akirahayabusa): the freeze in scenes with the sun (#40), folders
-  with non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42)
+  with non-ASCII names on Windows (#41), the Difficulty Selection highlight (#42); and the Hurricane
+  patch (vb-zh x2.1), whose Intercept switch showed where Black had left the mechanic out (#109, #132)
 - [ManemanFTW](https://github.com/ManemanFTW) (Manuel Flores): the Windows start-up hang (#9) and the
   audio crackling on Windows (#34)
 - [HammerD72](https://github.com/HammerD72): the audio timing fix (#32); the two spots where the game

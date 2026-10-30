@@ -31,7 +31,7 @@ static void config_path(char *out, size_t n, int make_dir)
     snprintf(out, n, "%s/settings.ini", dir);
 }
 
-static const char *const ASPECT_NAMES[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+static const char *const ASPECT_NAMES[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9", "32:9" };
 
 /* Window sizes offered for each aspect ratio, smallest first. */
 static const int SIZES_4_3[][2] = {
@@ -45,11 +45,14 @@ static const int SIZES_16_10[][2] = {
     { 2560, 1600 }, { 3840, 2400 }, { 0, 0 } };
 static const int SIZES_21_9[][2] = {     /* the "21:9" of the displays: 64:27 (2560 x 1080), 43:18 (3440 x 1440) */
     { 1720, 720 }, { 2560, 1080 }, { 3440, 1440 }, { 5120, 2160 }, { 0, 0 } };
+static const int SIZES_32_9[][2] = {     /* two 16:9 screens side by side (#74) */
+    { 2560, 720 }, { 3840, 1080 }, { 5120, 1440 }, { 7680, 2160 }, { 0, 0 } };
 
 static const int (*sizes_for(int aspect))[2]
 {
     return aspect == ASPECT_4_3 ? SIZES_4_3
-         : aspect == ASPECT_16_10 ? SIZES_16_10 : aspect == ASPECT_21_9 ? SIZES_21_9 : SIZES_16_9;
+         : aspect == ASPECT_16_10 ? SIZES_16_10 : aspect == ASPECT_21_9 ? SIZES_21_9
+         : aspect == ASPECT_32_9 ? SIZES_32_9 : SIZES_16_9;
 }
 
 static int nsizes(int aspect)
@@ -122,7 +125,7 @@ void ngb_settings_load(NgbSettings *s)
     char path[1100], line[256];
     FILE *f;
 
-    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, 4:3 movies... */
+    memset(s, 0, sizeof *s);   /* off unless set: All Costumes, All Difficulties, the unlocks, 4:3 movies... */
     s->aspect = ASPECT_16_9;
     s->width = 1280;
     s->height = 720;
@@ -134,8 +137,8 @@ void ngb_settings_load(NgbSettings *s)
     s->msaa = 1;
     s->shadow_scale = 4;
     s->quick_menu_freeze = 1;
-    s->positional_audio = 2;  /* panning: 3D sounds placed without the filters' duller sound (#30, #86) */
-    s->show_hud = 1;  /* the console's HRTF placement of 3D sounds (#30) */
+    s->positional_audio = 2;  /* clear: 3D sounds placed without the filters' duller sound (#30, #86, #126) */
+    s->show_hud = 1;
     s->quick_menu_scale = 0;    /* the quick menu off unless chosen (Gameplay) */
     s->skip_intro = 0;
     s->show_launcher = 1;
@@ -146,6 +149,7 @@ void ngb_settings_load(NgbSettings *s)
     if (!f)
         return;
     s->width = s->height = 0;
+    int defaults = 0;   /* the defaults the file was written under (0: before 0.9.40, 3: 0.9.40, 4: 0.9.44) */
     while (fgets(line, sizeof line, f)) {
         char key[64], val[128];
         if (sscanf(line, " %63[^= ] = %127[^\r\n]", key, val) != 2)
@@ -182,14 +186,32 @@ void ngb_settings_load(NgbSettings *s)
             s->all_difficulties = atoi(val) != 0;
         } else if (!strcmp(key, "unlock_all_costumes")) {
             s->all_costumes = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_missions")) {
+            s->unlock[0] = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_arcade")) {
+            s->unlock[1] = atoi(val) != 0;
+        } else if (!strcmp(key, "unlock_movie_theater")) {
+            s->unlock[2] = atoi(val) != 0;
         } else if (!strcmp(key, "audio_output")) {
             s->audio_output = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 auto, 1 stereo, 2 5.1 */
         } else if (!strcmp(key, "show_hud")) {
             s->show_hud = atoi(val) != 0;
         } else if (!strcmp(key, "positional_audio")) {
-            s->positional_audio = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 off, 1 console, 2 panning */
+            s->positional_audio = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);   /* 0 off, 1 console, 2 clear */
         } else if (!strcmp(key, "smoother_glow")) {
             s->smooth_glow = atoi(val) != 0;
+        } else if (!strcmp(key, "detail_under_load")) {
+            s->detail_under_load = atoi(val) != 0;
+        } else if (!strcmp(key, "defaults")) {
+            defaults = atoi(val);
+        } else if (!strcmp(key, "render_thread")) {
+            s->render_thread = atoi(val) != 0;
+        } else if (!strcmp(key, "intercept")) {
+            s->intercept = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
+        } else if (!strcmp(key, "essence_only_charging")) {
+            s->essence_charging = atoi(val) != 0;
+        } else if (!strcmp(key, "skip_any_cutscene")) {
+            s->skip_cutscenes = atoi(val) != 0;
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -205,6 +227,16 @@ void ngb_settings_load(NgbSettings *s)
         }
     }
     fclose(f);
+    /* defaults 1 and 2 were builds between 0.9.39 and 0.9.40, never released, that had turned the Multithreaded
+     * Renderer on and (1) made Console the Positional Audio default: both back */
+    if (defaults == 1 || defaults == 2) {
+        s->render_thread = 0;
+        if (defaults == 1 && s->positional_audio == 1)
+            s->positional_audio = 2;
+    }
+    /* 0.9.43 had Skip Any Cutscene on unless turned off, and wrote it on into every file it saved: off unless chosen */
+    if (defaults == 3)
+        s->skip_cutscenes = 0;
     snap_size(s);
 }
 
@@ -220,6 +252,7 @@ void ngb_settings_save(const NgbSettings *s)
         return;
     }
     fprintf(f, "# Ninja Gaiden Black settings (the settings screen writes this file)\n");
+    fprintf(f, "defaults = 4\n");
     fprintf(f, "aspect = %s\n", ASPECT_NAMES[s->aspect]);
     fprintf(f, "window = %dx%d\n", s->width, s->height);
     fprintf(f, "fullscreen = %d\n", s->fullscreen);
@@ -230,9 +263,17 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "msaa = %d\n", s->msaa);
     fprintf(f, "unlock_all_difficulties = %d\n", s->all_difficulties);
     fprintf(f, "unlock_all_costumes = %d\n", s->all_costumes);
+    fprintf(f, "unlock_missions = %d\n", s->unlock[0]);
+    fprintf(f, "unlock_arcade = %d\n", s->unlock[1]);
+    fprintf(f, "unlock_movie_theater = %d\n", s->unlock[2]);
     fprintf(f, "movie_ratio = %s\n", s->movie_43 ? "4:3" : "16:9");
     fprintf(f, "shadow_resolution = %d\n", s->shadow_scale);
     fprintf(f, "smoother_glow = %d\n", s->smooth_glow);
+    fprintf(f, "detail_under_load = %d\n", s->detail_under_load);
+    fprintf(f, "render_thread = %d\n", s->render_thread);
+    fprintf(f, "intercept = %d\n", s->intercept);
+    fprintf(f, "essence_only_charging = %d\n", s->essence_charging);
+    fprintf(f, "skip_any_cutscene = %d\n", s->skip_cutscenes);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "audio_output = %d\n", s->audio_output);
@@ -249,6 +290,7 @@ double ngb_settings_aspect_ratio(const NgbSettings *s)
     case ASPECT_4_3:   return 4.0 / 3.0;
     case ASPECT_16_10: return 16.0 / 10.0;
     case ASPECT_21_9:  return 64.0 / 27.0;
+    case ASPECT_32_9:  return 32.0 / 9.0;
     default:           return 16.0 / 9.0;
     }
 }
@@ -397,9 +439,11 @@ void ngb_settings_change(NgbSettings *s, int row, int dir)
 
 void ngb_settings_row_text(const NgbSettings *s, int row, const char **label, char *val, size_t n)
 {
-    static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9" };
+    static const char *const ASPECT_LABEL[ASPECT_COUNT] = { "4:3", "16:9", "16:10", "21:9", "32:9" };
+    /* the game draws a 720x480 picture at every aspect (480p); the scale multiplies it (#105) */
     static const char *const SCALE_LABEL[10] = {
-        "Native (1x)", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "10x" };
+        "1x 720x480", "2x 1440x960", "3x 2160x1440", "4x 2880x1920", "5x 3600x2400",
+        "6x 4320x2880", "7x 5040x3360", "8x 5760x3840", "9x 6480x4320", "10x 7200x4800" };
     val[0] = 0;
     switch (row) {
     case ROW_ASPECT:  *label = "Aspect ratio";  snprintf(val, n, "%s", ASPECT_LABEL[s->aspect]); break;
@@ -470,8 +514,11 @@ static void draw(SDL_Renderer *r, const NgbSettings *s, int sel)
     }
     draw_text(r, "Up/Down: choose    Left/Right: change    Enter / A: select    Start: play    Esc / B: quit",
               LW / 2, LH - 58, 17, grey, 1);
-    draw_text(r, "In game: the pause menu's Settings tab has these options, F11 toggles fullscreen, F10 the FPS counter.",
-              LW / 2, LH - 34, 15, grey, 1);
+    /* only the graphics are here: say where the rest is (#100) */
+    draw_text(r, "More in the game: RECOMP SETTINGS on the main menu, or the pause menu's Settings tab --",
+              LW / 2, LH - 36, 15, grey, 1);
+    draw_text(r, "Display, Sound, Gameplay, Cheats and Controls. F11 toggles fullscreen, F10 the FPS counter.",
+              LW / 2, LH - 16, 15, grey, 1);
     SDL_RenderPresent(r);
 }
 

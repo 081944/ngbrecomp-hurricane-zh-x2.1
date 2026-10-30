@@ -532,5 +532,71 @@
   "flags": 2,
   "seen": "unresolved",
   "source": "data-table-scan"
+ },
+ {
+  "start": "0x0036EDBC",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EDC4",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EDCC",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EDD4",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EDDC",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EDE4",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EDEF",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EE08",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EE10",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EE20",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
+ },
+ {
+  "start": "0x0036EE34",
+  "flags": 2,
+  "seen": "unresolved",
+  "source": "icall-feedback"
  }
 ]

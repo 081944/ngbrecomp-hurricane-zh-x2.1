@@ -144,7 +144,11 @@ if [ ! -x "$tool" ]; then
     wget -qO "$tool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
     chmod +x "$tool"
 fi
-ARCH=x86_64 "$tool" --appimage-extract-and-run --no-appstream "$app" \
-    "$out/NinjaGaidenBlack-x86_64.AppImage" >"$out/appimagetool.log" 2>&1 ||
+# Update information for AppImageUpdate and the like (#115): the newest release on GitHub, pre-releases
+# included, by the .zsync made beside the AppImage (zsyncmake, in the current folder), which goes up with each release
+command -v zsyncmake >/dev/null || { echo "zsyncmake is needed for the .zsync file (zsync package)"; exit 1; }
+(cd "$out" && ARCH=x86_64 "$tool" --appimage-extract-and-run --no-appstream \
+    -u "gh-releases-zsync|gamboozino|ngbrecomp|latest-all|NinjaGaidenBlack-x86_64.AppImage.zsync" "$app" \
+    "$out/NinjaGaidenBlack-x86_64.AppImage" >"$out/appimagetool.log" 2>&1) ||
     { tail -20 "$out/appimagetool.log"; exit 1; }
-ls -la "$out/NinjaGaidenBlack-x86_64.AppImage"
+ls -la "$out/NinjaGaidenBlack-x86_64.AppImage" "$out/NinjaGaidenBlack-x86_64.AppImage.zsync"

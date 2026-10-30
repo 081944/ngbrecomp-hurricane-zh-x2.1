@@ -758,9 +758,30 @@ static void bringup_defaults(void)
          * mailbox's (DirectSound, 49152 bytes) too -- sits 0x70000 higher: measured with
          * RECOMP_CONTIG_LOG, 0x86BF8000 in retail, 0x86C68000 here. */
         set_default("RECOMP_DSP_ACK", "0x86C68810");
+    } else if (getenv("RECOMP_AC97_READY")) {
+        /* Left in the environment, it would unmap the chip's registers with no model behind them: the USB
+         * interrupt routine's read of one (0xFE80200C) then faults at boot (#136). */
+        fprintf(stderr, "[BOOT] RECOMP_AC97_READY ignored: DirectSound runs on the host mixer\n");
+#if defined(_WIN32)
+        _putenv_s("RECOMP_AC97_READY", "");
+#else
+        unsetenv("RECOMP_AC97_READY");
+#endif
     }
     set_default("RECOMP_USB", "1");
 }
+
+#if defined(NGB_PGO_GENERATE)
+/* A profile-recording build (NGB_PGO=generate): the profile is written at exit(), which the game never
+ * reaches (it leaves with _exit, see feedback_on_signal); a training run ends with SIGINT or SIGTERM,
+ * and writes it here. */
+int __llvm_profile_write_file(void);
+static void pgo_on_signal(int sig)
+{
+    __llvm_profile_write_file();
+    _exit(128 + sig);
+}
+#endif
 
 #if defined(RECOMP_ICALL_FEEDBACK)
 /* A bring-up run usually ends at a timeout or ^C, not an orderly exit, and
@@ -845,7 +866,7 @@ static void *guest_main(void *unused)
         extern void ngb_audio_set_positional(int mode);
         extern void ngb_audio_set_output(int choice);
         extern void dsound_hle_set_hrtf_tables(uint32_t index, uint32_t filters);
-        ngb_audio_set_positional(ngb_pc_setting(23));   /* Positional Audio (#30, #86): panning unless chosen otherwise */
+        ngb_audio_set_positional(ngb_pc_setting(23));   /* Positional Audio (#30, #86): Clear unless chosen otherwise */
         ngb_audio_set_output(ngb_pc_setting(25));       /* Audio Output: auto unless chosen */
         dsound_hle_set_hrtf_tables(0x395430, 0x383E70); /* DirectSound's full HRTF tables in this build */
     }
@@ -1173,6 +1194,10 @@ int main(int argc, char **argv)
         signal(SIGTERM, prof_exit_on_signal);
     }
 #endif
+#if defined(NGB_PGO_GENERATE)
+    signal(SIGINT, pgo_on_signal);
+    signal(SIGTERM, pgo_on_signal);
+#endif
 #if defined(RECOMP_ICALL_FEEDBACK)
     RECOMP_ICALL_FEEDBACK_INIT();     /* atexit dump to icall_targets.dump */
     signal(SIGINT, feedback_on_signal);
@@ -1271,8 +1296,11 @@ int main(int argc, char **argv)
         {
             extern void ngb_set_all_difficulties(int on);   /* src/cheats.c */
             extern void ngb_set_all_costumes(int on);
+            extern void ngb_set_unlock(int which, int on);
             ngb_set_all_difficulties(cfg.all_difficulties);
             ngb_set_all_costumes(cfg.all_costumes);
+            for (int i = 0; i < 3; i++)
+                ngb_set_unlock(i, cfg.unlock[i]);
         }
         if (cfg.show_fps && !getenv("NV2A_SHOW_FPS"))
             setenv("NV2A_SHOW_FPS", "1", 1);
@@ -1354,6 +1382,7 @@ int main(int argc, char **argv)
             usleep(2000);
         }
         printf("Window closed.\n");
+        fflush(stdout);   /* _exit does not flush: into a pipe (a log through tee) the line was lost, and a closed window looked like a crash */
         _exit(0);
     }
 #endif

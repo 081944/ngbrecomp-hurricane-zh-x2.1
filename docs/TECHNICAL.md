@@ -43,18 +43,21 @@ loop region, pitch, volume and mix bins -- a bin a buffer lists twice plays twic
 slot, and each bin takes its headroom, the library's one step unless the program sets it: the game sets
 none, the arcade leaves it), position notifications (the arcade's double buffer: set at its next
 `DirectSoundDoWork`, on its own thread), the library's 3D pass (distance, rolloff, the direction by its own octant estimate), and dsstdfx's
-I3DL2 reverb on the send bin 10 with the room the game sets per area. The sound chip is not emulated.
+I3DL2 reverb on the send bin 10 with the room the game sets per area. dsstdfx's crosstalk effect on the 3D
+submixes (each side takes the other's output of 11 samples before through a one pole filter: 0x7645A1, 0xF88313 in the
+image's code, which the library decrypts as it loads it) ran for "Console" in 0.9.40 only: its bass came out mostly out
+of phase, and xemu running the image on its DSP matches "Console" without it (#126). The sound chip is not emulated.
 Positional Audio places a mono 3D sound through the library's own HRTF tables (0x395430 the filter per
 direction, 0x383E70 the filters: 31 sign and magnitude taps per ear, the far ear's delay in its last
-byte): "Console" filters it as the chip does, "Panning" takes only each ear's level from its filter, "Off"
-plays it centred. Audio Output (Display & Audio; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
+byte): "Console" filters it as the chip does, "Clear" (the default; "Panning" before 0.9.40)
+takes only each ear's level from its filter, the pair scaled to constant power (0.9.40 alone used each filter's RMS gain, +2 to +5 dB by direction, heard as boomy), "Off" plays it centred. Audio Output (Sound; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
 Stereo, 5.1, or Auto: 5.1 when the default output device has six channels or more. On 5.1 the program is
 told its speakers are surround (with Dolby Digital) and mixes for them, and the output is FL FR C LFE BL
 BR; on stereo the centre is folded into the front pair. `NGB_AUDIO_CHANNELS=2|6` overrides it,
 `NGB_AUDIO_ENGINE=apu` goes back to the recompiled library on the emulated chip (xemu's voice
 processor, 0.9.29 and before: no reverb, no 5.1). `NGB_DSOUND_LOG=1` logs the calls (`=3` every Lock, `=2` every volume
 change too), `NGB_DSOUND_WAV=<file>` records what plays (either engine), `NGB_DSOUND_REVERB=0` leaves the
-reverb out.
+reverb out, `NGB_DSOUND_XTALK=1` adds the crosstalk effect.
 
 `kill -USR1 <pid>` (Linux) prints the guest thread's host backtrace, every lifted function a named
 `sub_XXXXXXXX`, and its guest registers -- use it instead of gdb, which swallows the TF single-steps
@@ -88,12 +91,12 @@ mailbox, like Nvidia's Fast sync, now and then shows a frame twice, #17); Off is
 ## Settings, menus and features
 
 The settings are in the game's own menus, in its style: the main menu's RECOMP SETTINGS
-(where Ranking was) opens the Options screen on them -- Graphics, Display and Startup
-Settings and Cheats, each a page of rows like Video Settings', and Controls (the bindings' panel,
+(where Ranking was) opens the Options screen on them -- Graphics, Display, Sound, Gameplay
+and Cheats, each a page of rows like Video Settings', and Controls (the bindings' panel,
 below), under a SETTINGS header (`src/pc_menu.c`;
 the header and category words are drawn in Liberation Serif in the game's pictures' style,
 `src/pause_tab.c`) -- and the pause menu has a Settings tab before Exit (A to enter its page,
-left/right on the category strip at its top for Graphics, Display, Startup, Cheats or Controls,
+left/right on the category strip at its top for Graphics, Display, Sound, Gameplay, Cheats or Controls,
 up/down for the rows, left/right or A to change one -- or a click: on a value's left half back,
 anywhere else on the row on -- B to leave; L and R go on to the next tab, as on the
 game's own pages; `NGB_NO_SETTINGS_TAB=1` leaves the game's six tabs). They are: aspect ratio
@@ -112,16 +115,52 @@ new renderer only), shadow resolution (Ryu's shadow map at 2x, 4x, 8x or 10x the
 128x128, for smooth instead of blocky edges), V-Sync (Off, Mailbox, FIFO, or Adaptive:
 synced, but a late frame is shown at once instead of waiting a refresh -- Vulkan's FIFO relaxed), an FPS
 counter, and skipping the intros (the boot movie, which the game itself will not let you skip;
-the New Game prologue and the story movies play, and Start, A or B ends any of them; from the
-next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
+the New Game prologue and the story movies play -- the game's own Start does not end the prologue -- and
+Skip Any Cutscene lets Start end them; from the next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
 `--settings` shows the old settings screen before the game.
 
-All Difficulties (Startup, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
+All Difficulties (Cheats > Unlocks, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
 without clearing the one before (or dying for Ninja Dog). The game's menus ask one function (sub_001DB520, now in
 `src/cheats.c`) for their unlock flags -- 7-9 are those three, read from the system data --
 and with the setting on it answers yes for them; nothing is written, so the player's own record
 is untouched and turning it off puts back what they have earned. Off, Ninja Dog is as the game
-has it: offered after dying in chapter 1.
+has it: offered after dying in chapter 1. Missions, Arcade Ninja Gaiden and Movie Theater (Cheats >
+Unlocks, saved) answer yes for flags 10-12 the same way: the main menu's MISSIONS, ARCADE NINJA GAIDEN
+and MOVIE THEATER, which the game shows once earned (the list's entries 2, 4 and 5); a change made in
+RECOMP SETTINGS shows or hides them at once (`src/main_menu.c`). With Missions on every mission is
+offered too: the Missions menu asks a byte per mission (0xDB95AC + its number, bit 0 offered, bit 1
+cleared; the game offers ten as Missions is earned and the rest as missions are cleared), and its
+reads (four lifted functions in `src/main_menu.c`) see bit 0 set; nothing written there either.
+
+Intercept (Gameplay; `src/intercept.c`, #109): Hurricane Pack 1's guard counter. Black kept its
+Technique scroll (item 0x26), Ryu's move and its karma, and removed one instruction: in sub_0001ACD0
+(Ryu's next action from his guard, `bl`), a guard raised under 6 ticks before an attack lands, with guard
+pressed this tick and not in the 14 before, set the action to 0x0D; the code still branches around where it
+was. The option puts it back, and lets Ryu do it without the scroll. Black uses Black's own move for it
+(state 0x8EC); Hurricane switches four of Ryu's move records and five bytes of his loaded character data
+(chr_dat2, at *0x4B7528) to the Hurricane Pack's move (0x99), once a frame and only while they hold one
+kind's values. While it is on, the Intercept karma (1000 each, at most 50 a battle, in battles
+with a countdown: sub_002EBB00) is paid on every difficulty, not only Very Hard and Master Ninja, and the
+battle's results show the "Intercept" line again (sub_00208120, from the counts Black still keeps at
+0x8DB734; Black only stopped drawing it).
+
+Essence-Only Charging (Gameplay; `src/ut_charge.c`, #120): while Ryu is in a charging action (kind 0xB9,
+the player block's +4 at 0x4968B0), sub_00023520 counts its frames in 0x5895E4 and raises the charge
+level 0x5895E2 when the count reaches either of two marks (0x5895E6, 0x5895E8: about 100 and 220 frames,
+from sub_00029140); the release picks the plain attack, the Ultimate Technique or the stronger one by that
+level (script opcode 0x83 in sub_00016300; for the Dragon Sword actions 0x20A, 0x20D and 0x20F). Essence
+absorbed while charging (sub_001E2EB0) raises the level itself and sets the count just past that level's
+mark (0x65, 0xDD). With the option on, the count's steps of a few frames are taken back each frame, so only
+essence raises the level.
+
+Skip Any Cutscene (Gameplay; `src/cutscene_skip.c`, #139): sub_001DBEE0 runs the events, the in-game
+cutscenes among them, once a frame, and Start skips the one playing when Start is down (bit 0x10 of the player's
+buttons at 0xD219A8, 0x78 a player), the event has been watched (one byte an event from 0xDB9477, by its number at
+0xDB9C6E: the chapter 1 waterfall is 0x6E, its byte 0xDB94E5) and its script has made it skippable (0x8D3A66, set
+and cleared by the script's own commands in sub_001DD300). The function is taken from the generated code with
+the watched test passed while the option is on; a cutscene its script never makes skippable still is not, and
+the watched bytes are not written, so saves do not change. The same option lets Start end a movie
+(`src/movie_skip.c`). Off unless chosen (0.9.43 alone had it on).
 
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each
@@ -129,9 +168,21 @@ frame -- the game keeps it per segment at 0x58A534, maxima at 0x58A524, and 0x58
 sum; a single blow taking all of it at once still kills), Infinite Ninpo (0x58A56C/0x58A56E),
 Infinite Essence (0x589570, the game's cap of 99,999) and Golden Scarabs (enough in the bag --
 inventory slots at 0x5891D0, item 0x59 -- to make 50 with those already given to Muramasa,
-0x589574: every one of his rewards at the next visit). The game guards its state with 24
+0x589574: every one of his rewards at the next visit). All Weapons puts every melee and projectile
+weapon Black gives in the bag, or raises it, at its highest level (a weapon's count is its level; Lunar
+and Kitetsu are one item a level, 0x12B/0x133/0x134 and 0x182/0x0CC/0x183, and a lower one held
+becomes the top one), with a full stack of what it fires once a game is loaded: the Strongbow, the
+bows for explosive arrows (0x0E2) and APFSDS cores (0x029), the Spear Gun, both shuriken, incendiary
+shuriken and smoke bombs. The original's Bow (0x08D) and Plasma Saber (0x0CE) are left out, as
+Black replaces them with the Strongbow and the Mk.II. Turned off, it takes them back: what the player had
+of each before is kept, with what the game gives meanwhile (sub_00154300: a Lunar picked up goes into
+the cheat's while it is on), and put back -- a weapon held is put back once Ryu holds another, nothing
+under the pause menu. The slots it writes carry a mark in their fourth byte (the game leaves it alone and
+saves it): a record is only applied to slots with its mark, so a save loaded meanwhile is never touched. A save
+made while it is on keeps the weapons: the record is the session's, so after a restart they are the save's own.
+The game guards its state with 24
 checksums (sub_00164E50) and returns to the title when one changes without the flag its own
-code sets (0x7F1A94 + n); a cheat that writes sets them all. Startup Settings also has All
+code sets (0x7F1A94 + n); a cheat that writes sets them all. Unlocks also has All
 Costumes (saved): the Costume Selection at New Game offers every costume, as after clearing
 the game, through the same flag function as All Difficulties (flags 1-4). The game has eight costumes (chr_ryu.afs, chr_ryua-g.afs) and its Costume Selection
 lists five (0 and 4-7, the table at 0x3E9D10), the locked ones as white shapes; here it lists only
@@ -147,10 +198,10 @@ game puts it where OPTIONS was before it moved, the last entry: now EXIT TO DESK
 Difficulties' Ninja Dog the difficulty selection has five rows, a case the game never shows
 there: they are spaced closer (38 instead of 44) so the first clears the header.
 
-On a wide screen (16:9, 16:10, 21:9) the game is in its own widescreen mode the whole time, with
+On a wide screen (16:9, 16:10, 21:9, 32:9) the game is in its own widescreen mode the whole time, with
 its 3D drawn for the screen's shape (both of its aspect constants, 0x414AF4 and 0x414AF8, are that
 shape): every menu, the HUD, chapter cards and clear screens are the game's own 16:9 ones, drawn as it
-draws them for a widescreen TV, kept 16:9 (`src/d3d/vk/backend.cpp`): at 21:9 narrowed to the middle
+draws them for a widescreen TV, kept 16:9 (`src/d3d/vk/backend.cpp`): at 21:9 and 32:9 narrowed to the middle
 16:9, at 16:10 shortened to it, a 2D screen or menu whole there with bars beyond (at the sides at
 21:9, above and below at 16:10). The bars are filled with the screen's own colours: each side's edge,
 16 bands of it, sampled over the screen's first 2 s and then kept still, so a menu's animation does
@@ -179,14 +230,16 @@ its 4:3 mode for a 4:3 movie narrowed it twice, #28.) The mouse is mapped to the
 `NGB_HUD_RATIO_LOG=1` logs the 2D draws not drawn texel for pixel; `NGB_MODE_LOG=1` the mode each
 frame.
 Aspect ratio also offers 21:9 (64:27;
-window sizes 1720x720 to 5120x2160): the 3D widened as for 16:10, the game deciding what to
-draw for a narrower view, so objects at the far edges may appear late.
+window sizes 1720x720 to 5120x2160) and 32:9 (two 16:9 screens side by side, 2560x720 to 7680x2160, #74):
+the 3D widened as for 16:10. The game's own choice of what to draw is left as it is; no object
+has been seen appearing late at the far edges.
 
 The boot "Warnings" screen is always skipped (`NGB_KEEP_WARNINGS=1` shows it).
 
 For glitches that only show in play: F7 records the next 300 frames to `~/ngb-trace-<n>/` -- a
 small picture of each frame and a line per draw (its state: targets, textures, combiner stages,
-blending, fog, vertex colour, clears) in `draws.txt` (`NGB_TRACE_FRAMES=<n>` frames;
+blending, fog, vertex colour, clears, and `stk`: the game's return addresses on its stack, innermost
+first, which say what drew it) in `draws.txt` (`NGB_TRACE_FRAMES=<n>` frames;
 `NGB_TRACE_PRE=1` only the screen-space draws and the first draw after each target change;
 `NGB_TRACE_NOPIC=1` no pictures, `=copy` pictures only around a copy into a 512x512 target, the
 cut cross-fade's). F8 appends Ryu's position to `ngb_positions.txt`
@@ -252,6 +305,20 @@ game's button prompts are keys and mouse buttons instead -- Xelu's dark keyboard
 of, its blank key with the key's name; `src/pause_tab.c`), in play the ones bound to each action, in
 the menus the mouse's buttons (left to choose, right to go back), K, Space, Shift and Q/E;
 `NGB_PAD_PROMPTS=1` keeps the pad's.
+With a PlayStation pad in use (SDL's controller type: a DualShock 3 or 4, a DualSense, or an adapter
+that says so) the prompts are its buttons (#113): Xelu's PS3 set (`assets/prompts/ps`), the symbols in
+their colours on black as on the DualShock 2 of the game's time -- Cross, Circle, Square and Triangle for
+A, B, X and Y, L2 and R2 for the triggers, L1 and R1 for Black and White (the buttons they are on), over the
+pause menu's L and R plates too (on a dark plate the size of the game's), and R1 drawn the size of L1 (the
+game draws White's icon smaller); the Controls page names them the same way. The Controls page shows the
+two-button actions (Ninpo, Wind Run) as the pad's button pictures, Xelu's Xbox 360 ones on an Xbox pad
+(`assets/prompts/xbox`). The game's Button Settings
+page keeps its picture of the Xbox controller. The Controls page's Button Prompts picks the set: Auto (the
+device in use, as above), Xbox, PlayStation or PC (the keys), saved in `controls.ini` (`button_prompts`).
+`NGB_PAD_PROMPTS=ps` shows the PlayStation's whatever the setting, any other value the Xbox's.
+The techniques' "hold the button" icons (sprites 0x1CE-0x1D3) are a texture of their own, six
+cells with an arrow over the button: with PlayStation or PC prompts each button is redrawn as that set's,
+the game's arrow kept over it (`hold_check`, #125); the keys are play's, not the menu's.
 
 In the game's menus (main menu, Options, the pause menu and its tabs, message boxes) the mouse
 points: the game's own cursor follows it onto the item under it (a press of the pad at a time,
@@ -278,6 +345,22 @@ FPS counter to stderr, and `NV2A_FPS_LOG=/path/to/file` appends it to that file 
 (a refresh less latency); off by default, because on a busy frame it made the rate fall to 40-50.
 `NV2A_REFRESH_HZ=n` runs the emulated display at n Hz (testing only: the game steps its logic
 once a frame, so at 120 it plays at double speed).
+The game measures its own GPU load: a callback it puts at the end of each frame's push buffer (0x30E060)
+records how far into the frame the GPU got there, and over 94% the game lowers its quality level, which
+swaps Ryu's shadow map for the round shadow under him (sub_001D5E30). The emulated GPU only reads the
+push buffer while the renderer draws, so that callback reports no GPU time (`ngb_gpu_frame_reached`,
+src/d3d/d3d.c); on some PCs it got there late now and then and the shadow came and went (#50).
+Graphics > Lower Detail Under Load keeps the game's measurement, which on a slower PC steadied the frame
+time (#114); `NGB_GPU_LOAD=1` or `0` overrides the setting.
+
+The game draws each frame from render lists it builds as trees of nodes, all cut from one pool of
+768 (src/render_list.c). When the pool is used up a node is silently left out, and the HUD, the 2D
+layer and the screen effects go in last: in a fight with enough enemies, blood and sparks for 768
+nodes before them, the HUD disappeared for the busiest ten or twenty frames of a multi-kill, its
+sprites piling up until a quieter frame drew them all at once (#96). sub_00308BF0, the allocating
+insert, gives out 4096 more nodes of ours after the game's; `NGB_NODE_POOL=0` keeps the game's limit.
+The weapon-hit sparks are lines the game draws 2.7 to 3 pixels wide; `NGB_SPARK_WIDTH=0.5` (0.1 to 1)
+makes them thinner, never under a pixel (#117).
 
 ## The renderer
 
@@ -306,6 +389,12 @@ and renders with the new one unseen, for comparing (`NGB_D3D_DUMP=dir` writes it
   Run it after the game reaches new code.
 - `XBOX_LOG_LEVEL=4` and `RECOMP_KERNEL_LOG_BUDGET=100000` give a full kernel and
   file trace.
+- `-DNGB_OPT_LEVEL=-O3` builds every target at another level (`-O2` by default; on the attract demo -O3
+  measured no different). `-DNGB_PGO=generate` builds a profile-recording binary: a training run writes
+  `$LLVM_PROFILE_FILE` when stopped with SIGINT or SIGTERM; `llvm-profdata merge` the runs and build with
+  `-DNGB_PGO=<file.profdata>` (the same clang version). Measured on the attract demo: about 4% less CPU,
+  not used for releases (each toolchain needs its own profile, and its compiler's choices in code the
+  training never ran are untested: one read a GPU register with a `bt` the MMIO decoder lacked).
 
 The defaults in `bringup_defaults()` (`src/main.c`) stand in for hardware that isn't
 modelled yet. Each one should disappear when the real thing exists.

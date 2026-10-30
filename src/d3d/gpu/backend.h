@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "gpu/state.h"
 
@@ -14,9 +15,36 @@ enum : uint32_t {
     kClearStencil = 0x02,
 };
 
+// What the renderer takes from the game besides the Direct3D state, as of the call it draws for: a render thread
+// draws later, when the game has moved on. Taken on the title's thread (Backend::CapturePeek), handed back before
+// the call is drawn (Backend::UsePeek); a backend that draws at once takes it itself.
+struct Peek {
+    uint32_t draw_node = 0;    // the map piece being drawn (g_draw_node), 0 if none
+    int32_t chunk_slot = -1;   // its chunk slot, -1 if none (debugging views)
+    uint8_t towers = 0;        // stream 0's vertex buffer in the drawbridge towers' chunk (the section pull)
+    uint8_t stretched = 0;     // the game's 2D in its widescreen mode (ngb_2d_stretched)
+    uint8_t screen = 0;        // ngb_2d_screen_flags: 1 a menu now, 2 the last frame's menu or a 2D screen
+    float hud_shape = 1;       // ngb_hud_shape
+};
+// The quick menu as the frame is presented (src/quick_ui.c draws it on the CPU)
+struct QuickPeek {
+    int percent = 0;           // its size, 0 off
+    int frozen = 0;            // the game paused behind it: its background effect
+    std::vector<uint32_t> layer;   // NGB_QUICK_WIDTH x NGB_QUICK_HEIGHT, empty when it is closed
+    bool fps = false;              // the frame counter shown (src/fps_text.c)
+    std::vector<uint32_t> fps_px;  // its picture when it changed this frame (kFpsWidth x kFpsHeight), else empty
+    bool fps_lettered = false;     // that picture has the text (not yet: the font not loaded)
+};
+
 class Backend {
 public:
     virtual ~Backend() = default;
+    // the game's side of a call (Peek) and of a frame (QuickPeek), on the title's thread; and given back before
+    // the call is drawn -- from then on the backend takes nothing itself
+    virtual void CapturePeek(const State&, Peek&) {}
+    virtual void CaptureQuick(QuickPeek&) {}
+    virtual void UsePeek(const Peek&) {}
+    virtual void UseQuick(const QuickPeek&) {}
     // the title's back buffer size, the output window may differ
     virtual bool Init(uint32_t width, uint32_t height) = 0;
     // rects: count D3DRECTs (4 x int32), null for the whole viewport
@@ -24,8 +52,9 @@ public:
                        uint32_t stencil) = 0;
     // indices: the title's 16 bit indices, null for non indexed draws, then start is the first vertex
     virtual void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) = 0;
-    virtual void Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects_va,
-                      uint32_t dst_points_va) = 0;
+    // src_rects: count D3DRECTs, dst_points: count POINTs (2 x int32), either null
+    virtual void Copy(const Surface& src, const Surface& dst, uint32_t count, const uint8_t* src_rects,
+                      const uint8_t* dst_points) = 0;
     virtual void Present(const Surface& front) = 0;
     // the CPU is about to touch this resource's memory: write GPU results back first
     virtual void Sync(uint32_t data_va, uint32_t size) = 0;
@@ -44,6 +73,9 @@ public:
     virtual void WaitFence(uint32_t) {}
     virtual bool Busy(uint32_t /*resource*/) { return false; }
     virtual void WaitResource(uint32_t /*resource*/) {}
+    // after Present, out of every lock (d3d.c, the Swap hook's host section over): a renderer drawing on a thread of
+    // its own waits here for the frame before, giving the virtual CPU to the title's other threads meanwhile
+    virtual void FrameWait() {}
     // the title's visibility tests: the draws between counted, the count written to the report slot
     // (guest address) once known, as the GPU would
     virtual void VisibilityBegin() {}

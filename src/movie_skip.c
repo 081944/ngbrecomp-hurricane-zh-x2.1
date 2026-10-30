@@ -11,14 +11,16 @@
  *
  * Skipped with Skip Intros: the boot movie (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd).
  * Not the New Game prologue (ninja_gaiden.sfd): it is the story's start, and
- * Start, A or B ends it like any movie (#28). Which movie is playing
+ * with Skip Any Cutscene Start ends it like any movie (#28). Which movie is playing
  * comes from the movie file the title last read (ngb_movie_read, from the
  * kernel's read hook): it opens every movie at boot to probe them, so the
  * last one opened says nothing.
  *
- * And any movie, by pressing Start, A or B (ngb_skip_button, src/keyboard.c)
- * -- once every button has been let go since it began, so neither the press
- * that started it nor one held through it ends it.
+ * And any movie, by pressing Start (ngb_skip_button, src/keyboard.c),
+ * with Skip Any Cutscene on (Gameplay, setting 34, off unless chosen: the game's own Start does not end the prologue; it also skips
+ * the in-game cutscenes, src/cutscene_skip.c) -- once every button has been
+ * let go since it began, so neither the press that started it nor one held
+ * through it ends it.
  */
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
@@ -30,6 +32,7 @@ int ngb_skip_intro;
 static volatile int s_skip_current;
 static int s_released;   /* the buttons let go since this movie began */
 int ngb_skip_button(void);
+int ngb_pc_setting(int which);   /* src/ingame_menu.c: 34 Skip Any Cutscene */
 
 void ngb_movie_read(const char *host_path)
 {
@@ -51,6 +54,8 @@ static int ngb_movie_skip_now(void)
 {
     if (s_skip_current)
         return 1;
+    if (!ngb_pc_setting(34))
+        return 0;
     if (!ngb_skip_button())
         s_released = 1;
     else if (s_released)
@@ -148,4 +153,28 @@ loc_00344C31: ;
 loc_00344C36: ;
     esp += 4; return; /* ret */
 
+}
+
+/*
+ * sub_00331FD0 (0x00331FD0 - 0x00331FED): set one channel's output volume of a CRI stream, the volume in
+ * tenths of a dB (sub_00331940 multiplies it by 10 into the mixer's hundredths). The Team Ninja splash,
+ * played as three stereo streams when the speakers are 5.1 (the host mixer reports them on a six-channel
+ * device), sets its six channels here from the game's volume table -- in hundredths, where every other
+ * use of the table divides by 10 first -- so they came out 20 times too quiet in dB, -96 dB: no sound
+ * (#104). From that call (its return address 0x0031D870) the volume is divided by 10, as at the others.
+ */
+void sub_00331FD0(void)
+{
+    RECOMP_ENTRY(0x00331FD0u);
+    uint32_t ebp = g_seh_ebp; /* fpo_leaf: inherit caller's frame */
+    if (MEM32(esp) == 0x0031D870u)
+        MEM32(esp + 0xC) = (uint32_t)((int32_t)MEM32(esp + 0xC) / 10);
+    PUSH32(esp, esi);
+    PUSH32(esp, 0x00331FD6u); RECOMP_ABI_CALL(0x001A4580u, sub_001A4580); /* call 0x001A4580 */
+    ecx = MEM32(esp + 0x10);   /* the volume */
+    eax = MEM32(esp + 0xC);    /* the channel */
+    esi = MEM32(esp + 8);      /* the stream */
+    PUSH32(esp, 0x00331FE7u); RECOMP_ABI_CALL(0x00331940u, sub_00331940); /* call 0x00331940 */
+    POP32(esp, esi);
+    g_seh_ebp = ebp; sub_001A4580(); return; /* tail jmp 0x001A4580 */
 }

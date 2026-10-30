@@ -37,15 +37,14 @@ static SHORT axis(const Uint8 *k, int neg, int pos)
 
 void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y);
 
-/* A button that skips a movie or cutscene: Start, A or B on the pad (or the keys bound to them),
- * from the first pad's state as the title reads it. */
+/* The button that skips a movie: Start on the pad (or the key bound to it), as for the in-game cutscenes
+ * (#139), from the first pad's state as the title reads it. */
 int ngb_skip_button(void)
 {
     XBOX_INPUT_STATE st;
     if (xbox_InputGetState(0, &st) != 0)
         return 0;
-    return (st.Gamepad.wButtons & XBOX_GAMEPAD_START) || st.Gamepad.bAnalogButtons[0] > 0x40 ||
-           st.Gamepad.bAnalogButtons[1] > 0x40;
+    return (st.Gamepad.wButtons & XBOX_GAMEPAD_START) != 0;
 }
 
 
@@ -73,7 +72,10 @@ int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
             last = menu;
         }
     }
-    if (!menu && !getenv("NGB_FIXED_KEYS")) {   /* in play: as bound (src/bindings.c, the Controls page) */
+    static int fixed_keys = -1;
+    if (fixed_keys < 0)
+        fixed_keys = getenv("NGB_FIXED_KEYS") != NULL;
+    if (!menu && !fixed_keys) {   /* in play: as bound (src/bindings.c, the Controls page) */
         SHORT mx = 0, my = 0;
         if (SDL_GetRelativeMouseMode()) {
             xbox_InputMouseStick(900.0f, &mx, &my);
@@ -136,7 +138,10 @@ void nv2a_window_tick(void)
 {
     static int captured;
     SDL_Window *w = SDL_GetKeyboardFocus();
-    int want = w && xbox_InputKeyboardActive() && !ngb_menu_up() && !getenv("NGB_NO_MOUSE_CAPTURE");
+    static int no_capture = -1;
+    if (no_capture < 0)
+        no_capture = getenv("NGB_NO_MOUSE_CAPTURE") != NULL;
+    int want = w && xbox_InputKeyboardActive() && !ngb_menu_up() && !no_capture;
     if (want != captured) {
         captured = want;
         s_capture_changed = SDL_GetTicks64();

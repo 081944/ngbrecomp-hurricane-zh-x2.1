@@ -1,126 +1,122 @@
 /*
- * The frame rate overlay (F10, Show FPS) lettered like the game's HUD: the numbers in the italic serif of
- * the karma count (EB Garamond ExtraBold Italic, ngb_font_tab), the words after them in grey, on a dark
- * strip with a thin rule under it as the game's own labels have. The renderer copies it over the
- * screen's corner (xboxrecomp's present_sdl.c, nv2a_fps_render), so it is opaque, and grey and white
- * only -- the same in either byte order of the swapchain.
+ * The frame rate counter (F10, Show FPS) in the game's own menu letters: the frame
+ * rate and frame time in white, a soft dark shadow under them, nothing behind (src/pause_tab.c,
+ * ngb_game_text_picture). Lettered on the title's thread once a frame when the text changes (twice a second); the
+ * Direct3D renderer blends the picture into the top left corner of each frame (src/d3d/vk/backend.cpp, FpsCounter),
+ * and the GPU emulation's presenter copies it over a dark strip when another renderer draws (xboxrecomp's
+ * present_sdl.c, nv2a_fps_render).
  */
 #include <math.h>
+#include <pthread.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#define STBTT_STATIC
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "stb_truetype.h"
+#define BACK 0xFF121212u
+#define MAX_W 1024
+#define MAX_H 128
 
-extern const unsigned char ngb_font_tab[];
-
-#define BACK   0xFF121212u
-#define RULE   0xFF5A5A5Au
-#define NUMBER 0xFFFFFFFFu
-#define WORD   0xFFA8A8A8u
-
-static uint32_t mix(uint32_t bg, uint32_t fg, unsigned a)
+bool nv2a_present_show_fps(void);                         /* xboxrecomp present_sdl.c */
+void nv2a_present_fps_text(char *buf, size_t n);
+/* src/pause_tab.c; the arcade programs have not got it (nor ngb_fps_tick's caller): the presenter's own letters */
+__attribute__((weak)) int ngb_game_text_picture(const char *s, float cap, uint32_t *out, int maxw, int maxh, int *ow,
+                                                int *oh)
 {
-    uint32_t out = 0xFF000000u;
-    for (int sh = 0; sh < 24; sh += 8) {
-        unsigned b = (bg >> sh) & 0xFF, f = (fg >> sh) & 0xFF;
-        out |= ((b * (255 - a) + f * a) / 255) << sh;
-    }
-    return out;
+    (void)s; (void)cap; (void)out; (void)maxw; (void)maxh; (void)ow; (void)oh;
+    return 0;
 }
 
-static bool fps_rasterize(const char *text, uint32_t line_px, uint32_t *px, uint32_t maxw, uint32_t maxh,
-                          uint32_t *ow, uint32_t *oh);
+static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint32_t s_px[MAX_W * MAX_H];                      /* the picture, premultiplied BGRA */
+static int s_w, s_h;
+static unsigned s_serial;                                 /* +1 each time it changes */
+volatile int ngb_fps_target_h;                            /* the picture it goes into (the renderer's, else the window's) */
 
-/* Called at every present, for each frame's buffer; the text changes twice a second. Rasterized once and
- * copied after: drawing it every frame was 9% of the game thread's time with the counter on. */
+/* The capital's height for a picture h tall, lettered at most 40 pixels (re-lettering a larger one twice a second
+ * cost the title's thread milliseconds at high render scales); *scale how much larger it is drawn. */
+int ngb_fps_cap(int h, float *scale)
+{
+    float want = h * 0.021f;
+    int cap = (int)lroundf(want < 9 ? 9 : want > 40 ? 40 : want);
+    if (scale)
+        *scale = want / cap;
+    return cap;
+}
+
+void ngb_fps_tick(void)
+{
+    static char last[64];
+    static int last_cap;
+    static uint32_t px[MAX_W * MAX_H];
+    char text[64];
+    if (!nv2a_present_show_fps()) {
+        if (last[0]) {
+            pthread_mutex_lock(&s_lock);
+            s_w = s_h = 0;
+            s_serial++;
+            pthread_mutex_unlock(&s_lock);
+            last[0] = 0;
+        }
+        return;
+    }
+    nv2a_present_fps_text(text, sizeof text);
+    char *max = strstr(text, "  max");                    /* (the log keeps the longest frame; the screen not) */
+    if (max)
+        *max = 0;
+    int cap = ngb_fps_cap(ngb_fps_target_h > 0 ? ngb_fps_target_h : 720, NULL);
+    if (!strcmp(text, last) && cap == last_cap)
+        return;
+    int w, ph;
+    if (!ngb_game_text_picture(text, (float)cap, px, MAX_W, MAX_H, &w, &ph))
+        return;                                           /* the font not loaded yet: next frame */
+    snprintf(last, sizeof last, "%s", text);
+    last_cap = cap;
+    pthread_mutex_lock(&s_lock);
+    memcpy(s_px, px, sizeof *px * (size_t)w * ph);
+    s_w = w;
+    s_h = ph;
+    s_serial++;
+    pthread_mutex_unlock(&s_lock);
+}
+
+/* The picture into out (at most max pixels), if it changed since *serial; its size, 0 when there is none. */
+int ngb_fps_picture(uint32_t *out, size_t max, int *w, int *h, unsigned *serial)
+{
+    int changed = 0;
+    pthread_mutex_lock(&s_lock);
+    if (*serial != s_serial && (size_t)s_w * s_h <= max) {
+        memcpy(out, s_px, sizeof *out * (size_t)s_w * s_h);
+        *w = s_w;
+        *h = s_h;
+        *serial = s_serial;
+        changed = 1;
+    }
+    pthread_mutex_unlock(&s_lock);
+    return changed;
+}
+
+/* The presenter's corner copy (another renderer drawing): the picture over a dark strip, opaque. */
 bool nv2a_fps_render(const char *text, uint32_t line_px, uint32_t *px, uint32_t maxw, uint32_t maxh,
                      uint32_t *ow, uint32_t *oh)
 {
-    static char last[64];
-    static uint32_t last_line, last_mw, last_mh, w, h;
-    static uint32_t *cache;
-    static bool ok;
-
-    if (!cache || strncmp(text, last, sizeof last) || line_px != last_line || maxw != last_mw || maxh != last_mh) {
-        uint32_t *grown = realloc(cache, (size_t)maxw * maxh * 4);
-        if (!grown)
-            return fps_rasterize(text, line_px, px, maxw, maxh, ow, oh);
-        cache = grown;
-        snprintf(last, sizeof last, "%s", text);
-        last_line = line_px, last_mw = maxw, last_mh = maxh;
-        ok = fps_rasterize(text, line_px, cache, maxw, maxh, &w, &h);
+    (void)text;
+    ngb_fps_target_h = (int)line_px * 36;                 /* (present_sdl's line: the window's height / 36) */
+    pthread_mutex_lock(&s_lock);
+    int w = s_w, h = s_h;
+    if (!w || (uint32_t)w > maxw || (uint32_t)h > maxh) {
+        pthread_mutex_unlock(&s_lock);
+        return false;                                     /* its own 5x7 letters meanwhile */
     }
-    if (!ok)
-        return false;
-    memcpy(px, cache, (size_t)w * h * 4);
-    *ow = w;
-    *oh = h;
-    return true;
-}
-
-static bool fps_rasterize(const char *text, uint32_t line_px, uint32_t *px, uint32_t maxw, uint32_t maxh,
-                          uint32_t *ow, uint32_t *oh)
-{
-    static stbtt_fontinfo font;
-    static int ready = -1;
-    static uint8_t glyph[256 * 256];
-    if (ready < 0)
-        ready = stbtt_InitFont(&font, ngb_font_tab, 0) != 0;
-    if (!ready || line_px < 8)
-        return false;
-
-    float size = (float)line_px, scale = stbtt_ScaleForPixelHeight(&font, size);
-    int asc, desc, gap;
-    stbtt_GetFontVMetrics(&font, &asc, &desc, &gap);
-    float pad = size * 0.45f, base = pad + asc * scale;
-    uint32_t h = (uint32_t)lroundf(base - desc * scale + pad * 0.8f) + 2;
-
-    /* the width first: each character's advance, the gaps between words a little wider */
-    float width = 0;
-    for (const char *s = text; *s; s++) {
-        int adv, lsb;
-        stbtt_GetCodepointHMetrics(&font, (unsigned char)*s, &adv, &lsb);
-        width += adv * scale * (*s == ' ' ? 1.3f : 1.0f);
+    for (int i = 0; i < w * h; i++) {
+        uint32_t c = s_px[i], a = c >> 24, out = 0xFF000000u;
+        for (int sh = 0; sh < 24; sh += 8)
+            out |= (((c >> sh) & 0xFF) + ((BACK >> sh) & 0xFF) * (255 - a) / 255) << sh;
+        px[i] = out;
     }
-    uint32_t w = (uint32_t)lroundf(width + pad * 2);
-    if (w > maxw) w = maxw;
-    if (h > maxh) h = maxh;
-
-    for (uint32_t i = 0; i < w * h; i++)
-        px[i] = BACK;
-    for (uint32_t x = (uint32_t)pad / 2; x + (uint32_t)pad / 2 < w; x++)   /* the rule */
-        px[(h - 2) * w + x] = RULE;
-
-    float x = pad;
-    for (const char *s = text; *s; s++) {
-        int cp = (unsigned char)*s, adv, lsb, x0, y0, x1, y1;
-        bool number = (cp >= '0' && cp <= '9') || cp == '.' ||
-                      (cp == '-' && (s[1] == '-' || (s > text && s[-1] == '-')));
-        uint32_t ink = number ? NUMBER : WORD;
-        float fx = x - floorf(x);
-        stbtt_GetCodepointHMetrics(&font, cp, &adv, &lsb);
-        stbtt_GetCodepointBitmapBoxSubpixel(&font, cp, scale, scale, fx, 0, &x0, &y0, &x1, &y1);
-        int gw = x1 - x0, gh = y1 - y0;
-        if (gw > 0 && gh > 0 && gw <= 256 && gh <= 256) {
-            stbtt_MakeCodepointBitmapSubpixel(&font, glyph, gw, gh, gw, scale, scale, fx, 0, cp);
-            for (int yy = 0; yy < gh; yy++)
-                for (int xx = 0; xx < gw; xx++) {
-                    int X = (int)floorf(x) + x0 + xx, Y = (int)lroundf(base) + y0 + yy;
-                    unsigned a = glyph[yy * gw + xx];
-                    if (a && X >= 0 && Y >= 0 && (uint32_t)X < w && (uint32_t)Y < h)
-                        px[Y * w + X] = mix(px[Y * w + X], ink, a);
-                }
-        }
-        x += adv * scale * (cp == ' ' ? 1.3f : 1.0f);
-        if (s[1])
-            x += stbtt_GetCodepointKernAdvance(&font, cp, (unsigned char)s[1]) * scale;
-    }
-    *ow = w;
-    *oh = h;
+    pthread_mutex_unlock(&s_lock);
+    *ow = (uint32_t)w;
+    *oh = (uint32_t)h;
     return true;
 }

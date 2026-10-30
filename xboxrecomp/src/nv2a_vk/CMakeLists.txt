@@ -42,6 +42,7 @@ add_library(xbox_nv2a_vk OBJECT
     shim/util/fast-hash.c
     shim/util/vma.cc
     host/nv2a_host.c
+    host/threadload.c
     host/nv2a_dirty.c
     host/present_sdl.c
     host/nv2a_runtime.c
@@ -70,7 +71,7 @@ target_compile_definitions(xbox_nv2a_vk PRIVATE
     XXH_INLINE_ALL _GNU_SOURCE)
 target_compile_options(xbox_nv2a_vk PRIVATE
     $<$<COMPILE_LANGUAGE:C>:-std=gnu11>
-    -O2 -fno-strict-aliasing -Wno-unused-parameter -Wno-sign-compare
+    ${XBOXRECOMP_OPT_LEVEL} -fno-strict-aliasing -Wno-unused-parameter -Wno-sign-compare
     -Wno-missing-field-initializers -Wno-unused-function)
 target_link_libraries(xbox_nv2a_vk PUBLIC
     xbox_kernel xbox_video platform
