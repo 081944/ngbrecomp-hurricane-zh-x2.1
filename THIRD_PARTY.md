@@ -42,6 +42,8 @@ runs on, in `xboxrecomp/` with this port's changes) is MIT licensed (`xboxrecomp
 | glslang | BSD-3-Clause and others (see its LICENSE) | all |
 | SPIRV-Tools | Apache-2.0 | Linux, Windows |
 | LLVM libc++ (the NDK's, linked in) | Apache-2.0 with LLVM exception | Android |
+| Mesa's Turnip (Vulkan driver for Adreno, built from Mesa's release) | MIT | Android |
+| libadrenotools | BSD-2-Clause | Android |
 | libepoxy | MIT | Linux |
 | Qt 6 (the setup window) | LGPL-3.0 | Linux |
 | LLVM libc++, libunwind | Apache-2.0 with LLVM exception | Windows |
