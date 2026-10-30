@@ -60,7 +60,7 @@ static int mouse_look(int v)
     return v < 0 ? -m : m;
 }
 
-int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
+static int keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
 {
     int menu = ngb_menu_up();
     {   /* NGB_MENU_UP_LOG=1: when the keys change between the bindings (play) and the menus' layout */
@@ -128,6 +128,34 @@ int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
     st->Gamepad.sThumbRX = (SHORT)(rx > 32767 ? 32767 : rx < -32767 ? -32767 : rx);
     st->Gamepad.sThumbRY = (SHORT)(ry > 32767 ? 32767 : ry < -32767 ? -32767 : ry);
     return 1;
+}
+
+int xbox_keyboard_map(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st)
+{
+    int r = keyboard_map(k, mouse, st);
+#ifdef __ANDROID__
+    {   /* the touch controls (src/touch_pad.c), a pad: through its bindings as a controller's state goes */
+        extern void ngb_touch_map(XBOX_INPUT_STATE *st);
+        extern void xbox_pad_remap(XBOX_INPUT_STATE *st);
+        XBOX_INPUT_STATE t;
+        memset(&t, 0, sizeof t);
+        ngb_touch_map(&t);
+        xbox_pad_remap(&t);
+        st->Gamepad.wButtons |= t.Gamepad.wButtons;
+        for (int i = 0; i < 8; i++)
+            if (t.Gamepad.bAnalogButtons[i] > st->Gamepad.bAnalogButtons[i])
+                st->Gamepad.bAnalogButtons[i] = t.Gamepad.bAnalogButtons[i];
+        if (t.Gamepad.sThumbLX || t.Gamepad.sThumbLY) {
+            st->Gamepad.sThumbLX = t.Gamepad.sThumbLX;
+            st->Gamepad.sThumbLY = t.Gamepad.sThumbLY;
+        }
+        if (t.Gamepad.sThumbRX || t.Gamepad.sThumbRY) {
+            st->Gamepad.sThumbRX = t.Gamepad.sThumbRX;
+            st->Gamepad.sThumbRY = t.Gamepad.sThumbRY;
+        }
+    }
+#endif
+    return r;
 }
 
 /* The window's thread, each pump: the mouse captured in play while it is

@@ -782,6 +782,9 @@ void ngb_frame_tick(void)
     pos_tick();
     { extern void ngb_ut_charge_frame(void); ngb_ut_charge_frame(); }   /* src/ut_charge.c: Essence-Only Charging */
     { extern void ngb_fps_tick(void); ngb_fps_tick(); }   /* src/fps_text.c: the frame counter's lettering */
+#ifdef __ANDROID__
+    { extern void ngb_android_frame(void); ngb_android_frame(); }   /* src/android_main.c: the clocks' hint */
+#endif
     ngb_aspect_frame_end();
     ngb_aspect_tick();
     cheat_tick();

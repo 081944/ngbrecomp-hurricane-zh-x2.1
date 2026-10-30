@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 # ============================================================================
 # Ninja Gaiden Black - static recompilation (xboxrecomp)
 #
-# Native Linux (x86-64), Windows and macOS (arm64) builds. The generated code comes from the
+# Native Linux (x86-64), Windows, macOS (arm64) and Android (arm64, packaging/android) builds. The generated code comes from the
 # xboxrecomp pipeline (see README.md); it is not checked in.
 # ============================================================================
 
@@ -93,6 +93,10 @@ endforeach()
 file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png
                        ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/ps/*.png    # PlayStation buttons (#113)
                        ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/xbox/*.png) # the Controls page's Xbox combos
+if(ANDROID)   # the touch controls' sticks and d-pad (Kenney's Mobile Controls, CC0: assets/touch/License-Kenney.txt)
+    file(GLOB NGB_TOUCH_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/touch/*.png)
+    list(APPEND NGB_KEY_PNGS ${NGB_TOUCH_PNGS})
+endif()
 set(key_decls "")
 set(key_rows "")
 list(LENGTH NGB_KEY_PNGS key_count)
@@ -179,7 +183,7 @@ endif()
 # ── The Direct3D renderer (docs/renderer.md, src/d3d/NOTICE) ────
 
 if(NGB_NV2A_VK)
-    if(APPLE)
+    if(APPLE OR ANDROID)
         find_package(glslang CONFIG REQUIRED)
     endif()
     set(XRTP ${XBOXRECOMP_DIR}/third_party)
@@ -202,7 +206,7 @@ if(NGB_NV2A_VK)
     if(WIN32 AND XBOXRECOMP_WIN_VCPU)
         target_compile_definitions(ngb_d3d PRIVATE XBOX_WIN_VCPU)
     endif()
-    if(APPLE)
+    if(APPLE OR ANDROID)
         target_link_libraries(ngb_d3d PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
     endif()
     target_compile_features(ngb_d3d PRIVATE cxx_std_20)
@@ -221,7 +225,7 @@ target_compile_options(ngb_audio PRIVATE ${NGB_OPT_LEVEL} -fno-strict-aliasing)
 
 # ── Executable ──────────────────────────────────────────────────
 
-add_executable(${PROJECT_NAME}
+set(NGB_MAIN_SOURCES
     src/main.c
     src/recomp_manual.c
     src/fibers.c
@@ -232,11 +236,19 @@ add_executable(${PROJECT_NAME}
     $<$<BOOL:${NGB_NV2A_VK}>:${CMAKE_CURRENT_SOURCE_DIR}/src/bindings.c>
     src/install.c
     src/launch.c
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_main.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/touch_pad.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_install.c>
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
     $<TARGET_OBJECTS:ngb_audio>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
 )
+if(ANDROID)   # SDL's Java activity loads the game as libmain.so and calls its SDL_main (packaging/android)
+    add_library(${PROJECT_NAME} SHARED ${NGB_MAIN_SOURCES})
+else()
+    add_executable(${PROJECT_NAME} ${NGB_MAIN_SOURCES})
+endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
 if(WIN32)   # the resource script includes these: rebuilt when they change, not only ngb.rc
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc PROPERTIES OBJECT_DEPENDS
@@ -264,6 +276,9 @@ if(WIN32)
     if(MSVC)
         target_link_options(${PROJECT_NAME} PRIVATE /LARGEADDRESSAWARE)
     endif()
+elseif(ANDROID)
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME main)
+    target_link_libraries(${PROJECT_NAME} PRIVATE android log m SDL2::SDL2)
 else()
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${NGB_EXE_NAME})
     # -rdynamic: the crash handler names the faulting sub_XXXXXXXX via dladdr.
@@ -282,7 +297,7 @@ endif()
 
 function(ngb_arcade_program target output gen_dir xbe dsound)
     file(GLOB gen_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}/*.c")
-    if(NOT gen_sources OR NOT NGB_NV2A_VK)
+    if(NOT gen_sources OR NOT NGB_NV2A_VK OR ANDROID)   # (not on Android yet)
         return()
     endif()
     # with its DirectSound hooks (src/audio, tools/take_dsound.py trilogy|tomoe)
@@ -342,7 +357,7 @@ endfunction()
 ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe trilogy)
 ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe tomoe)
 
-if(NOT WIN32)
+if(NOT WIN32 AND NOT ANDROID)
     find_package(Qt6 QUIET COMPONENTS Widgets)
     if(Qt6_FOUND)
         set(CMAKE_AUTORCC ON)

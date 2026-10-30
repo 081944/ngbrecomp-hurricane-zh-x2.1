@@ -209,7 +209,7 @@ static const char *const s_prompts_ini[4] = { "auto", "xbox", "playstation", "pc
 void ngb_bind_defaults(void)
 {
     memset(s_invert, 0, sizeof s_invert);
-    s_third_start = 0;
+    s_third_start = 1;   /* (on from 0.9.45) */
     s_mouse_pct = 100;
     s_prompts = 0;
     for (int a = 0; a < A_COUNT; a++) {
@@ -373,6 +373,7 @@ static void save(void)
         return;
     fprintf(f, "# Ninja Gaiden Black controls in play (the Controls page writes this file):\n"
                "# action = key or mouse button, another, Pad <button>\n");
+    fprintf(f, "defaults = 1\n");   /* (the defaults it was written with: see ngb_bind_load) */
     for (int a = 0; a < A_COUNT; a++) {
         char k0[64], k1[64], p[64];
         ngb_bind_input_name(s_bind[a][0], k0, sizeof k0);
@@ -401,6 +402,7 @@ void ngb_bind_load(void)
     if (!f)
         return;
     int first_set = 0;   /* a file from before the views were separate: its choice holds for both */
+    int defaults = 0;
     while (fgets(line, sizeof line, f)) {
         char key[64], val[400];
         if (line[0] == '#' || sscanf(line, " %63[^= ] = %399[^\r\n]", key, val) != 2)
@@ -411,6 +413,10 @@ void ngb_bind_load(void)
         }
         if (!strcmp(key, "invert_first_person_x") || !strcmp(key, "third_person_on_load")) {
             (void)val;   /* Hurricane: x2.1's own camera option and third-person start instead */
+            continue;
+        }
+        if (!strcmp(key, "defaults")) {
+            defaults = atoi(val);
             continue;
         }
         if (!strcmp(key, "button_prompts")) {
@@ -446,6 +452,10 @@ void ngb_bind_load(void)
     fclose(f);
     if (!first_set)
         s_invert[1][0] = s_invert[0][0];
+    /* Start in Third Person is on from 0.9.45: a file from before (which always wrote it, off unless chosen)
+     * gets it on once */
+    if (defaults < 1)
+        s_third_start = 1;
     s_invert[1][1] = 0;   /* first-person up/down: the game's own Options > 1st Person Camera Control */
     identity_check();
     s_gen++;

@@ -28,6 +28,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 #include <sched.h>
 #include <fenv.h>
 #include <sys/mman.h>
@@ -819,9 +820,49 @@ BOOL ReleaseMutex(HANDLE h)
 /* Threads                                                               */
 /* ===================================================================== */
 
+/* A larger stack for signal handlers on this thread, where the C library gives a small one: Android's has a
+ * 16 KiB alternate stack on every thread (and its runtime's handlers take it), and the fault handlers --
+ * a device register's read or write, the crash report -- need more. Elsewhere nothing: the thread's stack. */
+#if defined(__ANDROID__)
+static pthread_key_t s_sigstack_key;
+static pthread_once_t s_sigstack_once = PTHREAD_ONCE_INIT;
+#define SIGSTACK_SIZE (256u << 10)
+
+static void sigstack_free(void *mem)
+{
+    stack_t off = { .ss_flags = SS_DISABLE };
+    sigaltstack(&off, NULL);
+    munmap(mem, SIGSTACK_SIZE);
+}
+
+static void sigstack_key_make(void)
+{
+    pthread_key_create(&s_sigstack_key, sigstack_free);
+}
+#endif
+
+void compat_signal_stack(void)
+{
+#if defined(__ANDROID__)
+    pthread_once(&s_sigstack_once, sigstack_key_make);
+    if (pthread_getspecific(s_sigstack_key))
+        return;
+    void *mem = mmap(NULL, SIGSTACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (mem == MAP_FAILED)
+        return;
+    stack_t ss = { .ss_sp = mem, .ss_size = SIGSTACK_SIZE };
+    if (sigaltstack(&ss, NULL) != 0) {
+        munmap(mem, SIGSTACK_SIZE);
+        return;
+    }
+    pthread_setspecific(s_sigstack_key, mem);
+#endif
+}
+
 static void *thread_trampoline(void *arg)
 {
     w32_object *o = (w32_object *)arg;
+    compat_signal_stack();
     t_self_obj = o;
     t_tid      = o->tid;
 
@@ -1110,7 +1151,9 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
 {
     w32_object *o = (w32_object *)h;
     if (!o || o->kind != K_THREAD) return FALSE;
+#if !defined(__ANDROID__)   /* (Android's C library has no cancellation: the thread is only marked ended) */
     pthread_cancel(o->thread);
+#endif
     pthread_mutex_lock(&o->lock);
     o->exit_code = exitCode;
     o->exited    = 1;
@@ -1185,6 +1228,7 @@ static void *timer_thread(void *arg)
 {
     w32_object *o = (w32_object *)arg;
     int once = (o->timer_period == 0);
+    compat_signal_stack();
 
     /* initial due time */
     if (o->timer_due) Sleep(o->timer_due);
@@ -1260,6 +1304,7 @@ struct w32_tp_args { PTP_SIMPLE_CALLBACK cb; PVOID ctx; };
 static void *w32_tp_trampoline(void *arg)
 {
     struct w32_tp_args *a = (struct w32_tp_args *)arg;
+    compat_signal_stack();
     a->cb(NULL, a->ctx);
     free(a);
     return NULL;
@@ -1717,6 +1762,9 @@ VOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 {
 #if defined(__APPLE__)
     memset_s(ptr, cnt, 0, cnt);
+#elif defined(__ANDROID__)
+    memset(ptr, 0, cnt);
+    __asm__ __volatile__("" : : "r"(ptr) : "memory");   /* (no explicit_bzero: kept from being dropped) */
 #else
     explicit_bzero(ptr, cnt);
 #endif
@@ -2025,6 +2073,8 @@ static int anon_map_fd(const char *name)
     int fd = shm_open(shm_name, O_CREAT | O_RDWR | O_EXCL, 0600);
     if (fd >= 0) shm_unlink(shm_name);
     return fd;
+#elif defined(__ANDROID__)
+    return (int)syscall(__NR_memfd_create, name ? name : "xbox_map", 0);   /* (the libc wrapper is API 30) */
 #else
     return memfd_create(name ? name : "xbox_map", 0);
 #endif
@@ -2348,6 +2398,9 @@ VOID RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR *args)
 #else
 #include <ucontext.h>
 #endif
+#if defined(__linux__) && defined(__aarch64__)
+#include <asm/sigcontext.h>   /* the signal frame's records (esr_context) */
+#endif
 
 /* Vectored exception handlers over sigaction.
  *
@@ -2372,6 +2425,12 @@ static void veh_ctx_from(CONTEXT *c, const ucontext_t *uc)
     c->Rsp = uc->uc_mcontext->__ss.__sp;
     c->Rbp = uc->uc_mcontext->__ss.__fp;
     c->native_context = (void *)uc;
+#elif defined(__aarch64__)
+    memset(c, 0, sizeof(*c));
+    c->Rip = uc->uc_mcontext.pc;
+    c->Rsp = uc->uc_mcontext.sp;
+    c->Rbp = uc->uc_mcontext.regs[29];
+    c->native_context = (void *)uc;
 #else
     const greg_t *g = uc->uc_mcontext.gregs;
     c->Rax = (uint64_t)g[REG_RAX]; c->Rcx = (uint64_t)g[REG_RCX];
@@ -2389,7 +2448,7 @@ static void veh_ctx_from(CONTEXT *c, const ucontext_t *uc)
 
 static void veh_ctx_to(ucontext_t *uc, const CONTEXT *c)
 {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__)
     /* The ARM64 decoder updates the native context directly. */
     (void)uc;
     (void)c;
@@ -2407,6 +2466,25 @@ static void veh_ctx_to(ucontext_t *uc, const CONTEXT *c)
     g[REG_EFL] = (greg_t)c->EFlags;
 #endif
 }
+
+#if defined(__linux__) && defined(__aarch64__)
+/* The fault's syndrome on Linux arm64: an esr_context record in the chain of _aarch64_ctx records
+ * (magic, size) in uc_mcontext.__reserved, which a zero magic ends. 0 when the kernel gave none. */
+static uint64_t veh_a64_esr(const ucontext_t *uc)
+{
+    const unsigned char *p = (const unsigned char *)uc->uc_mcontext.__reserved;
+    const unsigned char *end = p + sizeof(uc->uc_mcontext.__reserved);
+    while (p + sizeof(struct _aarch64_ctx) <= end) {
+        const struct _aarch64_ctx *h = (const struct _aarch64_ctx *)p;
+        if (!h->magic || h->size < sizeof(*h))
+            break;
+        if (h->magic == ESR_MAGIC)
+            return ((const struct esr_context *)p)->esr;
+        p += h->size;
+    }
+    return 0;
+}
+#endif
 
 static DWORD veh_code(int sig, const siginfo_t *si)
 {
@@ -2445,6 +2523,8 @@ static void veh_signal(int sig, siginfo_t *si, void *uc_)
         rec.NumberParameters = 2;
 #if defined(__APPLE__) && defined(__aarch64__)
         rec.ExceptionInformation[0] = (uc->uc_mcontext->__es.__esr >> 6) & 1;
+#elif defined(__aarch64__)
+        rec.ExceptionInformation[0] = (veh_a64_esr(uc) >> 6) & 1;   /* ESR's WnR: a write */
 #else
         /* Page-fault error code bit 1 is set for a write. */
         rec.ExceptionInformation[0] = (uc->uc_mcontext.gregs[REG_ERR] & 2) ? 1 : 0;

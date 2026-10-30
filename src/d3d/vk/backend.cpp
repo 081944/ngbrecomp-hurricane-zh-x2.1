@@ -428,6 +428,7 @@ private:
     // at scale_ times their size, small depth-only ones (shadow maps) at shadow_ times
     int scale_ = 1, shadow_ = 1, aniso_level_ = 0, msaa_ = 1;
     bool anisotropy_ = false;
+    bool bc_ = true;   // the GPU reads DXT (textureCompressionBC); without it (Mali, Adreno) DXT is decoded to BGRA
     bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
     float point_max_ = 1.0f;
     float view_yaw_ = 0, view_pitch_ = 0;   // NGB_D3D_VIEWLOG
@@ -701,11 +702,11 @@ bool VulkanBackend::CreateDevice() {
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     f2.pNext = &f13;
     f2.features.samplerAnisotropy = VK_TRUE;
-    f2.features.fillModeNonSolid = VK_TRUE;
-    f2.features.textureCompressionBC = VK_TRUE;
     {
         VkPhysicalDeviceFeatures have;
         vkGetPhysicalDeviceFeatures(phys_, &have);
+        f2.features.fillModeNonSolid = have.fillModeNonSolid;
+        f2.features.textureCompressionBC = have.textureCompressionBC;
         f2.features.wideLines = have.wideLines;
         f2.features.largePoints = have.largePoints;
     }
@@ -765,6 +766,8 @@ bool VulkanBackend::FinishDevice() {
     VkPhysicalDeviceFeatures feat;
     vkGetPhysicalDeviceFeatures(phys_, &feat);   // both devices enable it when it is there
     anisotropy_ = feat.samplerAnisotropy == VK_TRUE;
+    bc_ = feat.textureCompressionBC == VK_TRUE;
+    if (!bc_) std::fprintf(stderr, "[D3D] no DXT on this GPU: decoded to BGRA as they are made\n");
     wide_lines_ = feat.wideLines == VK_TRUE;
     line_max_ = pr.limits.lineWidthRange[1];
     point_max_ = feat.largePoints == VK_TRUE ? pr.limits.pointSizeRange[1] : 1.0f;
@@ -1972,6 +1975,8 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     if (tx.img.image) Retire(tx.img);   // made again: the old one goes when no frame in flight uses it
     uint32_t faces = d.cube ? 6 : 1;
     VkFormat fmt = TextureFormat(fi.host);
+    bool decode_bc = bc && !bc_;
+    if (decode_bc) fmt = kColorFormat;
     uint32_t levels = d.levels;
     std::vector<uint8_t> top;
     tx.gen = 0;
@@ -2031,7 +2036,14 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         for (uint32_t l = 0; l < d.levels; l++) {
             uint32_t pitch = 0;
             if (tx.gen == 1) out = top;   // the top level as decoded above (BGRA)
-            else DecodeLevel(d, l, f, guest, palette, out, pitch);
+            else {
+                DecodeLevel(d, l, f, guest, palette, out, pitch);
+                if (decode_bc && !out.empty()) {
+                    std::vector<uint8_t> raw;
+                    raw.swap(out);
+                    DecodeBC(fi.host, raw.data(), std::max(d.width >> l, 1u), std::max(d.height >> l, 1u), out);
+                }
+            }
             if (out.empty()) continue;
             if (bump_src && l == 0 && f == 0 && bumpcheck_) tx.check = out;
             if (bump_src && f == 0 && (l == 0 || std::getenv("NGB_D3D_BUMPLOG"))) {   // a bump map's first upload: its values, in the log (#16: they differ by machine)

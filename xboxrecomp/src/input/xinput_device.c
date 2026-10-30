@@ -368,6 +368,11 @@ static int SDLCALL pad_event_watch(void *unused, SDL_Event *ev)
         __atomic_store_n(&g_hotplug, 1, __ATOMIC_RELEASE);
         break;
     case SDL_KEYDOWN:
+#ifdef __ANDROID__   /* (its back gesture and volume keys come as keys too: not a keyboard in use) */
+        if (ev->key.keysym.scancode == SDL_SCANCODE_AC_BACK || ev->key.keysym.scancode == SDL_SCANCODE_VOLUMEUP ||
+            ev->key.keysym.scancode == SDL_SCANCODE_VOLUMEDOWN)
+            break;
+#endif
         if (!ev->key.repeat)
             set_kbm(1);
         break;
@@ -398,7 +403,18 @@ static int SDLCALL pad_event_watch(void *unused, SDL_Event *ev)
 int xbox_InputKeyboardActive(void)
 {
     int v = __atomic_load_n(&g_kbm_active, __ATOMIC_ACQUIRE);
+#ifdef __ANDROID__
+    return v > 0;   /* (no controller there is the touch controls, a pad: the keyboard once a key is pressed) */
+#else
     return v < 0 ? !xbox_InputControllerPresent() : v;
+#endif
+}
+
+/* The touch controls were used (a title's own, on Android): the pad's prompts again, as a controller's would */
+void xbox_InputTouchUsed(void)
+{
+    if (__atomic_load_n(&g_kbm_active, __ATOMIC_ACQUIRE) != 0)
+        set_kbm(0);
 }
 
 /* The pad in use (last touched; before any, the first connected) is a PlayStation one -- a DualShock 3 or 4,

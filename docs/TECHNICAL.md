@@ -76,6 +76,40 @@ storage must be keyed on `_MSC_VER`); `<windows.h>` is in every file there (its 
 macros); Windows sleeps in milliseconds, so sub-millisecond waits use a high-resolution waitable
 timer (`vcpu_nap_us`). Under Proton, `XDG_CONFIG_HOME` and `SDL_AUDIODRIVER` do not reach the game.
 
+## Android (experimental)
+
+The same code for arm64, built with the NDK (`packaging/android/build.sh`): SDL's Java activity loads the
+game as `libmain.so` (`src/android_main.c` sets its folders from the environment as on Linux, under the
+app's folder on shared storage, and sends the log to `log.txt` and logcat; an `env.txt` there sets
+environment variables, a `settings.ini` put there replaces the settings at the next start). What differs
+from Linux x86-64:
+
+- **The CPU:** the guest's registers and the trapped device registers (the GPU's, the APU's) go through
+  the arm64 paths the macOS port brought, opened to Linux arm64: the fault's write bit from the ESR record
+  in the signal frame, the A64 load/store decoder (`platform/mmio_decode_a64.h`), the AAPCS64 fiber
+  switch with ELF names (`src/fibers.c`). Fault handlers get a 256 KiB signal stack per guest thread
+  (`compat_signal_stack`): the C library's is 16 KiB. Bionic lacks `memfd_create` before API 30 (the
+  syscall), `pthread_cancel`, `explicit_bzero` and, before API 33, `backtrace`
+  (`platform/android_backtrace.h`, from the unwinder).
+- **The clocks:** the guest threads take turns on one virtual CPU, so no core looks busy and the governor
+  kept them at 0.7-1.1 GHz: 50 ms frames on a Pixel 9a. Each frame reports its time to Android's
+  performance hints (API 33+, `ngb_android_frame`), which raise them: 60 fps.
+- **The GPU:** xemu's renderer is asked for none of the draw features Mali and Adreno lack (as on
+  macOS: the Direct3D renderer draws); DXT textures are decoded to BGRA as they are made where the GPU
+  has no BC formats (`bc_`, `src/d3d/vk/backend.cpp`); the swapchain is made upright with the system
+  turning it (`s_system_turns`); glslang is built with HLSL input. GLib is replaced by the slice of it the
+  NV2A code uses (`xboxrecomp/src/nv2a_vk/shim/glib-lite`).
+- **Input:** touch controls (`src/touch_pad.c`): an Xbox 360 pad of embedded sprites, drawn by the
+  presenter over the whole window (`layer_draw`, a premultiplied picture blended by one draw), read into
+  the keyboard's pad state while no controller is connected and taken through the pad's bindings. The
+  prompts are the pad's until a key is pressed.
+- **The first start:** with storage access granted (`NgbActivity.java`), the disc image is found in
+  `NinjaGaidenBlack`, `Download` or the top of the storage and installed into the app's folder
+  (`src/android_install.c`, `src/install.c`); there is no unpacker, so `.7z`/`.zip` must be unpacked first.
+- **Defaults:** fullscreen, the Multithreaded Renderer on (60 fps against 42-58 without on a Pixel 9a).
+  The arcade programs and Return to Main Menu's restart are not there yet (no programs to start beside
+  the app).
+
 ## Presentation
 
 The game's frame clock is the emulated display's 60 Hz vblank. Each picture the renderer finishes

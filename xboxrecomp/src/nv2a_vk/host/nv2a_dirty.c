@@ -44,6 +44,7 @@ static void mprotect(void *addr, size_t len, int prot)
 }
 #else
 #include <sys/mman.h>
+#include <unistd.h>
 #endif
 
 #include "platform/xbox_winnt.h"
@@ -280,14 +281,15 @@ static void protect_changed(void *host, size_t len)
 
 void nv2a_dirty_init(void *base, size_t size, void *alias, size_t alias_size)
 {
-#ifdef __APPLE__
-    /* Guest 4 KB pages share 16 KB host pages. Keep conservative dirty answers
-     * until the protection tracker groups pages at the host granularity. */
-    s_enabled = 0;
-#else
+    /* Guest 4 KB pages sharing larger host pages (Apple silicon, 16 KB Android and Linux kernels): conservative
+     * dirty answers until the protection tracker groups pages at the host granularity. */
     const char *e = getenv("NV2A_DIRTY_TRACK");
-    s_enabled = !(e && *e == '0');
+#ifdef _WIN32
+    long host_page = 4096;
+#else
+    long host_page = sysconf(_SC_PAGESIZE);
 #endif
+    s_enabled = !(e && *e == '0') && host_page == PAGE;
     if (!s_enabled)
         return;
     s_base = base;

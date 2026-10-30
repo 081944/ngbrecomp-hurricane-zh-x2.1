@@ -45,6 +45,8 @@ static VkSemaphore s_render_done[MAX_SWAP_IMAGES];
 static uint32_t s_image_count;
 static VkFormat s_format;
 static VkExtent2D s_extent;
+static bool s_system_turns;   /* the system turns the pictures for the display (swapchain_create) */
+static bool s_swapchain_color;   /* its images can be drawn into (the overlay picture, layer_draw) */
 
 static VkCommandPool s_pool = VK_NULL_HANDLE;
 static VkCommandBuffer s_cmd[FRAMES_IN_FLIGHT];
@@ -338,6 +340,319 @@ static void fps_init(PGRAPHVkState *r)
     }
 }
 
+/* ---- A picture over the whole window (a title's touch controls) ----
+ * A title may give one (nv2a_overlay_picture; by default none): premultiplied BGRA of any size, blended over
+ * each frame across the whole window -- the bars beside the game's picture too -- by one draw of its own
+ * after the frame's copy. Made again only when the title's serial says it changed; nothing is made, nor
+ * anything kept for it, while the title wants none (nv2a_layer_wanted). */
+__attribute__((weak)) bool nv2a_layer_wanted(void)
+{
+    return false;
+}
+
+__attribute__((weak)) bool nv2a_overlay_picture(uint32_t win_w, uint32_t win_h, uint32_t *px, size_t max,
+                                                uint32_t *ow, uint32_t *oh, unsigned *serial)
+{
+    (void)win_w; (void)win_h; (void)px; (void)max; (void)ow; (void)oh; (void)serial;
+    return false;
+}
+
+#define LAYER_MAX_PX (2048u * 1152u)
+static struct {
+    int state;                          /* 0 not tried, 1 ready, -1 not possible */
+    VkBuffer buf[FRAMES_IN_FLIGHT];
+    VmaAllocation buf_mem[FRAMES_IN_FLIGHT];
+    void *ptr[FRAMES_IN_FLIGHT];
+    VkImage img;
+    VmaAllocation img_mem;
+    VkImageView view;
+    uint32_t w, h;
+    bool valid;                         /* it holds a picture (and is in SHADER_READ_ONLY) */
+    unsigned serial;
+    VkSampler sampler;
+    VkDescriptorSetLayout dsl;
+    VkPipelineLayout layout;
+    VkDescriptorPool pool;
+    VkDescriptorSet set;
+    VkPipeline pipe;
+    VkFormat pipe_format;
+    VkImageView views[MAX_SWAP_IMAGES];
+    VkSwapchainKHR views_of;
+} s_layer;
+
+static void layer_drop_views(PGRAPHVkState *r)
+{
+    for (int i = 0; i < MAX_SWAP_IMAGES; i++)
+        if (s_layer.views[i]) {
+            vkDestroyImageView(r->device, s_layer.views[i], NULL);
+            s_layer.views[i] = VK_NULL_HANDLE;
+        }
+    s_layer.views_of = VK_NULL_HANDLE;
+}
+
+static bool layer_init(PGRAPHVkState *r)
+{
+    if (s_layer.state)
+        return s_layer.state > 0;
+    s_layer.state = -1;
+    if (!vkCmdBeginRendering)
+        return false;   /* (dynamic rendering: Vulkan 1.3) */
+    for (int i = 0; i < FRAMES_IN_FLIGHT; i++) {
+        VkBufferCreateInfo bi = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = (VkDeviceSize)LAYER_MAX_PX * 4,
+            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        };
+        VmaAllocationCreateInfo ai = {
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+            .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        };
+        VmaAllocationInfo info;
+        if (vmaCreateBuffer(r->allocator, &bi, &ai, &s_layer.buf[i], &s_layer.buf_mem[i], &info) != VK_SUCCESS)
+            return false;
+        s_layer.ptr[i] = info.pMappedData;
+    }
+    VkSamplerCreateInfo sci = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR, .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    };
+    VkDescriptorSetLayoutBinding b = {
+        .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    VkDescriptorSetLayoutCreateInfo dli = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &b,
+    };
+    VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+    VkDescriptorPoolCreateInfo pci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &ps,
+    };
+    if (vkCreateSampler(r->device, &sci, NULL, &s_layer.sampler) != VK_SUCCESS ||
+        vkCreateDescriptorSetLayout(r->device, &dli, NULL, &s_layer.dsl) != VK_SUCCESS ||
+        vkCreateDescriptorPool(r->device, &pci, NULL, &s_layer.pool) != VK_SUCCESS)
+        return false;
+    VkDescriptorSetAllocateInfo dai = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, .descriptorPool = s_layer.pool,
+        .descriptorSetCount = 1, .pSetLayouts = &s_layer.dsl,
+    };
+    VkPipelineLayoutCreateInfo pli = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &s_layer.dsl,
+    };
+    if (vkAllocateDescriptorSets(r->device, &dai, &s_layer.set) != VK_SUCCESS ||
+        vkCreatePipelineLayout(r->device, &pli, NULL, &s_layer.layout) != VK_SUCCESS)
+        return false;
+    s_layer.state = 1;
+    return true;
+}
+
+/* The pipeline for the swapchain's format: one triangle over the window, the picture blended premultiplied */
+static bool layer_pipeline(PGRAPHVkState *r)
+{
+    if (s_layer.pipe && s_layer.pipe_format == s_format)
+        return true;
+    if (s_layer.pipe)
+        vkDestroyPipeline(r->device, s_layer.pipe, NULL);
+    s_layer.pipe = VK_NULL_HANDLE;
+    ShaderModuleInfo *vs = pgraph_vk_create_shader_module_from_glsl(r, VK_SHADER_STAGE_VERTEX_BIT,
+        "#version 450\n"
+        "layout(location = 0) out vec2 uv;\n"
+        "void main() { vec2 p = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);\n"
+        "  uv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }\n");
+    ShaderModuleInfo *fs = pgraph_vk_create_shader_module_from_glsl(r, VK_SHADER_STAGE_FRAGMENT_BIT,
+        "#version 450\n"
+        "layout(set = 0, binding = 0) uniform sampler2D tex;\n"
+        "layout(location = 0) in vec2 uv;\n"
+        "layout(location = 0) out vec4 color;\n"
+        "void main() { color = texture(tex, uv); }\n");
+    if (!vs || !fs)
+        return false;
+    VkPipelineShaderStageCreateInfo st[2] = {
+        { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT,
+          .module = vs->module, .pName = "main" },
+        { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+          .module = fs->module, .pName = "main" },
+    };
+    VkPipelineVertexInputStateCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    VkPipelineInputAssemblyStateCreateInfo ia = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    VkPipelineViewportStateCreateInfo vp = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1,
+    };
+    VkPipelineRasterizationStateCreateInfo rs = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL, .cullMode = VK_CULL_MODE_NONE, .lineWidth = 1.0f,
+    };
+    VkPipelineMultisampleStateCreateInfo ms = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    VkPipelineColorBlendAttachmentState ba = {
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE, .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE, .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = 0xF,
+    };
+    VkPipelineColorBlendStateCreateInfo cb = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .attachmentCount = 1, .pAttachments = &ba,
+    };
+    VkDynamicState dyn[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo ds = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = 2, .pDynamicStates = dyn,
+    };
+    VkPipelineRenderingCreateInfo rinfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1, .pColorAttachmentFormats = &s_format,
+    };
+    VkGraphicsPipelineCreateInfo gi = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &rinfo,
+        .stageCount = 2, .pStages = st, .pVertexInputState = &vi, .pInputAssemblyState = &ia,
+        .pViewportState = &vp, .pRasterizationState = &rs, .pMultisampleState = &ms, .pColorBlendState = &cb,
+        .pDynamicState = &ds, .layout = s_layer.layout,
+    };
+    VkResult res = vkCreateGraphicsPipelines(r->device, VK_NULL_HANDLE, 1, &gi, NULL, &s_layer.pipe);
+    pgraph_vk_destroy_shader_module(r, vs);
+    pgraph_vk_destroy_shader_module(r, fs);
+    if (res != VK_SUCCESS) {
+        s_layer.pipe = VK_NULL_HANDLE;
+        return false;
+    }
+    s_layer.pipe_format = s_format;
+    return true;
+}
+
+/* The picture's image, made again when its size changes (nothing in flight uses the old one then) */
+static bool layer_image(PGRAPHVkState *r, uint32_t w, uint32_t h)
+{
+    if (s_layer.img && s_layer.w == w && s_layer.h == h)
+        return true;
+    if (s_layer.img) {
+        nv2a_vk_queue_lock();
+        vkDeviceWaitIdle(r->device);
+        nv2a_vk_queue_unlock();
+        vkDestroyImageView(r->device, s_layer.view, NULL);
+        vmaDestroyImage(r->allocator, s_layer.img, s_layer.img_mem);
+        s_layer.img = VK_NULL_HANDLE;
+    }
+    VkImageCreateInfo ii = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM, .extent = { w, h, 1 }, .mipLevels = 1, .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+    };
+    VmaAllocationCreateInfo ai = { .usage = VMA_MEMORY_USAGE_AUTO };
+    if (vmaCreateImage(r->allocator, &ii, &ai, &s_layer.img, &s_layer.img_mem, NULL) != VK_SUCCESS) {
+        s_layer.img = VK_NULL_HANDLE;
+        return false;
+    }
+    VkImageViewCreateInfo vi = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = s_layer.img,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+    };
+    if (vkCreateImageView(r->device, &vi, NULL, &s_layer.view) != VK_SUCCESS) {
+        vmaDestroyImage(r->allocator, s_layer.img, s_layer.img_mem);
+        s_layer.img = VK_NULL_HANDLE;
+        return false;
+    }
+    VkDescriptorImageInfo di = { s_layer.sampler, s_layer.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkWriteDescriptorSet wr = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = s_layer.set, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &di,
+    };
+    vkUpdateDescriptorSets(r->device, 1, &wr, 0, NULL);
+    s_layer.w = w;
+    s_layer.h = h;
+    s_layer.valid = false;   /* (its contents still to come) */
+    return true;
+}
+
+static void barrier(VkCommandBuffer cmd, VkImage img, VkImageLayout from,
+                    VkImageLayout to, VkAccessFlags src, VkAccessFlags dst,
+                    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage);
+
+/* Over the swapchain image idx (in TRANSFER_DST, and left there) */
+static void layer_draw(PGRAPHVkState *r, VkCommandBuffer cmd, unsigned f, uint32_t idx)
+{
+    uint32_t w = 0, h = 0;
+    if (!s_swapchain_color || !nv2a_layer_wanted() || !layer_init(r))
+        return;
+    /* (no picture in the image yet, or one of another size: drawn whatever the serial) */
+    unsigned serial = s_layer.valid ? s_layer.serial : 0;
+    if (!nv2a_overlay_picture(s_extent.width, s_extent.height, s_layer.ptr[f], LAYER_MAX_PX, &w, &h, &serial) ||
+        !w || !h)
+        return;
+    if (s_layer.img && (s_layer.w != w || s_layer.h != h)) {
+        s_layer.valid = false;   /* (this frame's buffer holds a picture of the old size: again next frame) */
+        layer_image(r, w, h);
+        return;
+    }
+    if (!layer_image(r, w, h) || !layer_pipeline(r))
+        return;
+    if (!s_layer.valid || serial != s_layer.serial) {   /* new contents: in this frame's buffer now */
+        vmaFlushAllocation(r->allocator, s_layer.buf_mem[f], 0, VK_WHOLE_SIZE);
+        barrier(cmd, s_layer.img, s_layer.valid ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferImageCopy c = {
+            .bufferRowLength = w,
+            .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+            .imageExtent = { w, h, 1 },
+        };
+        vkCmdCopyBufferToImage(cmd, s_layer.buf[f], s_layer.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+        barrier(cmd, s_layer.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        s_layer.serial = serial;
+        s_layer.valid = true;
+    }
+    if (s_layer.views_of != s_swapchain) {
+        layer_drop_views(r);
+        for (uint32_t i = 0; i < s_image_count; i++) {
+            VkImageViewCreateInfo vi = {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = s_images[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = s_format,
+                .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+            };
+            if (vkCreateImageView(r->device, &vi, NULL, &s_layer.views[i]) != VK_SUCCESS)
+                s_layer.views[i] = VK_NULL_HANDLE;
+        }
+        s_layer.views_of = s_swapchain;
+    }
+    if (!s_layer.views[idx])
+        return;
+    barrier(cmd, s_images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    VkRenderingAttachmentInfo ca = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = s_layer.views[idx],
+        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    };
+    VkRenderingInfo ri = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, s_extent }, .layerCount = 1,
+        .colorAttachmentCount = 1, .pColorAttachments = &ca,
+    };
+    vkCmdBeginRendering(cmd, &ri);
+    VkViewport v = { 0, 0, (float)s_extent.width, (float)s_extent.height, 0, 1 };
+    VkRect2D sc = { { 0, 0 }, s_extent };
+    vkCmdSetViewport(cmd, 0, 1, &v);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, s_layer.pipe);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, s_layer.layout, 0, 1, &s_layer.set, 0, NULL);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRendering(cmd);
+    barrier(cmd, s_images[idx], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+}
+
 /* ---- Window (host main thread) ---- */
 
 /* Display modes: 0 a window, 1 fullscreen (the desktop's), 2 borderless
@@ -358,8 +673,8 @@ int nv2a_window_create(const char *title, int width, int height,
 {
     /* Native Wayland when the session has it, X11 otherwise. SDL2 picks
      * X11 first, so on a Wayland desktop the game went through XWayland.
-     * SDL_VIDEODRIVER still overrides. (Windows has its one driver.) */
-#if defined(__linux__)
+     * SDL_VIDEODRIVER still overrides. (Windows and Android have their one driver.) */
+#if defined(__linux__) && !defined(__ANDROID__)
     if (!getenv("SDL_VIDEODRIVER")) {
         /* Under gamescope (the Steam Deck's Game Mode) X11: its frame
          * counting -- the performance overlay's frame rate and frame times
@@ -646,6 +961,7 @@ static void destroy_swapchain(PGRAPHVkState *r)
     nv2a_vk_queue_lock();
     vkDeviceWaitIdle(r->device);
     nv2a_vk_queue_unlock();
+    layer_drop_views(r);
     for (uint32_t i = 0; i < s_image_count; i++) {
         vkDestroySemaphore(r->device, s_render_done[i], NULL);
         s_render_done[i] = VK_NULL_HANDLE;
@@ -726,6 +1042,31 @@ static bool create_swapchain(PGRAPHVkState *r)
     }
     if (!s_extent.width || !s_extent.height)
         return false;   /* minimised */
+    /* Pictures as they are shown, the system turning them: a phone held sideways reports its surface turned
+     * (Android), and handing that turn on would leave the turning to us. The window's size is the picture's
+     * then, and presenting reports "suboptimal" every frame for it, which is not a reason to rebuild. */
+    VkSurfaceTransformFlagBitsKHR pre = caps.currentTransform;
+    s_system_turns = false;
+    if (pre != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR &&
+        (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)) {
+        int w, h;
+        SDL_Vulkan_GetDrawableSize(s_window, &w, &h);
+        if (w > 0 && h > 0) {
+            s_extent.width = (uint32_t)w < caps.minImageExtent.width ? caps.minImageExtent.width
+                           : (uint32_t)w > caps.maxImageExtent.width ? caps.maxImageExtent.width : (uint32_t)w;
+            s_extent.height = (uint32_t)h < caps.minImageExtent.height ? caps.minImageExtent.height
+                            : (uint32_t)h > caps.maxImageExtent.height ? caps.maxImageExtent.height : (uint32_t)h;
+        }
+        pre = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+        s_system_turns = true;
+    }
+
+    /* drawn into as well where a picture goes over it (layer_draw: the touch controls, Android only) */
+#ifdef __ANDROID__
+    VkImageUsageFlags color_usage = caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+#else
+    VkImageUsageFlags color_usage = 0;
+#endif
 
     {
         VkPresentModeKHR mode = choose_present_mode(r);
@@ -746,9 +1087,9 @@ static bool create_swapchain(PGRAPHVkState *r)
             .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
             .imageExtent = s_extent,
             .imageArrayLayers = 1,
-            .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | color_usage,
             .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .preTransform = caps.currentTransform,
+            .preTransform = pre,
             .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
             .presentMode = mode,
             .clipped = VK_TRUE,
@@ -769,11 +1110,13 @@ static bool create_swapchain(PGRAPHVkState *r)
         nv2a_vk_queue_lock();
         vkDeviceWaitIdle(r->device);
         nv2a_vk_queue_unlock();
+        layer_drop_views(r);
         for (uint32_t i = 0; i < s_image_count; i++)
             vkDestroySemaphore(r->device, s_render_done[i], NULL);
         vkDestroySwapchainKHR(r->device, old, NULL);
     }
 
+    s_swapchain_color = color_usage != 0;
     s_image_count = MAX_SWAP_IMAGES;
     vkGetSwapchainImagesKHR(r->device, s_swapchain, &s_image_count, s_images);
     for (uint32_t i = 0; i < s_image_count; i++) {
@@ -1141,7 +1484,7 @@ static void present_pixels(PGRAPHVkState *r, VkBuffer buf, int w, int h)
     };
     res = vkQueuePresentKHR(r->queue, &pi);
     nv2a_vk_queue_unlock();
-    if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
+    if (res == VK_ERROR_OUT_OF_DATE_KHR || (res == VK_SUBOPTIMAL_KHR && !s_system_turns))
         s_resized = true;
 }
 
@@ -1536,6 +1879,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         vkCmdCopyBufferToImage(cmd, s_ovl_buf[f], s_images[idx],
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     }
+    layer_draw(r, cmd, f, idx);
 
     barrier(cmd, s_images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
@@ -1568,7 +1912,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         };
         res = vkQueuePresentKHR(r->queue, &pi);
         nv2a_vk_queue_unlock();
-        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
+        if (res == VK_ERROR_OUT_OF_DATE_KHR || (res == VK_SUBOPTIMAL_KHR && !s_system_turns))
             s_resized = true;
     }
     lat_note(ext);

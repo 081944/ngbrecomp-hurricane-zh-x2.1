@@ -163,6 +163,7 @@ DWORD WaitForMultipleObjectsEx(DWORD count, const HANDLE *handles, BOOL waitAll,
  * suspended thread runs no more of the title's code until resumed. Host code
  * that calls back into guest code brackets it with compat_guest_enter/leave
  * so the guest part stays suspendable. */
+void compat_signal_stack(void);   /* this thread's signal handlers on a larger stack (Android) */
 void compat_host_enter(void);
 void compat_host_leave(void);
 int  compat_guest_enter(void);

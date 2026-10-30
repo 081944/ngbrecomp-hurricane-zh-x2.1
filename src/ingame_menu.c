@@ -560,7 +560,9 @@ void ngb_keep_game_for_restart(void);   /* src/main.c */
 static void restart_program(void)
 {
     ngb_keep_game_for_restart();
-#if !defined(_WIN32)
+#if defined(__ANDROID__)
+    fprintf(stderr, "[MENU] Android: no starting again yet; exiting\n");   /* (the program is the app's process) */
+#elif !defined(_WIN32)
     char self[4096];
     long n = ngb_exe_path(self, sizeof self);
     if (n > 0 && s_argv) {
