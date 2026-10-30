@@ -143,6 +143,7 @@ int ngb_pc_setting(int which)
     case 31: return s_running.intercept;
     case 33: return s_running.essence_charging;
     case 34: return s_running.skip_cutscenes;
+    case 35: return s_running.gpu_driver;
     case 25: return s_running.audio_output;
     default: return s_running.show_fps;
     }
@@ -182,6 +183,7 @@ void ngb_pc_set_setting(int which, int value)
     case 31: s_running.intercept = value < 0 ? 0 : value > 2 ? 2 : value; break;
     case 33: s_running.essence_charging = !!value; break;
     case 34: s_running.skip_cutscenes = !!value; break;
+    case 35: s_running.gpu_driver = value < 0 ? 0 : value > 2 ? 2 : value; break;   /* at the next start */
     case 25:   /* the mixer's at the next start; the arcade's at its next */
         s_running.audio_output = value < 0 ? 0 : value > 2 ? 2 : value;
         ngb_audio_set_output(s_running.audio_output);
@@ -1755,11 +1757,20 @@ bool nv2a_overlay_frame(uint32_t *px, int w, int h, const uint32_t *backdrop)
 _Noreturn void ngb_renderer_fatal(const char *detail)
 {
     char msg[1024];
+#ifdef __ANDROID__
+    snprintf(msg, sizeof msg,
+             "Ninja Gaiden Black needs a phone GPU whose Vulkan driver has dynamic rendering, "
+             "synchronization2 and push descriptors (Vulkan 1.3, or those as extensions), and this phone's "
+             "does not:\n\n%s\n\n"
+             "A system update sometimes brings a newer driver. Please report your phone's model and chip on "
+             "the project's GitHub page.", detail);
+#else
     snprintf(msg, sizeof msg,
              "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3 (dynamic rendering and push "
              "descriptors), and this system does not offer it:\n\n%s\n\n"
              "Please update your graphics driver. GPUs from before about 2016 (for example Nvidia's "
              "GTX 600 and 700 series) are not supported.", detail);
+#endif
     fprintf(stderr, "[D3D] %s\n", msg);
     fflush(stderr);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ninja Gaiden Black", msg, NULL);

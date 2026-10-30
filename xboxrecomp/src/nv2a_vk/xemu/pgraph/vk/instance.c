@@ -33,6 +33,16 @@ static bool enable_validation = false;
 static nv2a_vk_shared s_shared;
 static int s_shared_state;          /* 0 not yet, 1 up, -1 none */
 static bool s_push_descriptor_enabled;
+/* xboxrecomp: a driver short of Vulkan 1.3 (Qualcomm's for Adreno 6xx, 1.1 or 1.2) may have its dynamic
+ * rendering and synchronization2 as extensions: what the Direct3D renderer needs, the same. */
+static bool s_dynamic_rendering_ext, s_sync2_ext;
+
+/* xboxrecomp: a Vulkan loader of the host's own choosing, its vkGetInstanceProcAddr (Android: Turnip, Mesa's
+ * driver for Adreno, through libadrenotools: ngb-recomp's src/android_gpu.c); by default none, the system's. */
+__attribute__((weak)) PFN_vkGetInstanceProcAddr nv2a_vk_custom_loader(void)
+{
+    return NULL;
+}
 static GMutex s_queue_lock;
 
 int nv2a_vk_share(nv2a_vk_shared *out)
@@ -182,7 +192,13 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
     PGRAPHVkState *r = pg->vk_renderer_state;
     VkResult result;
 
-    result = volkInitialize();
+    PFN_vkGetInstanceProcAddr custom = nv2a_vk_custom_loader();
+    if (custom) {
+        volkInitializeCustom(custom);
+        result = VK_SUCCESS;
+    } else {
+        result = volkInitialize();
+    }
     if (result != VK_SUCCESS) {
         error_setg(errp, "volkInitialize failed");
         return false;
@@ -192,6 +208,10 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
     if (vkEnumerateInstanceVersion) {
         vkEnumerateInstanceVersion(&instance_version);
         instance_version = MIN(instance_version, VK_API_VERSION_1_3);
+        /* xboxrecomp: NV2A_VK_NO13=1 asks for 1.2 at most, so a 1.3 driver takes the extensions' path the
+         * Adreno 6xx drivers need (testing it on the desktop) */
+        if (getenv("NV2A_VK_NO13"))
+            instance_version = MIN(instance_version, VK_API_VERSION_1_2);
     }
     if (instance_version < VK_API_VERSION_1_1) {
         error_setg(errp, "Vulkan 1.1 or higher is required");
@@ -390,6 +410,19 @@ static void add_optional_device_extension_names(
     s_push_descriptor_enabled = add_extension_if_available(
         available_extensions, enabled_extension_names,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+    s_dynamic_rendering_ext = s_sync2_ext = false;
+    if (r->vk_api_version < VK_API_VERSION_1_3) {   /* (the device's version, or less: NV2A_VK_NO13) */
+        if (r->vk_api_version < VK_API_VERSION_1_2) {   /* (what dynamic rendering needs, core in 1.2) */
+            add_extension_if_available(available_extensions, enabled_extension_names,
+                                       VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
+            add_extension_if_available(available_extensions, enabled_extension_names,
+                                       VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME);
+        }
+        s_dynamic_rendering_ext = add_extension_if_available(
+            available_extensions, enabled_extension_names, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        s_sync2_ext = add_extension_if_available(
+            available_extensions, enabled_extension_names, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    }
 }
 
 static bool check_device_support_required_extensions(VkPhysicalDevice device)
@@ -623,6 +656,26 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         features13.pNext = next_struct;
         next_struct = &features13;
     }
+    VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
+    };
+    VkPhysicalDeviceSynchronization2FeaturesKHR sync2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR,
+    };
+    bool via_extensions = false;
+    if (!have13 && s_dynamic_rendering_ext && s_sync2_ext) {
+        dynamic_rendering.pNext = &sync2;
+        VkPhysicalDeviceFeatures2 f2 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = &dynamic_rendering,
+        };
+        vkGetPhysicalDeviceFeatures2(r->physical_device, &f2);
+        via_extensions = have13 = dynamic_rendering.dynamicRendering && sync2.synchronization2;
+        if (have13) {
+            sync2.pNext = next_struct;
+            next_struct = &dynamic_rendering;
+        }
+    }
     s_shared.features13 = have13 && s_push_descriptor_enabled;
 
     VkPhysicalDeviceCustomBorderColorFeaturesEXT custom_border_features;
@@ -660,11 +713,20 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
     }
 
     vkGetDeviceQueue(r->device, indices.queue_family, 0, &r->queue);
+    if (via_extensions) {   /* (the core names the renderers call, at the extensions' functions) */
+        vkCmdBeginRendering = (PFN_vkCmdBeginRendering)vkGetDeviceProcAddr(r->device, "vkCmdBeginRenderingKHR");
+        vkCmdEndRendering = (PFN_vkCmdEndRendering)vkGetDeviceProcAddr(r->device, "vkCmdEndRenderingKHR");
+        vkCmdPipelineBarrier2 =
+            (PFN_vkCmdPipelineBarrier2)vkGetDeviceProcAddr(r->device, "vkCmdPipelineBarrier2KHR");
+        fprintf(stderr, "Vulkan 1.3's dynamic rendering and synchronization2 through extensions (Vulkan %u.%u)\n",
+                VK_API_VERSION_MAJOR(r->vk_api_version), VK_API_VERSION_MINOR(r->vk_api_version));
+    }
     s_shared.instance = r->instance;
     s_shared.physical_device = r->physical_device;
     s_shared.device = r->device;
     s_shared.queue_family = indices.queue_family;
     s_shared.queue = r->queue;
+    s_shared.api_version = r->vk_api_version;
     return true;
 }
 

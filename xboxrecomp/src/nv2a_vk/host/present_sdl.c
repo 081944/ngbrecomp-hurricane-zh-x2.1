@@ -25,6 +25,9 @@
 #include <SDL.h>
 #include <pthread.h>
 #include <SDL_vulkan.h>
+#ifdef __ANDROID__
+#include <SDL_syswm.h>   /* (the window's ANativeWindow: its Vulkan surface) */
+#endif
 
 #define FRAMES_IN_FLIGHT 2
 #define MAX_SWAP_IMAGES 8
@@ -395,8 +398,9 @@ static bool layer_init(PGRAPHVkState *r)
     if (s_layer.state)
         return s_layer.state > 0;
     s_layer.state = -1;
-    if (!vkCmdBeginRendering)
-        return false;   /* (dynamic rendering: Vulkan 1.3) */
+    nv2a_vk_shared sh;   /* (dynamic rendering on, core or extension: not a loader's stub for it) */
+    if (nv2a_vk_share(&sh) != 1 || !sh.features13 || !vkCmdBeginRendering)
+        return false;
     for (int i = 0; i < FRAMES_IN_FLIGHT; i++) {
         VkBufferCreateInfo bi = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -937,6 +941,19 @@ void nv2a_host_vk_instance_created(VkInstance instance)
         __atomic_store_n(&s_surface_pending, 1, __ATOMIC_RELEASE);
         while (__atomic_load_n(&s_surface_pending, __ATOMIC_ACQUIRE))
             SDL_Delay(1);
+    }
+#elif defined(__ANDROID__)
+    /* Through the loader the instance came from (volk's): SDL's own copy of the system's would not know an
+     * instance made through another (Turnip's, instance.c's nv2a_vk_custom_loader) */
+    SDL_SysWMinfo wm;
+    SDL_VERSION(&wm.version);
+    VkAndroidSurfaceCreateInfoKHR ci = { .sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR };
+    if (s_window && SDL_GetWindowWMInfo(s_window, &wm))
+        ci.window = wm.info.android.window;
+    if (!ci.window || !vkCreateAndroidSurfaceKHR ||
+        vkCreateAndroidSurfaceKHR(instance, &ci, NULL, &s_surface) != VK_SUCCESS) {
+        fprintf(stderr, "nv2a: Vulkan surface: none for the window\n");
+        s_surface = VK_NULL_HANDLE;
     }
 #else
     if (s_window && !SDL_Vulkan_CreateSurface(s_window, instance, &s_surface)) {

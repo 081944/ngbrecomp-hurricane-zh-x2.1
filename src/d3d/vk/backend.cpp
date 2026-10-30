@@ -488,6 +488,7 @@ private:
     void VisResults(int slot);
     VkInstance inst_ = VK_NULL_HANDLE;
     VkPhysicalDevice phys_ = VK_NULL_HANDLE;
+    uint32_t api_version_ = VK_API_VERSION_1_3;   // the device's (its own: 1.3; the NV2A renderer's: AdoptDevice)
     VkDevice dev_ = VK_NULL_HANDLE;
     VkQueue queue_ = VK_NULL_HANDLE;
     uint32_t qfam_ = 0;
@@ -732,10 +733,18 @@ bool VulkanBackend::AdoptDevice(const nv2a_vk_shared& sh) {
     inst_ = sh.instance;
     phys_ = sh.physical_device;
     dev_ = sh.device;
+    api_version_ = sh.api_version ? sh.api_version : VK_API_VERSION_1_3;
     qfam_ = sh.queue_family;
     queue_ = sh.queue;
     if (!volkGetLoadedInstance()) volkLoadInstanceOnly(inst_);
     volkLoadDeviceTable(&d_, dev_);
+    // a driver short of 1.3 (Adreno 6xx's): the same functions from the extensions the NV2A renderer enabled
+    // (whatever it gives for the core names: they are not its to give below 1.3)
+    if (api_version_ < VK_API_VERSION_1_3) {
+        d_.vkCmdBeginRendering = d_.vkCmdBeginRenderingKHR;
+        d_.vkCmdEndRendering = d_.vkCmdEndRenderingKHR;
+        d_.vkCmdPipelineBarrier2 = d_.vkCmdPipelineBarrier2KHR;
+    }
     shared_ = true;
     return FinishDevice();
 }
@@ -745,7 +754,8 @@ bool VulkanBackend::FinishDevice() {
     ai.physicalDevice = phys_;
     ai.device = dev_;
     ai.instance = inst_;
-    ai.vulkanApiVersion = VK_API_VERSION_1_3;
+    // the version the device was made for: an older driver's is below 1.3 (its 1.3 parts extensions: AdoptDevice)
+    ai.vulkanApiVersion = api_version_;
     VmaVulkanFunctions fns{};
     VKCHECK(vmaImportVulkanFunctionsFromVolk(&ai, &fns));
     ai.pVulkanFunctions = &fns;
@@ -830,7 +840,8 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
             // drawing (unseen) for comparisons
             if (!std::getenv("NGB_D3D_KEEP_NV2A")) nv2a_vk_set_draws_off(true);
         } else {
-            ngb_renderer_fatal(st == 1 ? "The GPU's Vulkan driver has no Vulkan 1.3 dynamic rendering or push descriptors."
+            ngb_renderer_fatal(st == 1 ? "The GPU's Vulkan driver has no dynamic rendering, synchronization2 or push "
+                                         "descriptors (Vulkan 1.3's, or as extensions)."
                                        : "No Vulkan device could be used.");
         }
     }
