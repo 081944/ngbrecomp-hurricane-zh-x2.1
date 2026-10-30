@@ -56,7 +56,7 @@ final class TouchMenu extends FrameLayout {
         header.setPadding(dp(16), dp(12), dp(8), dp(12));
         TextView title = text("设置", 18, true, TEXT);
         header.addView(title, new LinearLayout.LayoutParams(0, WRAP, 1));
-        Button close = chip("✕", false, this::hide);
+        Button close = chip("✕", false, 0, this::hide);
         header.addView(close);
         panel.addView(header, new LinearLayout.LayoutParams(MATCH, WRAP));
         content = new ScrollView(activity);
@@ -196,7 +196,7 @@ final class TouchMenu extends FrameLayout {
         int current = nativeGetSetting(which);
         for (int i = 0; i < values.length; i++) {
             final int value = values[i];
-            Button chip = chip(names[i], value == current, () -> {
+            Button chip = chip(names[i], value == current, value, () -> {
                 nativeSetSetting(which, value);
                 restyleChips(row, value);
             });
@@ -209,8 +209,7 @@ final class TouchMenu extends FrameLayout {
     private void restyleChips(LinearLayout row, int selected) {
         for (int i = 0; i < row.getChildCount(); i++) {
             Button chip = (Button) row.getChildAt(i);
-            boolean on = chip.getTag() != null && ((int) chip.getTag()) == selected;
-            style(chip, on);
+            style(chip, chip.getTag() != null && (int) chip.getTag() == selected);
         }
     }
 
@@ -242,12 +241,12 @@ final class TouchMenu extends FrameLayout {
 
     /* ---- widget helpers ---- */
 
-    private Button chip(String name, boolean selected, Runnable onClick) {
+    private Button chip(String name, boolean selected, int value, Runnable onClick) {
         Button chip = new Button(activity, null, 0);
         chip.setText(name);
         chip.setAllCaps(false);
         chip.setTextSize(13);
-        chip.setTag(selected ? 1 : 0);
+        chip.setTag(value);
         chip.setPadding(dp(14), dp(6), dp(14), dp(6));
         style(chip, selected);
         chip.setOnClickListener(v -> onClick.run());
@@ -264,7 +263,6 @@ final class TouchMenu extends FrameLayout {
         chip.setBackground(background);
         chip.setTextColor(selected ? TEXT : DIM);
         chip.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
-        chip.setTag(selected ? 1 : 0);
     }
 
     private LinearLayout rowBase() {
