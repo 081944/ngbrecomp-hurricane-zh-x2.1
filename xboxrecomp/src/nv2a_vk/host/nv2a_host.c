@@ -571,6 +571,18 @@ void nv2a_vk_wait_dma_get(uint32_t put, uint32_t ahead)
     nv2a_vk_wait_progress(&s_nv2a.pfifo.regs[NV_PFIFO_CACHE1_DMA_GET], put, ahead);
 }
 
+/* A register access is a host section around the lock: a guest thread is never parked holding it. A hook inside
+ * (the port's renderer handing its recording over as the title reads DMA_GET) leaves a host section of its own,
+ * and at depth 0 that gave the CPU away under the lock; the GPU's interrupt then took the CPU and waited for the
+ * lock, and the title waited for the CPU (Windows, Multithreaded Renderer: the game froze, #138). */
+#if XBOX_HAS_VCPU
+void compat_host_enter(void);
+void compat_host_leave(void);
+#else
+static inline void compat_host_enter(void) {}
+static inline void compat_host_leave(void) {}
+#endif
+
 uint64_t nv2a_vk_mmio_read(uint32_t off, unsigned size)
 {
     uint32_t rel;
@@ -584,9 +596,11 @@ uint64_t nv2a_vk_mmio_read(uint32_t off, unsigned size)
     b = block_for(off, &rel);
     if (!b)
         return 0;
+    compat_host_enter();
     bql_lock();
     v = b->ops.read(&s_nv2a, rel, size);
     bql_unlock();
+    compat_host_leave();
     return v;
 }
 
@@ -605,9 +619,11 @@ void nv2a_vk_mmio_write(uint32_t off, uint64_t val, unsigned size)
     b = block_for(off, &rel);
     if (!b)
         return;
+    compat_host_enter();
     bql_lock();
     b->ops.write(&s_nv2a, rel, val, size);
     bql_unlock();
+    compat_host_leave();
 }
 
 /* The xbox kernel's AvSetDisplayMode programs the CRTC for a mode; no kernel

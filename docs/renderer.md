@@ -216,6 +216,8 @@ thread made a Direct3D call. A wait of 10 s is logged, then every 10 s (never en
 render thread on purpose). The
 2D-screen decision (src/pc_menu.c) takes the last presented frame's draw counts, not the live ones. Attract demo: the title's thread 134 -> 110 ms/s.
 
-Open (#138, 0.9.41): with the render thread on, the picture froze during play on a GTX 1050 and an RX 6800 XT,
-and off fixed it. The log had no 10 s wait line, so the title's thread was not stuck on the frame
-before; what stops (presenting, the render thread, or the window) is not known yet.
+On Windows it froze the game (#138, 0.9.41-0.9.43: at boot, in a load or in play). A GPU register read takes
+the emulation's lock (nv2a_vk_mmio_read) and calls the progress hook inside it; on Windows the register handler
+ran outside a host section, so the hook's own section ended at depth 0 and gave the virtual CPU away there, the
+GPU's interrupt took the CPU and waited for the lock, and the title waited for the CPU. Register accesses are now
+a host section around the lock. (Linux's signal handler already makes one, so it never froze.)
