@@ -484,7 +484,7 @@ int ngb_launcher_run(NgbSettings *s)
     Uint32 repeat_at = 0;
     int held_dir = 0;            /* stick/d-pad auto-repeat: -2 up, 2 down, -1/1 */
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__ANDROID__)
     if (!getenv("SDL_VIDEODRIVER"))
         SDL_SetHint(SDL_HINT_VIDEODRIVER, "wayland,x11");
 #endif

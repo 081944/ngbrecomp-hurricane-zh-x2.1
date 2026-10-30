@@ -30,7 +30,7 @@
 #else
 #define _GNU_SOURCE
 #include <dlfcn.h>
-#include <execinfo.h>
+#include "platform/host_backtrace.h"
 #include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -295,7 +295,7 @@ static void watch_arm(void)
     char *end;
     if (!e || !*e)
         return;
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
     fprintf(stderr, "NGB_WATCH_WRITE requires x86 single-step support\n");
     return;
 #endif
@@ -554,6 +554,8 @@ static void prof_signal(int sig, siginfo_t *si, void *uc_)
     if (i < PROF_SLOTS)
 #if defined(__APPLE__) && defined(__aarch64__)
         s_prof_pc[i] = uc->uc_mcontext->__ss.__pc;
+#elif defined(__linux__) && defined(__aarch64__)
+        s_prof_pc[i] = uc->uc_mcontext.pc;
 #else
         s_prof_pc[i] = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
 #endif
