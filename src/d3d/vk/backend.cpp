@@ -46,6 +46,14 @@
 #include "nv2a_vk_share.h"   // the NV2A renderer's device and presenter (NGB_RENDERER=d3d)
 extern "C" {
 #include "quick_select.h"
+extern "C" {
+bool nv2a_present_show_fps(void);   // xboxrecomp present_sdl.c: the frame counter on
+extern volatile int nv2a_fps_drawn_outside;   // (its own corner copy off once this draws it)
+int ngb_fps_picture(uint32_t* out, size_t max, int* w, int* h, unsigned* serial);   // src/fps_text.c
+extern volatile int ngb_fps_target_h;
+int ngb_fps_cap(int h, float* scale);
+}
+constexpr int kFpsWidth = 1024, kFpsHeight = 128;   // the counter's picture, at most (src/fps_text.c's)
 int ngb_pc_setting(int which);
 }
 
@@ -390,10 +398,14 @@ private:
 
     Image display_[3];   // copies of the front buffer for the presenter, in turn
     Image quick_layer_;
+    Image fps_layer_;   // the frame counter (FpsCounter, quick_menu.inc)
+    std::vector<uint32_t> fps_pending_;   // its picture still to upload (a frame without one to show keeps it)
+    bool fps_lettered_ = false;
     Image quick_background_, quick_blur_, quick_full_;   // the quick menu's paused background: small, its blur's
                                                           // other half, and the frame blitted for it
     VkSampler quick_sampler_ = VK_NULL_HANDLE;
     void QuickMenu(Image& dst);
+    void FpsCounter(Image& dst);
     void QuickMenuBackground(Image& dst);
     // the title's gamma ramp (D3DDevice_SetGammaRamp: its Screen Adjustment -- gamma, brightness,
     // contrast), applied as the front buffer is copied for the presenter; identity: a plain copy
@@ -915,6 +927,7 @@ VulkanBackend::~VulkanBackend() {
         for (auto& image:continuous_glow_) DestroyImage(image);
         for (auto& image:glow_soft_) DestroyImage(image);
         DestroyImage(quick_background_);
+        DestroyImage(fps_layer_);
         DestroyImage(quick_blur_);
         DestroyImage(quick_full_);
         if (glow_soft_sampler_) d_.vkDestroySampler(dev_,glow_soft_sampler_,nullptr);
@@ -2493,6 +2506,19 @@ void VulkanBackend::CapturePeek(const State& s, Peek& p) {
 
 void VulkanBackend::CaptureQuick(QuickPeek& q) {
     peek_frames_++;
+    q.fps = nv2a_present_show_fps();
+    q.fps_px.clear();
+    if (q.fps) {
+        static unsigned serial;   // (the title's thread: one recording at a time)
+        static std::vector<uint32_t> px(size_t(kFpsWidth) * kFpsHeight);
+        int w, h;
+        if (ngb_fps_picture(px.data(), px.size(), &w, &h, &serial)) {   // into the corner of a clear picture
+            q.fps_px.assign(px.size(), 0);
+            q.fps_lettered = w > 0;
+            for (int y = 0; y < h && y < kFpsHeight; y++)
+                std::memcpy(&q.fps_px[size_t(y) * kFpsWidth], &px[size_t(y) * w], sizeof(uint32_t) * std::min(w, kFpsWidth));
+        }
+    }
     q.percent = ngb_pc_setting(20);
     q.frozen = 0;
     q.layer.clear();
@@ -4018,6 +4044,11 @@ void VulkanBackend::Present(const Surface& front) {
         }
     }
     if (show) QuickMenu(*show);
+    if (!qk_.fps_px.empty()) {
+        fps_pending_.swap(qk_.fps_px);
+        fps_lettered_ = qk_.fps_lettered;
+    }
+    if (show) FpsCounter(*show);
     hud_menu_ = hud_cover_ >= 0.5f && threed_ < 30;
     for (int g = 0; g < 4; g++) {
         gauge_prev_[g][0] = g < gauges_now_ ? gauge_x_[g][0] : 1e30f;

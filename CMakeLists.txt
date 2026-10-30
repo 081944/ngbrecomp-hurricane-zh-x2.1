@@ -67,8 +67,8 @@ endif()
 # their flags can differ from the hand-written code, and so a host change
 # never recompiles them.
 # Fonts (SIL Open Font License, assets/fonts) built into the program: the
-# pause menu's pages until the game's own letters are loaded, its key labels
-# (src/pause_tab.c) and the frame rate overlay (src/fps_text.c).
+# pause menu's pages until the game's own letters are loaded and its key labels
+# (src/pause_tab.c).
 set(NGB_FONTS
     "EBGaramond-ExtraBoldItalic.ttf\;ngb_font_tab"
     "LiberationSerif-Regular.ttf\;ngb_font_body"
@@ -306,7 +306,7 @@ function(ngb_arcade_program target output gen_dir xbe dsound)
         src/trilogy/main.c
         src/launch.c
         src/recomp_manual.c
-        src/fps_text.c              # Show FPS (handed over by the game) in the game's lettering
+        src/fps_text.c              # Show FPS: the presenter's own letters here (no pause_tab.c)
         ${NGB_FONT_SOURCES}
         $<TARGET_OBJECTS:${target}_gen>
         $<TARGET_OBJECTS:ngb_audio>

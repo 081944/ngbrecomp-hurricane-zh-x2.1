@@ -138,7 +138,7 @@ static const char *const s_help[S_COUNT] = {
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 #define CAT_CHEAT 4
 #define CAT_UNL CATS              /* Unlocks: a page of Cheats' (its row S_UNLOCKS), not on the strip */
-/* Gameplay: optional changes to how the game plays (off unless chosen, but Skip Any Cutscene; docs/quick-menu.md) */
+/* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Sound", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, S_LOADDETAIL, S_RTHREAD, -1 },   /* -1 ends a page shorter than CAT_ROWS */
@@ -6010,3 +6010,42 @@ loc_00221C61: ;
     #undef fp_st1
 }
 
+
+/* Text in the game's own menu letters as a premultiplied BGRA picture (src/fps_text.c, the frame counter): white,
+ * with the soft dark shadow down and right the game's text has, the capital cap pixels tall. 0 while the font is
+ * not loaded. */
+int ngb_game_text_picture(const char *s, float cap, uint32_t *out, int maxw, int maxh, int *ow, int *oh)
+{
+    float cell[4];
+    if (!game_font_ready() || glyph('H', cell) < 0 || cap < 4)
+        return 0;
+    float px = cap / 0.66f, k = cap / s_cap_h;        /* (game_text's scale: the capital px * 0.66 tall) */
+    int shadow = cap >= 18 ? 2 : 1, pad = (int)ceilf(cap * 0.2f) + shadow + 2;
+    float base = pad + (s_cap_top + s_cap_h) * k;
+    int w = (int)ceilf(game_text(NULL, 0, 0, s, px, 1.0f, 0, 0)) + 2 * pad;
+    int h = (int)ceilf(base + (cell[3] - cell[1] - s_cap_top - s_cap_h) * k) + pad;
+    if (w > maxw) w = maxw;
+    if (h > maxh) h = maxh;
+    uint8_t *m = calloc((size_t)w * h, 1);
+    float *sh = malloc(sizeof *sh * w * h);
+    if (!m || !sh) {
+        free(m);
+        free(sh);
+        return 0;
+    }
+    game_text(m, w, h, s, px, 1.0f, (float)pad, base);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            sh[y * w + x] = x >= shadow && y >= shadow ? m[(y - shadow) * w + x - shadow] / 255.0f : 0;
+    box_blur(sh, w, h, shadow);
+    for (int i = 0; i < w * h; i++) {
+        float a = m[i] / 255.0f, s2 = fminf(sh[i] * 1.6f, 1.0f) * 0.9f, oa = a + s2 * (1 - a);
+        uint32_t white = (uint32_t)lroundf(a * 255);       /* premultiplied: the shadow adds no colour */
+        out[i] = (uint32_t)lroundf(oa * 255) << 24 | white << 16 | white << 8 | white;
+    }
+    free(sh);
+    free(m);
+    *ow = w;
+    *oh = h;
+    return 1;
+}

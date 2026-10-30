@@ -776,6 +776,7 @@ void ngb_frame_tick(void)
     pos_tick();
     { extern void ngb_intercept_frame(void); ngb_intercept_frame(); }   /* src/intercept.c: Ryu's Intercept moves */
     { extern void ngb_ut_charge_frame(void); ngb_ut_charge_frame(); }   /* src/ut_charge.c: Essence-Only Charging */
+    { extern void ngb_fps_tick(void); ngb_fps_tick(); }   /* src/fps_text.c: the frame counter's lettering */
     ngb_aspect_frame_end();
     ngb_aspect_tick();
     cheat_tick();

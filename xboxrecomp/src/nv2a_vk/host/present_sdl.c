@@ -192,6 +192,7 @@ static const uint8_t *glyph(char c)
 
 /* Frame statistics over half a second, refreshed as they complete. */
 static char s_fps_text[48] = "-- FPS";
+static pthread_mutex_t s_fps_text_mu = PTHREAD_MUTEX_INITIALIZER;   /* (read on the title's thread too) */
 
 static void fps_track(void)
 {
@@ -226,8 +227,10 @@ static void fps_track(void)
         double secs = (now - window_ns) / 1e9;
         unsigned frames_logged = frames;
         double fps = frames / secs;
+        pthread_mutex_lock(&s_fps_text_mu);
         snprintf(s_fps_text, sizeof s_fps_text, "%.0f FPS  %.1f ms  max %.1f",
                  fps, frames ? secs * 1000.0 / frames : 0.0, max_ms);
+        pthread_mutex_unlock(&s_fps_text_mu);
         /* NV2A_FPS_LOG=1: to stderr; NV2A_FPS_LOG=<path>: appended to that
          * file (where stderr is hard to reach, e.g. a Steam launch). */
         const char *fl = getenv("NV2A_FPS_LOG");
@@ -441,6 +444,22 @@ void nv2a_present_set_show_fps(bool show)
 {
     s_show_fps = show;
 }
+
+/* For a renderer that letters the counter into its own picture (ngb-recomp's Direct3D one, src/fps_text.c): whether
+ * it is on and its text; once it has, nv2a_fps_drawn_outside is set and the corner copy here stays off. */
+bool nv2a_present_show_fps(void)
+{
+    return s_show_fps;
+}
+
+void nv2a_present_fps_text(char *buf, size_t n)
+{
+    pthread_mutex_lock(&s_fps_text_mu);
+    snprintf(buf, n, "%s", s_fps_text);
+    pthread_mutex_unlock(&s_fps_text_mu);
+}
+
+volatile int nv2a_fps_drawn_outside;
 
 static volatile bool s_blank;
 
@@ -1500,7 +1519,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
     }
 
-    if (s_show_fps && s_ovl_ptr[f]) {
+    if (s_show_fps && s_ovl_ptr[f] && !nv2a_fps_drawn_outside) {
         uint32_t w, h;
         fps_draw(f, &w, &h);
         vmaFlushAllocation(r->allocator, s_ovl_mem[f], 0, VK_WHOLE_SIZE);

@@ -31,6 +31,9 @@ struct QuickPeek {
     int percent = 0;           // its size, 0 off
     int frozen = 0;            // the game paused behind it: its background effect
     std::vector<uint32_t> layer;   // NGB_QUICK_WIDTH x NGB_QUICK_HEIGHT, empty when it is closed
+    bool fps = false;              // the frame counter shown (src/fps_text.c)
+    std::vector<uint32_t> fps_px;  // its picture when it changed this frame (kFpsWidth x kFpsHeight), else empty
+    bool fps_lettered = false;     // that picture has the text (not yet: the font not loaded)
 };
 
 class Backend {
