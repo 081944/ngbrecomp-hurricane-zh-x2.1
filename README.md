@@ -35,12 +35,14 @@ No game data is included. You need your own copy of the game and the x2.1 patch.
 - Everything of vb-zh-x2.1: the Chinese text, the Intercept switch (Hurricane Pack / Black), Armlet of
   Tranquility, Kitetsu's health drain, a new round with all Golden Scarabs, the Talisman of Rebirth switch,
   costumes by trigger, the bow crosshair, the third-person camera option and the rest.
-- ngbrecomp's PC features: high render resolutions, 16:9 / 16:10 / 21:9, keyboard and mouse with
-  rebinding, MSAA, anisotropic filtering, steady frame pacing, Camera Sensitivity, Smoother Glow, and
-  under Gameplay an NG2-style d-pad Quick Menu for weapons, Ninpo and items (off unless chosen); cheats
-  including Infinite Items (healing items, the Talisman of Rebirth and the Jewel of the Demon Seal) and
-  Infinite Projectiles; a HUD on/off switch and Positional Audio (Off / Console / Panning, Panning by default) under
-  Display & Audio; sound mixed on the PC (the game's DirectSound on a host mixer: positional 3D sound, the console's
+- ngbrecomp's PC features: high render resolutions, 16:9 / 16:10 / 21:9 / 32:9, keyboard and mouse with
+  rebinding, button prompts (Auto / Xbox / PlayStation / PC), MSAA, anisotropic filtering, steady frame pacing,
+  Camera Sensitivity, Smoother Glow, Lower Detail Under Load and a Multithreaded Renderer (off unless chosen);
+  under Gameplay an NG2-style d-pad Quick Menu for weapons, Ninpo and items, Essence-Only Charging and Skip Any
+  Cutscene (each off unless chosen); cheats including Infinite Items (healing items, the Talisman of Rebirth and
+  the Jewel of the Demon Seal), Infinite Projectiles and All Weapons, and an Unlocks page (difficulties, costumes,
+  Missions, the arcade game, Movie Theater); a HUD on/off switch under Display and Positional Audio
+  (Off / Console / Clear, Clear by default) under Sound; sound mixed on the PC (the game's DirectSound on a host mixer: positional 3D sound, the console's
   room reverb, and 5.1 surround with Audio Output Auto / Stereo / 5.1); about 250 MB of video memory at the default settings (was over 3 GB before 0.9.27), and
   textures unused for 30 s give their memory back, so long sessions no longer run out of it.
 - The arcade Ninja Gaiden on the Han's bar cabinet and in the main menu (once unlocked), recompiled as programs
@@ -65,7 +67,7 @@ F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbo
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.30`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.44`.
 
 ## Changes from ngbrecomp
 
@@ -88,6 +90,8 @@ Branch `hurricane`, merged with upstream as it moves on:
   awareness. The arcade programs go back to this one by its own name (`src/launch.c`). Upstream's Invert Camera, Invert First-Person X and Start in Third
   Person are left out: x2.1 has its own camera-direction option and starts every load in the third-person
   camera. Camera Sensitivity, which changes only the speed, is kept.
+- Upstream's Intercept option (Gameplay, #109) is left out: x2.1 switches the Intercept in the game's own
+  Controller Settings (Hurricane Pack / Black), and upstream's hand-written functions for it are the retail ones.
 
 ## Building from source (Windows)
 

@@ -18,7 +18,7 @@ enum {
     A_DPAD_UP, A_DPAD_DOWN, A_DPAD_LEFT, A_DPAD_RIGHT,
     A_QUICK_WEAPONS, A_QUICK_ITEMS, A_QUICK_LEFT, A_QUICK_RIGHT,
     A_QUICK_CONFIRM, A_QUICK_CANCEL,
-    A_HUD,                       /* Toggle HUD: Display & Audio > HUD (src/hud.c), nothing bound by default */
+    A_HUD,                       /* Toggle HUD: Display > HUD (src/hud.c), nothing bound by default */
     A_COUNT
 };
 
