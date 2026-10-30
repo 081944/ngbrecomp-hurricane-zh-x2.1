@@ -139,7 +139,7 @@ void ngb_settings_load(NgbSettings *s)
     s->show_fps = 0;
     s->anisotropy = 16;
     s->msaa = 1;
-    s->shadow_scale = 4;
+    s->shadow_scale = 1;   /* the console's (Original): 0.9.45; 4x before */
     s->quick_menu_freeze = 1;
     s->positional_audio = 2;  /* clear: 3D sounds placed without the filters' duller sound (#30, #86, #126) */
     s->show_hud = 1;
