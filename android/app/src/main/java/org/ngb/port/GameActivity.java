@@ -6,6 +6,7 @@ import org.libsdl.app.SDLActivity;
 public final class GameActivity extends SDLActivity {
     private VirtualPad pad;
     private static native void surfaceAvailable(boolean available);
+    private static native void nativeOpenMenu();
     @Override protected org.libsdl.app.SDLSurface createSDLSurface(android.content.Context context) {
         return new org.libsdl.app.SDLSurface(context) {
             @Override public void surfaceDestroyed(android.view.SurfaceHolder holder) {
@@ -25,6 +26,23 @@ public final class GameActivity extends SDLActivity {
             pad = new VirtualPad(this);
             mLayout.addView(pad, new android.widget.RelativeLayout.LayoutParams(
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+            // One-touch access to the in-game RECOMP SETTINGS overlay: during
+            // gameplay Start would open the pause menu and Back+Start is the
+            // game's soft reset, so the touch overlay gets its own button.
+            android.widget.Button menu = new android.widget.Button(this);
+            menu.setText("☰");
+            menu.setTextSize(16f);
+            menu.setAllCaps(false);
+            menu.setAlpha(0.5f);
+            menu.setOnClickListener(v -> nativeOpenMenu());
+            android.widget.RelativeLayout.LayoutParams menuLayout =
+                    new android.widget.RelativeLayout.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            menuLayout.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
+            menuLayout.addRule(android.widget.RelativeLayout.ALIGN_PARENT_END);
+            menuLayout.setMargins(0, 12, 12, 0);
+            mLayout.addView(menu, menuLayout);
         }
     }
     @Override protected void onPause() {

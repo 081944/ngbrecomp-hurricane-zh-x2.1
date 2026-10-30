@@ -8,12 +8,22 @@
 #include <vulkan/vulkan.h>
 #include "android_vulkan.h"
 extern void xbox_AndroidTouchSet(unsigned buttons, int lx, int ly, int rx, int ry);
+extern void ngb_menu_open(void);   /* src/ingame_menu.c: the RECOMP SETTINGS overlay */
 
 JNIEXPORT void JNICALL Java_org_ngb_port_VirtualPad_nativeState(JNIEnv *env, jclass cls,
     jint buttons, jint lx, jint ly, jint rx, jint ry)
 {
     (void)env; (void)cls;
     xbox_AndroidTouchSet((unsigned)buttons, lx, ly, rx, ry);
+}
+
+/* The touch overlay's menu button: opens the settings overlay at the next
+ * frame, from anywhere (no Back+Start, which is the game's soft reset). */
+JNIEXPORT void JNICALL
+Java_org_ngb_port_GameActivity_nativeOpenMenu(JNIEnv *env, jclass cls)
+{
+    (void)env; (void)cls;
+    ngb_menu_open();
 }
 
 JNIEXPORT jstring JNICALL
