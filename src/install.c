@@ -796,6 +796,41 @@ static int install_image(const char *src, const char *dest)
     return -1;
 }
 
+/* Install an already-open disc image (an Xbox ISO) into installed. This is
+ * the SAF variant for Android: the picker hands out an fd, not a path, so
+ * the image is reached through /proc/self/fd. Same tail as install_from:
+ * extract beside the destination and move it there whole, so an install
+ * cut short never looks like a game. 0 on success. */
+int ngb_install_iso_fd(int fd, const char *installed, char *out, size_t n)
+{
+    char src[64], part[4200];
+    int rc;
+
+    snprintf(src, sizeof src, "/proc/self/fd/%d", fd);
+    s_err[0] = 0;
+    snprintf(part, sizeof part, "%s.partial", installed);
+    remove_tree(part);
+    s_cancel = 0;
+    rc = extract_iso(src, part);
+    if (rc == 0 && ngb_check_xbe(part) == 1 && !getenv("NGB_ANY_XBE")) {
+        fail("This is not the retail USA Ninja Gaiden Black (NTSC) this "
+             "build was made from.");
+        rc = -1;
+    }
+    if (rc == 0) {
+        remove_tree(installed);
+        if (rename(part, installed) != 0) {
+            fail("Cannot move the game into %s: %s", installed, strerror(errno));
+            rc = -1;
+        }
+    }
+    if (rc != 0)
+        remove_tree(part);
+    else
+        snprintf(out, n, "%s", installed);
+    return rc;
+}
+
 int ngb_install(const char *src, const char *installed, char *out, size_t n)
 {
     s_err[0] = 0;

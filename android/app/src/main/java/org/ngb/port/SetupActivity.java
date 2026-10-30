@@ -28,17 +28,36 @@ public final class SetupActivity extends Activity {
     private static final int PICK_GAME = 1;
     private static final int PICK_DRIVER = 2;
     private static final int GAME = 3;
+    private static final int PICK_ISO = 4;
     /** After the game exits, stay here this long before auto-relaunching. */
     private static final long RELAUNCH_GRACE_MS = 5000;
     /** A start that ends this quickly counts as a failed launch. */
     private static final long FAILED_LAUNCH_MS = 15000;
     private TextView status;
-    private Button select, importDriver, launch;
-    private boolean importing, launching, uiReady;
+    private Button select, selectIso, importDriver, launch;
+    private boolean importing, launching, uiReady, importingIso;
     private int failCount;
     private long gameExitAt, gameStartAt;
     private File game;
     private File marker;
+
+    /* Extraction of a ~7 GB image runs on the import thread inside the JNI
+     * call; the C side publishes byte counters the UI thread polls here. */
+    private final android.os.Handler ui = new android.os.Handler();
+    private final Runnable progressTick = new Runnable() {
+        @Override public void run() {
+            if (!importingIso) return;
+            long[] p = nativeInstallProgress();
+            if (p[1] > 0)
+                status.setText(String.format("正在解压 ISO…… %.2f GB / %.2f GB",
+                        p[0] / 1e9, p[1] / 1e9));
+            ui.postDelayed(this, 250);
+        }
+    };
+
+    private static native int nativeImportGame(int fd, String dest);
+    private static native long[] nativeInstallProgress();
+    private static native String nativeInstallError();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -76,6 +95,12 @@ public final class SetupActivity extends Activity {
         select.setOnClickListener(v -> startActivityForResult(
                 new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_GAME));
         layout.addView(select);
+        selectIso = new Button(this);
+        selectIso.setText("导入游戏 ISO");
+        selectIso.setOnClickListener(v -> startActivityForResult(
+                new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
+                        .addCategory(Intent.CATEGORY_OPENABLE), PICK_ISO));
+        layout.addView(selectIso);
         importDriver = new Button(this);
         importDriver.setText("导入驱动 ZIP");
         importDriver.setOnClickListener(v -> startActivityForResult(
@@ -120,9 +145,11 @@ public final class SetupActivity extends Activity {
         // there this is a plain launcher with a manual start fallback.
         boolean showImport = !ready || failCount >= 2;
         select.setVisibility(showImport ? View.VISIBLE : View.GONE);
+        selectIso.setVisibility(showImport ? View.VISIBLE : View.GONE);
         importDriver.setVisibility(showImport ? View.VISIBLE : View.GONE);
         launch.setVisibility(ready ? View.VISIBLE : View.GONE);
         select.setEnabled(!importing);
+        selectIso.setEnabled(!importing);
         importDriver.setEnabled(!importing);
         launch.setEnabled(!importing && !launching);
         if (!importing) status.setText(launching ? "正在启动游戏……"
@@ -169,6 +196,38 @@ public final class SetupActivity extends Activity {
             return;
         }
         if (result != RESULT_OK || data == null || data.getData() == null) return;
+        if (request == PICK_ISO) {
+            importing = true;
+            importingIso = true;
+            refresh();
+            status.setText("正在解压 ISO……");
+            ui.postDelayed(progressTick, 250);
+            Uri image = data.getData();
+            new Thread(() -> {
+                String error = null;
+                try (android.os.ParcelFileDescriptor pfd =
+                         getContentResolver().openFileDescriptor(image, "r")) {
+                    if (pfd == null) throw new IOException("无法打开所选文件");
+                    if (nativeImportGame(pfd.getFd(), game.getAbsolutePath()) != 0)
+                        throw new IOException(nativeInstallError());
+                } catch (Exception e) { error = e.getMessage(); }
+                final String message = error;
+                runOnUiThread(() -> {
+                    importingIso = false;
+                    importing = false;
+                    ui.removeCallbacks(progressTick);
+                    if (message != null) {
+                        refresh();
+                        status.setText("ISO 导入失败：" + message);
+                        return;
+                    }
+                    try { if (!marker.exists()) marker.createNewFile(); }
+                    catch (IOException ignored) {}
+                    startGame();   // straight into the game after extraction
+                });
+            }, "ngb-iso-import").start();
+            return;
+        }
         if (request == PICK_DRIVER) {
             importing = true;
             refresh();

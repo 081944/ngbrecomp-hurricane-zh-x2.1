@@ -19,6 +19,11 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
  * into installed, or use a folder in place; the game folder goes to out.
  * 0 on success, else -1 with the reason in ngb_install_error(). */
 int ngb_install(const char *src, const char *installed, char *out, size_t n);
+
+/* The same, from an already-open disc image (an Xbox ISO) -- for Android's
+ * SAF pickers, which hand out an fd instead of a path. 0 on success, else
+ * -1 with the reason in ngb_install_error(). */
+int ngb_install_iso_fd(int fd, const char *installed, char *out, size_t n);
 const char *ngb_install_error(void);
 
 /* Called as files are extracted: bytes done of total (total 0 while an
