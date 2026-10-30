@@ -413,8 +413,9 @@ The game is drawn by a renderer that implements its Direct3D calls on Vulkan (`s
 emulation still runs the GPU's command stream (the game's fences and vertical blanks come from
 it) but draws nothing; the renderer draws on the same Vulkan device and the same window, so the
 settings and the FPS counter work as before. Render resolution, texture filtering
-and shadow resolution apply to it. It needs Vulkan 1.3 (dynamic rendering, push descriptors);
-without them the game falls back to xemu's drawing.
+and shadow resolution apply to it. It needs Vulkan 1.3's dynamic rendering and synchronization2
+(or those as extensions of an older driver) and push descriptors; without them the game says what is missing
+and ends (#47).
 
 `NGB_RENDERER=xemu` draws with xemu's NV2A renderer instead, as before (on Steam:
 `NGB_RENDERER=xemu %command%`). `NGB_RENDERER=mirror` keeps xemu drawing and showing the game

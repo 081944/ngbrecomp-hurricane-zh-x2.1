@@ -84,7 +84,8 @@ or a folder of extracted files with default.xbe. A disc image is installed once 
 %LOCALAPPDATA%\NinjaGaidenBlack\game; saves are kept there too, settings in
 %APPDATA%\NinjaGaidenBlack.
 
-Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
+Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers (or older drivers that have
+its dynamic rendering and synchronization2 as extensions).
 Start it from a command prompt to see its log.
 TXT
 rm -f "$out/NinjaGaidenBlack-windows-x64.zip"

@@ -50,14 +50,16 @@ kept); later starts are quicker.
    switch Steam to the Beta, or set the game's Launch Options in Steam to
    `APPIMAGE_EXTRACT_AND_RUN=1 %command%` (#11).
 
-Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
+Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers (or older drivers that
+have its dynamic rendering and synchronization2 as extensions).
 
 ### Windows
 
 1. Download `NinjaGaidenBlack-windows-x64.zip` and extract it anywhere.
 2. Run `NinjaGaidenBlack.exe` and choose your disc image as above.
 
-Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
+Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers (or older drivers that have its dynamic
+rendering and synchronization2 as extensions).
 
 **Antivirus warnings:** the program isn't code-signed, and a new unsigned program is sometimes
 flagged by one antivirus's heuristics (McAfee quarantined it in #88; VirusTotal shows no other
