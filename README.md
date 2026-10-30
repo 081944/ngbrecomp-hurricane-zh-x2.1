@@ -4,7 +4,8 @@
 
 **A PC port of Ninja Gaiden Black by static recompilation.**
 
-A native Linux and Windows version of *Ninja Gaiden Black* (Xbox, 2005), made by statically
+A native Linux and Windows version of *Ninja Gaiden Black* (Xbox, 2005), with an experimental Android
+one, made by statically
 recompiling the game's own code to run directly on a PC — not an emulator. It draws with its own
 Vulkan renderer, which takes over the game's Direct3D calls instead of emulating the Xbox GPU. It
 plays at a steady 60 fps on modest hardware (including the Steam Deck) and adds PC options: higher
@@ -17,6 +18,7 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 ## Features
 
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
+- Android (arm64), **experimental**, with Xbox 360 touch controls
 - Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
 - 16:9, 16:10, 21:9 and 32:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
   corners, optional HUD-free view, menus keep the game's own 16:19
@@ -62,6 +64,36 @@ PowerShell, `Get-FileHash NinjaGaidenBlack-windows-x64.zip`; on Linux, `sha256su
 If you'd rather not run a prebuilt program, you can build it yourself from your own disc
 ([Building from source](#building-from-source)).
 
+### Android (experimental)
+
+The Android version is new and has only been tested on one phone (a Pixel 9a, where it plays at 60 fps).
+Expect problems on other phones, and please report them (below).
+
+**Install:**
+
+1. Download `NinjaGaidenBlack-android-arm64.apk` from the releases page and open it on the phone.
+   Allow installing apps from your browser or file manager when Android asks.
+2. Copy your disc image (`.iso`, from the retail USA disc) to the phone, into `Download` or a folder
+   named `NinjaGaidenBlack`. A `.7z` or `.zip` has to be unpacked on a computer first: the phone has
+   no unpacker. A folder of the disc's extracted files (with `default.xbe`) also works.
+3. Start the game. The first time, it asks for "All files access" so it can read the image, then
+   finds it and installs the game into its own folder (about 6 GB, a minute or two). You can delete
+   the image afterwards.
+
+Plays with the on-screen touch controls (an Xbox 360 pad), or with any controller the phone supports:
+the touch controls hide while one is connected. Needs Android 10 or newer (13 or newer for full speed:
+the game tells the system how long its frames take, which keeps the CPU clocks up), a GPU with
+Vulkan 1.3 (most phones from about 2021 on) and about 8 GB of memory.
+
+Not there yet on Android: the arcade Ninja Gaiden, and "Return to Main Menu" from the pause menu (it
+closes the game instead).
+
+**Reporting a problem:** open an issue and give the phone's model, its chip (Snapdragon, Tensor,
+Dimensity, Exynos...), the Android version, what happened, and the log: `log.txt` in
+`Android/data/io.github.gamboozino.ngbrecomp/files` on the phone's storage. Some file managers can't
+open that folder on recent Android; a computer can, over USB (or `adb pull
+/sdcard/Android/data/io.github.gamboozino.ngbrecomp/files/log.txt`).
+
 ### macOS (unsupported)
 
 The macOS code is a community contribution (#49) that I can't build or test, so there are no
@@ -72,12 +104,12 @@ packages are signed ad hoc, without Developer ID signing or notarization.
 
 ### Where things are kept
 
-| | Linux | Windows | macOS |
-|---|---|---|---|
-| Installed game, saves | `~/.local/share/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/saves` |
-| Settings (`settings.ini`, `controls.ini`) | `~/.config/NinjaGaidenBlack` | `%APPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/config` |
-| Shader cache | `~/.cache/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack\shaders` | `~/Library/Application Support/NinjaGaidenBlack/cache/NinjaGaidenBlack/shaders` |
-| Log | the terminal, or `log.txt` beside the saves when started without one | `log.txt` beside the saves (or the console it was started from) | `log.txt` beside the saves |
+| | Linux | Windows | macOS | Android |
+|---|---|---|---|---|
+| Installed game, saves | `~/.local/share/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/saves` | `Android/data/io.github.gamboozino.ngbrecomp/files` |
+| Settings (`settings.ini`, `controls.ini`) | `~/.config/NinjaGaidenBlack` | `%APPDATA%\NinjaGaidenBlack` | `~/Library/Application Support/NinjaGaidenBlack/config` | `config` in the folder above |
+| Shader cache | `~/.cache/NinjaGaidenBlack` | `%LOCALAPPDATA%\NinjaGaidenBlack\shaders` | `~/Library/Application Support/NinjaGaidenBlack/cache/NinjaGaidenBlack/shaders` | `cache` in the folder above |
+| Log | the terminal, or `log.txt` beside the saves when started without one | `log.txt` beside the saves (or the console it was started from) | `log.txt` beside the saves | `log.txt` beside the saves |
 
 **Portable mode:** with a file named `portable.txt` next to `NinjaGaidenBlack.exe` (or the AppImage or Mac app),
 all of these go into a `userdata` folder next to it instead. The first-run setup offers this as a
@@ -117,6 +149,9 @@ The game's own Options (sound, movie aspect, controller vibration and so on) are
 were.
 
 ## Controls
+
+On Android, an Xbox 360 pad is drawn over the screen: the two sticks, the d-pad, A B X Y, the bumpers
+and triggers, Back, Start and the stick clicks. It hides while a controller is connected.
 
 A controller works as on the Xbox. The keyboard and mouse can be used at any time — the game follows
 whichever was touched last, and its button prompts change to match (or stay on one set: "Button
@@ -189,8 +224,22 @@ build/linux/NinjaGaidenBlack
 ```
 
 Packages: `packaging/appimage/build.sh` (in a Docker container, for an AppImage that runs on older
-systems), `packaging/windows/build.sh` (cross-compiled from Linux with llvm-mingw), and
-`packaging/macos/build.sh` (native Apple Silicon). Packages contain no game data.
+systems), `packaging/windows/build.sh` (cross-compiled from Linux with llvm-mingw),
+`packaging/android/build.sh` (below), and `packaging/macos/build.sh` (native Apple Silicon). Packages
+contain no game data.
+
+For Android, after the fetch and pipeline steps above (on Linux), install the Android SDK with an NDK,
+build-tools and a platform (Android Studio's SDK Manager, or `sdkmanager "ndk;27.2.12479018"
+"build-tools;35.0.0" "platforms;android-35"`), and a JDK, then:
+
+```sh
+packaging/android/build.sh      # ANDROID_HOME=<sdk> if it is not ~/Android/Sdk
+adb install -r build/android-release/NinjaGaidenBlack-android-arm64.apk
+```
+
+It builds SDL2 and glslang for the phone once (into `build/android-deps`), then the game, and signs the
+APK with a key it makes there (`debug.keystore`): keep that file, as Android only installs an update
+over an app signed with the same key.
 
 On macOS, install the build dependencies below, then run the fetch and pipeline steps above
 and package the app:
@@ -218,7 +267,9 @@ and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
   [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp): the renderer's shader, vertex and
   texture code, and the sound mixer's model (MIT)
 - Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
-- Keyboard and mouse prompts: Xelu's Free Controller & Key Prompts (CC0)
+- Keyboard, mouse and controller prompts, and the touch controls' buttons: Xelu's Free Controller & Key
+  Prompts (CC0)
+- The touch controls' sticks and d-pad: Kenney's [Mobile Controls](https://kenney.nl/assets/mobile-controls) (CC0)
 - Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)
 
 ### Contributors
