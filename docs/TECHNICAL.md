@@ -43,13 +43,13 @@ loop region, pitch, volume and mix bins -- a bin a buffer lists twice plays twic
 slot, and each bin takes its headroom, the library's one step unless the program sets it: the game sets
 none, the arcade leaves it), position notifications (the arcade's double buffer: set at its next
 `DirectSoundDoWork`, on its own thread), the library's 3D pass (distance, rolloff, the direction by its own octant estimate), and dsstdfx's
-I3DL2 reverb on the send bin 10 with the room the game sets per area, and dsstdfx's crosstalk effect on the 3D
-submixes (bins 6 to 9, the reverb's too; "Console" only) before they reach the speakers: each side takes the other's output of 11
-samples before through a one pole filter (0x7645A1, 0xF88313 in the image's code, which the library decrypts as it
-loads it). The sound chip is not emulated.
+I3DL2 reverb on the send bin 10 with the room the game sets per area. dsstdfx's crosstalk effect on the 3D
+submixes (each side takes the other's output of 11 samples before through a one pole filter: 0x7645A1, 0xF88313 in the
+image's code, which the library decrypts as it loads it) ran for "Console" in 0.9.40 only: its bass came out mostly out
+of phase, and xemu running the image on its DSP matches "Console" without it (#126). The sound chip is not emulated.
 Positional Audio places a mono 3D sound through the library's own HRTF tables (0x395430 the filter per
 direction, 0x383E70 the filters: 31 sign and magnitude taps per ear, the far ear's delay in its last
-byte): "Console" filters it as the chip does and runs the crosstalk stage, "Clear" (the default; "Panning" before 0.9.40)
+byte): "Console" filters it as the chip does, "Clear" (the default; "Panning" before 0.9.40)
 takes only each ear's level from its filter, the pair scaled to constant power (0.9.40 alone used each filter's RMS gain, +2 to +5 dB by direction, heard as boomy), "Off" plays it centred. Audio Output (Sound; the arcade has it from the game, `NGB_AUDIO_OUTPUT`) is
 Stereo, 5.1, or Auto: 5.1 when the default output device has six channels or more. On 5.1 the program is
 told its speakers are surround (with Dolby Digital) and mixes for them, and the output is FL FR C LFE BL
@@ -57,7 +57,7 @@ BR; on stereo the centre is folded into the front pair. `NGB_AUDIO_CHANNELS=2|6`
 `NGB_AUDIO_ENGINE=apu` goes back to the recompiled library on the emulated chip (xemu's voice
 processor, 0.9.29 and before: no reverb, no 5.1). `NGB_DSOUND_LOG=1` logs the calls (`=3` every Lock, `=2` every volume
 change too), `NGB_DSOUND_WAV=<file>` records what plays (either engine), `NGB_DSOUND_REVERB=0` leaves the
-reverb out, `NGB_DSOUND_XTALK=0` the crosstalk effect.
+reverb out, `NGB_DSOUND_XTALK=1` adds the crosstalk effect.
 
 `kill -USR1 <pid>` (Linux) prints the guest thread's host backtrace, every lifted function a named
 `sub_XXXXXXXX`, and its guest registers -- use it instead of gdb, which swallows the TF single-steps
@@ -152,6 +152,15 @@ level (script opcode 0x83 in sub_00016300; for the Dragon Sword actions 0x20A, 0
 absorbed while charging (sub_001E2EB0) raises the level itself and sets the count just past that level's
 mark (0x65, 0xDD). With the option on, the count's steps of a few frames are taken back each frame, so only
 essence raises the level.
+
+Skip Any Cutscene (Gameplay; `src/cutscene_skip.c`, #139): sub_001DBEE0 runs the events, the in-game
+cutscenes among them, once a frame, and Start skips the one playing when Start is down (bit 0x10 of the player's
+buttons at 0xD219A8, 0x78 a player), the event has been watched (one byte an event from 0xDB9477, by its number at
+0xDB9C6E: the chapter 1 waterfall is 0x6E, its byte 0xDB94E5) and its script has made it skippable (0x8D3A66, set
+and cleared by the script's own commands in sub_001DD300). The function is taken from the generated code with
+the watched test passed while the option is on; a cutscene its script never makes skippable still is not, and
+the watched bytes are not written, so saves do not change. The same option lets Start, A or B end a movie
+(`src/movie_skip.c`); it is on unless turned off.
 
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each

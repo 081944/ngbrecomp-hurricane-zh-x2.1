@@ -65,7 +65,7 @@ enum { ROW_SCREEN, ROW_MOVIE, ROW_PC, ROW_DEFAULT, ROW_EXIT,
        ROW_SKIP, ROW_LAUNCHER, ROW_MSAA, ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_ALLDIFF, ROW_SCARABS, ROW_ALLCOST, ROW_EXTRACOST,
        ROW_GLOW, ROW_QUICKFREEZE, ROW_QUICKSCALE, ROW_INFITEMS, ROW_INFAMMO, ROW_POSAUDIO, ROW_HUD, ROW_AUDIOOUT,
        ROW_MISSIONS, ROW_ARCADE, ROW_MOVIES, ROW_UNLOCKS, ROW_LOADDETAIL, ROW_RTHREAD, ROW_INTERCEPT,
-       ROW_ALLWEAP, ROW_ESSCHARGE,
+       ROW_ALLWEAP, ROW_ESSCHARGE, ROW_CUTSKIP,
 };
 
 static int is_ours(int page) { return page >= PAGE_GFX && page < PAGE_GFX + N_OURS; }
@@ -81,7 +81,7 @@ static const uint8_t s_rows_gfx[] = { ROW_RENDER, ROW_TEXTURE, ROW_MSAA, ROW_SHA
 static const uint8_t s_rows_disp[] = { ROW_ASPECT, ROW_WINDOW, ROW_DISPLAY, ROW_VSYNC, ROW_FPS, ROW_HUD, ROW_SKIP,
                                        ROW_BACK };
 static const uint8_t s_rows_sound[] = { ROW_POSAUDIO, ROW_AUDIOOUT, ROW_BACK };
-static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_INTERCEPT, ROW_ESSCHARGE, ROW_BACK };
+static const uint8_t s_rows_game[] = { ROW_QUICKSCALE, ROW_QUICKFREEZE, ROW_INTERCEPT, ROW_ESSCHARGE, ROW_CUTSKIP, ROW_BACK };
 static const uint8_t s_rows_cheat[] = { ROW_HEALTH, ROW_NINPO, ROW_ESSENCE, ROW_SCARABS, ROW_INFITEMS, ROW_INFAMMO,
                                         ROW_ALLWEAP, ROW_UNLOCKS, ROW_BACK };
 static const uint8_t s_rows_ctrl[] = { ROW_BACK };
@@ -200,6 +200,8 @@ static const struct { const uint8_t *kinds; int n; } s_ours[N_OURS] = {
 #define D_ALLWEAP  0x201EE
 #define T_ESSCHARGE 0x201EF           /* Essence-Only Charging (src/ut_charge.c, #120) */
 #define D_ESSCHARGE 0x201F0
+#define T_CUTSKIP  0x201F1            /* Skip Any Cutscene (src/cutscene_skip.c, #139) */
+#define D_CUTSKIP  0x201F2
 #define T_WINDOWSZ 0x2012A
 #define D_WINDOWSZ 0x2012B
 #define T_WSIZE0   0x20140            /* + aspect * 8 + index: "1280 x 720" (the first four aspects) */
@@ -255,6 +257,8 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_ALLWEAP, "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.\nA save made while it is on keeps them." },
     { T_ESSCHARGE, "Essence-Only Charging" },
     { D_ESSCHARGE, "Holding attack no longer charges an Ultimate Technique: only absorbing essence does." },
+    { T_CUTSKIP, "Skip Any Cutscene" },
+    { D_CUTSKIP, "Start skips any movie or in-game cutscene, watched before or not. Off: as on the Xbox." },
     { T_INTERCEPT0 + 0, "Off" }, { T_INTERCEPT0 + 1, "Black" }, { T_INTERCEPT0 + 2, "Hurricane" },
     { T_ANISO0 + 0, "Off" }, { T_ANISO0 + 1, "2x" }, { T_ANISO0 + 2, "4x" },
     { T_ANISO0 + 3, "8x" }, { T_ANISO0 + 4, "16x" },
@@ -384,7 +388,7 @@ static uint32_t make_labels(const uint8_t *kinds, int n)
                                    T_HEALTH, T_NINPO, T_ESSENCE, T_ALLDIFF, T_SCARABS, T_ALLCOST, T_EXTRACOST,
                                    T_GLOW, T_QUICKFREEZE, T_QUICKSCALE, T_INFITEMS, T_INFAMMO, T_POSAUDIO, T_HUD,
                                    T_AUDIOOUT, T_MISSIONS, T_ARCADE, T_MOVIES, T_UNLOCKS, T_LOADDETAIL, T_RTHREAD,
-                                   T_INTERCEPT, T_ALLWEAP, T_ESSCHARGE };
+                                   T_INTERCEPT, T_ALLWEAP, T_ESSCHARGE, T_CUTSKIP };
     uint32_t va = xbox_HeapAlloc(4 * n, 4);
     for (int i = 0; i < n; i++)
         MEM32(va + 4 * i) = id[kinds[i]];
@@ -830,6 +834,7 @@ static uint32_t pc_value_id(int row, uint32_t movie_id)
     case ROW_INFAMMO: return ngb_pc_setting(22) ? T_ON : T_OFF;
     case ROW_ALLWEAP: return ngb_pc_setting(32) ? T_ON : T_OFF;
     case ROW_ESSCHARGE: return ngb_pc_setting(33) ? T_ON : T_OFF;
+    case ROW_CUTSKIP: return ngb_pc_setting(34) ? T_ON : T_OFF;
     case ROW_MISSIONS:
     case ROW_ARCADE:
     case ROW_MOVIES:  return ngb_pc_setting(26 + kind_unlock(row_kind(row))) ? T_YES : T_NO;
@@ -895,6 +900,7 @@ static int pc_value_change(int row, int delta)
     case ROW_INFAMMO: ngb_pc_set_setting(22, !ngb_pc_setting(22)); break;
     case ROW_ALLWEAP: ngb_pc_set_setting(32, !ngb_pc_setting(32)); break;
     case ROW_ESSCHARGE: ngb_pc_set_setting(33, !ngb_pc_setting(33)); break;
+    case ROW_CUTSKIP: ngb_pc_set_setting(34, !ngb_pc_setting(34)); break;
     case ROW_MISSIONS:
     case ROW_ARCADE:
     case ROW_MOVIES: {
@@ -2025,7 +2031,7 @@ void sub_00220870(void)
                                            D_HUD & 0xFFFF, D_AUDIOOUT & 0xFFFF, D_MISSIONS & 0xFFFF,
                                            D_ARCADE & 0xFFFF, D_MOVIES & 0xFFFF, D_UNLOCKS & 0xFFFF,
                                            D_LOADDETAIL & 0xFFFF, D_RTHREAD & 0xFFFF, D_INTERCEPT & 0xFFFF,
-                                           D_ALLWEAP & 0xFFFF, D_ESSCHARGE & 0xFFFF };
+                                           D_ALLWEAP & 0xFFFF, D_ESSCHARGE & 0xFFFF, D_CUTSKIP & 0xFFFF };
     RECOMP_ENTRY(0x00220870u);
     uint32_t out = ecx;
     uint32_t level = MEM16(0x8DE430), tab = MEM16(0x8DE4CC), row = MEM16(0x8DE468);

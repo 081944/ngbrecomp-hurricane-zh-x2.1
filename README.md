@@ -96,12 +96,13 @@ of the pause menu. Changes apply at once and are saved.
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
   warnings and intro movies
 - **Sound**: Positional Audio (3D sounds placed left and right: Clear, the default, by level only;
-  Console, through the sound chip's filters and speaker crosstalk as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
+  Console, through the sound chip's filters as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output; a change needs a restart of the game)
-- **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
+- **Gameplay** (each off unless chosen, but Skip Any Cutscene): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
   Pack's guard counter Black left out: tap guard as an attack lands to turn it aside; **Essence-Only
-  Charging**, Ultimate Techniques charged only by absorbing essence, not by holding attack (#120)
+  Charging**, Ultimate Techniques charged only by absorbing essence, not by holding attack (#120); **Skip Any
+  Cutscene** (on unless turned off), Start skipping movies and in-game cutscenes not yet watched (#139)
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs;
   all weapons (every melee and projectile weapon at its highest level; turned off, it takes back what it
   gave and puts back your own levels and pickups; a save made while it is on keeps the weapons)
@@ -146,7 +147,8 @@ melee weapon; Up and Down then change category, Left and Right choose, A / Enter
 Escape closes. Its keys are in Controls.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
-Movies can be skipped with Start, A or B (or the keys for them); in-game cutscenes with Start.
+With Skip Any Cutscene (Gameplay, on unless turned off), movies can be skipped with Start, A or B (or the keys
+for them) and in-game cutscenes with Start, watched before or not.
 
 Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 

@@ -16,9 +16,11 @@
  * kernel's read hook): it opens every movie at boot to probe them, so the
  * last one opened says nothing.
  *
- * And any movie, by pressing Start, A or B (ngb_skip_button, src/keyboard.c)
- * -- once every button has been let go since it began, so neither the press
- * that started it nor one held through it ends it.
+ * And any movie, by pressing Start, A or B (ngb_skip_button, src/keyboard.c),
+ * with Skip Any Cutscene on (Gameplay, setting 34, the default; it also skips
+ * the in-game cutscenes, src/cutscene_skip.c) -- once every button has been
+ * let go since it began, so neither the press that started it nor one held
+ * through it ends it.
  */
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
@@ -30,6 +32,7 @@ int ngb_skip_intro;
 static volatile int s_skip_current;
 static int s_released;   /* the buttons let go since this movie began */
 int ngb_skip_button(void);
+int ngb_pc_setting(int which);   /* src/ingame_menu.c: 34 Skip Any Cutscene */
 
 void ngb_movie_read(const char *host_path)
 {
@@ -51,6 +54,8 @@ static int ngb_movie_skip_now(void)
 {
     if (s_skip_current)
         return 1;
+    if (!ngb_pc_setting(34))
+        return 0;
     if (!ngb_skip_button())
         s_released = 1;
     else if (s_released)

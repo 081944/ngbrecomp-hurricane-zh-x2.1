@@ -87,7 +87,7 @@ void ngb_menu_set_running(const NgbSettings *s)
  * audio (0 off, 1 the HRTF filters, 2 clear, their levels only; #30, #86), 24 the HUD (src/hud.c, #80), 25 the audio
  * output (0 auto, 1 stereo, 2 5.1; src/audio), 26-28 the main menu's MISSIONS, ARCADE NINJA GAIDEN and
  * MOVIE THEATER unlocked (src/cheats.c, saved), 29 Lower Detail Under Load (src/d3d/d3d.c), 30 the render thread
- * (src/d3d/hle.cpp, the Multithreaded Renderer), 31 Intercept (src/intercept.c), 32 all weapons (a cheat), 33 Essence-Only Charging (src/ut_charge.c). A change applies at once (8, 9 and 25 at the next start, 30 after a restart) and is saved, the
+ * (src/d3d/hle.cpp, the Multithreaded Renderer), 31 Intercept (src/intercept.c), 32 all weapons (a cheat), 33 Essence-Only Charging (src/ut_charge.c), 34 Skip Any Cutscene (src/cutscene_skip.c). A change applies at once (8, 9 and 25 at the next start, 30 after a restart) and is saved, the
  * cheats' not. */
 int ngb_cheat(int which);
 void ngb_cheat_set(int which, int on);
@@ -142,6 +142,7 @@ int ngb_pc_setting(int which)
     case 30: return s_running.render_thread;
     case 31: return s_running.intercept;
     case 33: return s_running.essence_charging;
+    case 34: return s_running.skip_cutscenes;
     case 25: return s_running.audio_output;
     default: return s_running.show_fps;
     }
@@ -180,6 +181,7 @@ void ngb_pc_set_setting(int which, int value)
     case 30: s_running.render_thread = !!value; break;   /* at the next start */
     case 31: s_running.intercept = value < 0 ? 0 : value > 2 ? 2 : value; break;
     case 33: s_running.essence_charging = !!value; break;
+    case 34: s_running.skip_cutscenes = !!value; break;
     case 25:   /* the mixer's at the next start; the arcade's at its next */
         s_running.audio_output = value < 0 ? 0 : value > 2 ? 2 : value;
         ngb_audio_set_output(s_running.audio_output);

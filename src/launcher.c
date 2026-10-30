@@ -140,6 +140,7 @@ void ngb_settings_load(NgbSettings *s)
     s->show_hud = 1;
     s->quick_menu_scale = 0;    /* the quick menu off unless chosen (Gameplay) */
     s->skip_intro = 0;
+    s->skip_cutscenes = 1;      /* Start skips movies and in-game cutscenes, watched or not (#28, #139) */
     s->show_launcher = 1;
 
     config_path(path, sizeof path, 0);
@@ -209,6 +210,8 @@ void ngb_settings_load(NgbSettings *s)
             s->intercept = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
         } else if (!strcmp(key, "essence_only_charging")) {
             s->essence_charging = atoi(val) != 0;
+        } else if (!strcmp(key, "skip_any_cutscene")) {
+            s->skip_cutscenes = atoi(val) != 0;
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -267,6 +270,7 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "render_thread = %d\n", s->render_thread);
     fprintf(f, "intercept = %d\n", s->intercept);
     fprintf(f, "essence_only_charging = %d\n", s->essence_charging);
+    fprintf(f, "skip_any_cutscene = %d\n", s->skip_cutscenes);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "audio_output = %d\n", s->audio_output);

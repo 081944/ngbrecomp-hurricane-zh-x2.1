@@ -34,6 +34,7 @@ typedef struct NgbSettings {
     int render_thread;      /* Multithreaded Renderer: drawing on a thread of its own (src/d3d/gpu/threaded.cpp) */
     int intercept;          /* Gameplay > Intercept (src/intercept.c, #109): 0 off, 1 Black's, 2 the Hurricane Pack's */
     int essence_charging;   /* Gameplay > Essence-Only Charging (src/ut_charge.c, #120) */
+    int skip_cutscenes;     /* Gameplay > Skip Any Cutscene (src/cutscene_skip.c, #139) */
     /* Hard, Very Hard and Master Ninja offered without clearing the one before */
 } NgbSettings;
 

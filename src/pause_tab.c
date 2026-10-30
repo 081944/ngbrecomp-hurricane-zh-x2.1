@@ -79,7 +79,7 @@ enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASP
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
        S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT,
        S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD, S_INTERCEPT, S_ALLWEAP,
-       S_ESSCHARGE,
+       S_ESSCHARGE, S_CUTSKIP,
        S_UNLOCKS,                 /* not a setting: Cheats' row opening the Unlocks page */
        S_COUNT };
 
@@ -91,7 +91,7 @@ static const char *const s_label[S_COUNT] = {
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
     "Audio Output", "Missions", "Arcade Ninja Gaiden", "Movie Theater", "Lower Detail Under Load",
-    "Multithreaded Renderer", "Intercept", "All Weapons", "Essence-Only Charging", "Unlocks",
+    "Multithreaded Renderer", "Intercept", "All Weapons", "Essence-Only Charging", "Skip Any Cutscene", "Unlocks",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -128,6 +128,7 @@ static const char *const s_help[S_COUNT] = {
     "Tap guard as a hit lands to turn it aside (the Hurricane Pack's move Black left out).",
     "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.\nA save made while it is on keeps them.",
     "Holding attack no longer charges an Ultimate Technique: only absorbing essence does.",
+    "Start skips any movie or in-game cutscene, watched before or not. Off: as on the Xbox.",
     "Difficulties, costumes and the main menu's extras, without earning them. Saved.",
 };
 
@@ -137,13 +138,13 @@ static const char *const s_help[S_COUNT] = {
 #define CAT_CTL 5                 /* Controls: the bindings' list (src/bindings.c), not settings */
 #define CAT_CHEAT 4
 #define CAT_UNL CATS              /* Unlocks: a page of Cheats' (its row S_UNLOCKS), not on the strip */
-/* Gameplay: optional changes to how the game plays (off unless chosen; docs/quick-menu.md) */
+/* Gameplay: optional changes to how the game plays (off unless chosen, but Skip Any Cutscene; docs/quick-menu.md) */
 static const char *const s_cat_name[CATS] = { "Graphics", "Display", "Sound", "Gameplay", "Cheats", "Controls" };
 static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, S_LOADDETAIL, S_RTHREAD, -1 },   /* -1 ends a page shorter than CAT_ROWS */
     { S_ASPECT, S_WINDOW, S_DISPLAY, S_VSYNC, S_FPS, S_HUD, S_SKIP, -1 },
     { S_POSAUDIO, S_AUDIOOUT, -1 },
-    { S_QUICKSCALE, S_QUICKFREEZE, S_INTERCEPT, S_ESSCHARGE, -1 },
+    { S_QUICKSCALE, S_QUICKFREEZE, S_INTERCEPT, S_ESSCHARGE, S_CUTSKIP, -1 },
     { S_HEALTH, S_NINPO, S_ESSENCE, S_SCARABS, S_INFITEMS, S_INFAMMO, S_ALLWEAP, S_UNLOCKS, -1 },
     { -1 },
     { S_ALLDIFF, S_ALLCOST, S_MISSIONS, S_ARCADE, S_MOVIES, -1 },
