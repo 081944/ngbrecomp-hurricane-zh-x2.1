@@ -1766,8 +1766,9 @@ _Noreturn void ngb_renderer_fatal(const char *detail)
              "the project's GitHub page.", detail);
 #else
     snprintf(msg, sizeof msg,
-             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3 (dynamic rendering and push "
-             "descriptors), and this system does not offer it:\n\n%s\n\n"
+             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3's dynamic rendering and synchronization2 "
+             "(in Vulkan 1.3, or as extensions of an older one) and push descriptors, and this system does not "
+             "offer them:\n\n%s\n\n"
              "Please update your graphics driver. GPUs from before about 2016 (for example Nvidia's "
              "GTX 600 and 700 series) are not supported.", detail);
 #endif
