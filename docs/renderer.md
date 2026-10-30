@@ -215,3 +215,7 @@ after the Swap hook, out of every lock, since a wait under the renderer's lock f
 thread made a Direct3D call. A wait of 10 s is logged, then every 10 s (never ended: the F1 menu holds the
 render thread on purpose). The
 2D-screen decision (src/pc_menu.c) takes the last presented frame's draw counts, not the live ones. Attract demo: the title's thread 134 -> 110 ms/s.
+
+Open (#138, 0.9.41): with the render thread on, the picture froze during play on a GTX 1050 and an RX 6800 XT,
+and off fixed it. The log had no 10 s wait line, so the title's thread was not stuck on the frame
+before; what stops (presenting, the render thread, or the window) is not known yet.

@@ -231,8 +231,8 @@ its 4:3 mode for a 4:3 movie narrowed it twice, #28.) The mouse is mapped to the
 frame.
 Aspect ratio also offers 21:9 (64:27;
 window sizes 1720x720 to 5120x2160) and 32:9 (two 16:9 screens side by side, 2560x720 to 7680x2160, #74):
-the 3D widened as for 16:10, the game deciding what to
-draw for a narrower view, so objects at the far edges may appear late.
+the 3D widened as for 16:10. The game's own choice of what to draw is left as it is; no object
+has been seen appearing late at the far edges.
 
 The boot "Warnings" screen is always skipped (`NGB_KEEP_WARNINGS=1` shows it).
 

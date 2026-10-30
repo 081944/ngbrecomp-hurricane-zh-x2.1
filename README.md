@@ -163,9 +163,9 @@ the game was in.
 
 ## Known issues
 
-- At **21:9** and **32:9**, objects at the far left and right of the screen can appear a moment late (the
-  game decides what to draw for a narrower view).
 - Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
+- With **Multithreaded Renderer** on, the game can freeze during play (#138). Turning it off (Graphics,
+  needs a restart) avoids it.
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 
