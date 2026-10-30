@@ -1,7 +1,6 @@
 package org.ngb.port;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -16,16 +15,21 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-/** The prototype imports an extracted disc folder; game assets are not in the APK. */
+/**
+ * A launcher, not a setup screen: once the game folder is imported the app
+ * goes straight into the game. The setup UI only appears while there is no
+ * game (import the folder, optionally a driver ZIP); the in-game touch menu
+ * handles driver switching afterwards.
+ */
 public final class SetupActivity extends Activity {
     private static final int PICK_GAME = 1;
     private static final int PICK_DRIVER = 2;
+    private static final int GAME = 3;
     private TextView status;
-    private Button play, select, drivers, importDriver;
+    private Button select, importDriver;
     private boolean importing;
     private File game;
     private File marker;
-    private static native String checkGraphics();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -33,6 +37,8 @@ public final class SetupActivity extends Activity {
         if (base == null) { finish(); return; }
         game = new File(base, "game");
         marker = new File(base, "game-import-complete");
+        if (gameReady()) { startGame(); return; }
+
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int padding = (int)(24 * getResources().getDisplayMetrics().density);
@@ -49,86 +55,46 @@ public final class SetupActivity extends Activity {
         select.setOnClickListener(v -> startActivityForResult(
                 new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_GAME));
         layout.addView(select);
-        drivers = new Button(this);
-        drivers.setOnClickListener(v -> chooseDriver());
-        layout.addView(drivers);
         importDriver = new Button(this);
         importDriver.setText("导入驱动 ZIP");
         importDriver.setOnClickListener(v -> startActivityForResult(
                 new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), PICK_DRIVER));
         layout.addView(importDriver);
-        play = new Button(this);
-        play.setText("启动游戏");
-        play.setOnClickListener(v -> checkAndStart());
-        layout.addView(play);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(layout);
         setContentView(scroll);
         refresh();
     }
 
-    private void checkAndStart() {
-        play.setEnabled(false);
-        select.setEnabled(false);
-        drivers.setEnabled(false);
-        importDriver.setEnabled(false);
-        status.setText("正在检查图形支持……");
-        new Thread(() -> {
-            String problem;
-            try {
-                DriverStore.configure(this);
-                System.loadLibrary("SDL2");
-                System.loadLibrary("main");
-                problem = checkGraphics();
-            } catch (Throwable error) { problem = error.toString(); }
-            final String message = problem;
-            runOnUiThread(() -> {
-                refresh();
-                if (message != null) {
-                    status.setText("游戏文件已就绪，但当前图形驱动不满足运行要求。\n"
-                            + "需要 Vulkan 1.3，请更新系统驱动或使用支持的设备。\n" + message);
-                } else {
-                    Intent intent = new Intent(this, GameActivity.class);
-                    intent.putExtra("silent_test", getIntent().getBooleanExtra("silent_test", false));
-                    startActivity(intent);
-                }
-            });
-        }, "ngb-graphics-check").start();
+    private boolean gameReady() {
+        return new File(game, "default.xbe").isFile() && marker.isFile();
     }
 
-    private void chooseDriver() {
-        java.util.List<DriverStore.Driver> list = DriverStore.list(this);
-        String[] labels = new String[list.size() + 1];
-        labels[0] = "系统驱动";
-        int checked = 0;
-        String selected = DriverStore.selected(this);
-        for (int i = 0; i < list.size(); i++) {
-            labels[i + 1] = list.get(i).name;
-            if (list.get(i).id.equals(selected)) checked = i + 1;
-        }
-        new AlertDialog.Builder(this).setTitle("选择图形驱动")
-                .setSingleChoiceItems(labels, checked, (dialog, index) -> {
-                    try { DriverStore.select(this, index == 0 ? DriverStore.SYSTEM : list.get(index - 1).id); refresh(); }
-                    catch (IOException error) { status.setText(error.getMessage()); }
-                    dialog.dismiss();
-                }).setNegativeButton("取消", null).show();
+    private void startGame() {
+        Intent intent = new Intent(this, GameActivity.class);
+        intent.putExtra("silent_test", getIntent().getBooleanExtra("silent_test", false));
+        startActivityForResult(intent, GAME);
     }
 
     private void refresh() {
-        boolean ready = new File(game, "default.xbe").isFile()
-                && marker.isFile();
-        play.setEnabled(ready && !importing);
+        boolean ready = gameReady();
         select.setEnabled(!importing);
-        drivers.setEnabled(!importing);
         importDriver.setEnabled(!importing);
-        drivers.setText("图形驱动：" + DriverStore.label(this));
         if (!importing) status.setText(ready
-                ? "游戏文件已就绪。请连接手柄后启动。\n开发版本，兼容性与帧率仍在验证。"
-                : "选择已提取的美版游戏文件夹，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n当前版本使用手柄操作。");
+                ? "游戏文件已就绪。"
+                : "选择已提取的美版游戏文件夹，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。");
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == GAME) {
+            // The game owns a process that exits on exit; a cancelled result
+            // (back, or a failed start) lands back here, where the driver can
+            // be changed before the next attempt.
+            if (result != RESULT_OK && !gameReady())
+                status.setText("游戏未启动。请检查驱动或重新导入游戏文件夹。");
+            return;
+        }
         if (result != RESULT_OK || data == null || data.getData() == null) return;
         if (request == PICK_DRIVER) {
             importing = true;
@@ -163,8 +129,12 @@ public final class SetupActivity extends Activity {
             final String message = error;
             runOnUiThread(() -> {
                 importing = false;
-                refresh();
-                if (message != null) status.setText("导入失败：" + message + "\n请检查空间和文件夹后重试。");
+                if (message != null) {
+                    refresh();
+                    status.setText("导入失败：" + message + "\n请检查空间和文件夹后重试。");
+                    return;
+                }
+                startGame();   // first import: straight into the game
             });
         }, "ngb-import").start();
     }

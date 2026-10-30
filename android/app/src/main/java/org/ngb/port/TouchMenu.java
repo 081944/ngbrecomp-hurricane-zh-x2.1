@@ -112,14 +112,36 @@ final class TouchMenu extends FrameLayout {
         page.addView(driverRow("系统驱动", DriverStore.SYSTEM, DriverStore.SYSTEM.equals(DriverStore.selected(activity))));
         for (DriverStore.Driver driver : drivers)
             page.addView(driverRow(driver.name, driver.id, driver.id.equals(DriverStore.selected(activity))));
+        page.addView(spacer(6));
+        page.addView(driverImportRow());
         page.addView(spacer(10));
-        page.addView(text("驱动选择后需要重启应用生效；驱动包（AdrenoTools ZIP）仍在启动器导入。", 12, false, DIM));
+        page.addView(text("驱动选择后需要重启应用生效。", 12, false, DIM));
 
         content.removeAllViews();
         content.addView(page);
     }
 
     /* ---- drivers ---- */
+
+    /** Opens the system document picker; GameActivity takes the result. */
+    private View driverImportRow() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER);
+        row.setPadding(dp(10), dp(10), dp(10), dp(10));
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(10));
+        background.setColor(CHIP_OFF);
+        row.setBackground(background);
+        row.addView(text("＋ 导入驱动 ZIP…", 14, false, TEXT));
+        row.setOnClickListener(v -> {
+            hide();
+            ((GameActivity) activity).importDriverZip();
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(MATCH, WRAP);
+        params.topMargin = dp(4);
+        row.setLayoutParams(params);
+        return row;
+    }
 
     private View driverRow(String name, String id, boolean selected) {
         LinearLayout row = new LinearLayout(activity);

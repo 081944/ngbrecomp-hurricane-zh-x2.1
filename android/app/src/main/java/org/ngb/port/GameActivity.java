@@ -97,6 +97,44 @@ public final class GameActivity extends SDLActivity {
         finishAffinity();
     }
 
+    private static final int PICK_DRIVER = 2;
+
+    /** Driver ZIP import from the touch menu; see onActivityResult. */
+    void importDriverZip() {
+        startActivityForResult(new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                .setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE), PICK_DRIVER);
+    }
+
+    @Override protected void onActivityResult(int request, int result, android.content.Intent data) {
+        if (request == PICK_DRIVER && result == RESULT_OK && data != null && data.getData() != null) {
+            android.net.Uri uri = data.getData();
+            new Thread(() -> {
+                String message;
+                try (java.io.InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new java.io.IOException("无法读取驱动 ZIP");
+                    DriverStore.Driver driver = DriverStore.importZip(this, input);
+                    message = "驱动已导入：" + driver.name;
+                } catch (Exception error) {
+                    message = "驱动导入失败：" + error.getMessage();
+                }
+                final String text = message;
+                runOnUiThread(() -> {
+                    if (!text.startsWith("驱动已导入")) {
+                        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setMessage(text + "\n现在重启应用以启用？")
+                            .setPositiveButton("重启", (d, w) -> restartForDriver())
+                            .setNegativeButton("稍后", null)
+                            .show();
+                });
+            }, "ngb-driver-import").start();
+            return;
+        }
+        super.onActivityResult(request, result, data);
+    }
+
     @Override protected void onDestroy() {
         super.onDestroy();
         // This Activity owns a separate process so a driver change starts with
