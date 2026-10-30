@@ -19,7 +19,7 @@ RES = os.path.join(HERE, "..", "..", "android", "app", "src", "main", "res")
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
 LEGACY_DP = 48          # 48dp legacy icon
 FOREGROUND_DP = 108     # adaptive icon canvas
-PLATE = 0.90            # art size on the legacy plate
+PLATE = 1.00            # art size on the legacy plate (the art brings its own margins)
 SAFE = 0.80             # art size on the adaptive canvas
 WHITE = (255, 255, 255, 255)
 
@@ -43,12 +43,13 @@ def square(img, fill=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("art")
-    ap.add_argument("--no-trim", action="store_true",
-                    help="keep a uniform border the art was delivered with")
+    ap.add_argument("--trim", action="store_true",
+                    help="crop a uniform border the art was delivered with "
+                         "(off by default: art is drawn with its own margins on purpose)")
     args = ap.parse_args()
 
     src = Image.open(args.art).convert("RGBA")
-    if not args.no_trim:
+    if args.trim:
         src = trim_border(src)
     src = square(src)
 
