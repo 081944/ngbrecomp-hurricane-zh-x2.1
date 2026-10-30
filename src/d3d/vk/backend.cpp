@@ -9,6 +9,9 @@
 // NGB_D3D_DUMP=dir writes each presented frame (and NGB_D3D_DUMP_FROM=n, NGB_D3D_DUMP_COUNT=n
 // choose which) as dir/frame_NNNNN.ppm.
 #include "port.h"
+#ifdef __ANDROID__
+#include "android_vulkan.h"
+#endif
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
@@ -35,6 +38,7 @@
 #include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "gpu/backend.h"
 #include "gpu/shaders.h"
@@ -445,6 +449,12 @@ private:
     static constexpr uint32_t kVisQueries = 512;
     struct VisQuery { uint32_t test; float div; };
     VkQueryPool vis_pool_[2] = {};
+    VkQueryPool time_pool_[2] = {};
+    uint32_t timestamp_bits_ = 0;
+    double timestamp_period_ = 0, gpu_partial_ms_ = 0, gpu_pending_ms_[2] = {};
+    uint64_t cpu_frame_ns_ = 0;
+    void TimeEnd();
+    double TimeResult(int slot);
     std::vector<VisQuery> vis_q_[2];
     std::vector<std::pair<uint32_t, uint32_t>> vis_end_[2];   // test, report slot
     std::unordered_map<uint32_t, double> vis_sum_;
@@ -607,11 +617,28 @@ private:
         }                                                                           \
     } while (0)
 
+static bool InitializeVulkanLoader() {
+    if (volkGetInstanceVersion() != 0) return true;
+#ifdef __ANDROID__
+    auto proc = ngb_android_vulkan_proc();
+    if (!proc) return false;
+    volkInitializeCustom(proc);
+    return true;
+#else
+    return volkInitialize() == VK_SUCCESS;
+#endif
+}
+
 bool VulkanBackend::CreateInstance() {
-    if (volkGetInstanceVersion() == 0 && volkInitialize() != VK_SUCCESS) return false;
+    if (!InitializeVulkanLoader()) return false;
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "Ninja Gaiden Black (Direct3D renderer)";
     app.apiVersion = VK_API_VERSION_1_3;
+#ifdef __ANDROID__
+    // A newer custom driver may sit behind Android 11's 1.1 loader. The
+    // selected physical device must still provide the required 1.3 features.
+    app.apiVersion = std::min(app.apiVersion, volkGetInstanceVersion());
+#endif
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
 #ifdef __APPLE__
@@ -670,17 +697,23 @@ bool VulkanBackend::CreateDevice() {
         f2.features.wideLines = have.wideLines;
         f2.features.largePoints = have.largePoints;
     }
-    const char* exts[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+    std::vector<const char*> exts = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 #ifdef __APPLE__
                           "VK_KHR_portability_subset",
 #endif
     };
+#ifdef __ANDROID__
+    if (volkGetInstanceVersion() < VK_API_VERSION_1_3) {
+        exts.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        exts.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    }
+#endif
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &f2;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = sizeof(exts) / sizeof(exts[0]);
-    dci.ppEnabledExtensionNames = exts;
+    dci.enabledExtensionCount = uint32_t(exts.size());
+    dci.ppEnabledExtensionNames = exts.data();
     VKCHECK(vkCreateDevice(phys_, &dci, nullptr, &dev_));
     volkLoadDeviceTable(&d_, dev_);
     d_.vkGetDeviceQueue(dev_, qfam_, 0, &queue_);
@@ -688,7 +721,7 @@ bool VulkanBackend::CreateDevice() {
 }
 
 bool VulkanBackend::AdoptDevice(const nv2a_vk_shared& sh) {
-    if (volkGetInstanceVersion() == 0 && volkInitialize() != VK_SUCCESS) return false;
+    if (!InitializeVulkanLoader()) return false;
     inst_ = sh.instance;
     phys_ = sh.physical_device;
     dev_ = sh.device;
@@ -701,11 +734,23 @@ bool VulkanBackend::AdoptDevice(const nv2a_vk_shared& sh) {
 }
 
 bool VulkanBackend::FinishDevice() {
+#ifdef __ANDROID__
+    if (!d_.vkCmdBeginRendering) d_.vkCmdBeginRendering = d_.vkCmdBeginRenderingKHR;
+    if (!d_.vkCmdEndRendering) d_.vkCmdEndRendering = d_.vkCmdEndRenderingKHR;
+    if (!d_.vkCmdPipelineBarrier2) d_.vkCmdPipelineBarrier2 = d_.vkCmdPipelineBarrier2KHR;
+    if (!d_.vkCmdBeginRendering || !d_.vkCmdEndRendering || !d_.vkCmdPipelineBarrier2) {
+        std::fprintf(stderr, "[D3D] Android loader provides neither core nor KHR rendering/sync entry points\n");
+        return false;
+    }
+#endif
     VmaAllocatorCreateInfo ai{};
     ai.physicalDevice = phys_;
     ai.device = dev_;
     ai.instance = inst_;
     ai.vulkanApiVersion = VK_API_VERSION_1_3;
+#ifdef __ANDROID__
+    ai.vulkanApiVersion = std::min(ai.vulkanApiVersion, volkGetInstanceVersion());
+#endif
     VmaVulkanFunctions fns{};
     VKCHECK(vmaImportVulkanFunctionsFromVolk(&ai, &fns));
     ai.pVulkanFunctions = &fns;
@@ -855,6 +900,20 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
     qci.queryCount = kVisQueries;
     for (auto& p : vis_pool_)
         if (d_.vkCreateQueryPool(dev_, &qci, nullptr, &p) != VK_SUCCESS) p = VK_NULL_HANDLE;
+    uint32_t families = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(phys_, &families, nullptr);
+    std::vector<VkQueueFamilyProperties> qp(families);
+    vkGetPhysicalDeviceQueueFamilyProperties(phys_, &families, qp.data());
+    timestamp_bits_ = qp[qfam_].timestampValidBits;
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(phys_, &properties);
+    timestamp_period_ = properties.limits.timestampPeriod;
+    if (timestamp_bits_) {
+        qci.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        qci.queryCount = 2;
+        for (auto& p : time_pool_)
+            if (d_.vkCreateQueryPool(dev_, &qci, nullptr, &p) != VK_SUCCESS) p = VK_NULL_HANDLE;
+    }
     Begin();
     Barrier(null2d_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Barrier(nullcube_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -883,6 +942,7 @@ VulkanBackend::~VulkanBackend() {
         d_.vkDeviceWaitIdle(dev_);
     }
     if (dev_) {
+        for (auto p : time_pool_) if (p) d_.vkDestroyQueryPool(dev_, p, nullptr);
         for (auto& image:continuous_glow_) DestroyImage(image);
         for (auto& image:glow_soft_) DestroyImage(image);
         DestroyImage(quick_background_);
@@ -898,7 +958,25 @@ void VulkanBackend::Begin() {
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     d_.vkBeginCommandBuffer(cmd_, &bi);
     recording_ = true;
+    if (time_pool_[slot_]) {
+        d_.vkCmdResetQueryPool(cmd_, time_pool_[slot_], 0, 2);
+        d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, time_pool_[slot_], 0);
+    }
     if (vis_pool_[slot_]) d_.vkCmdResetQueryPool(cmd_, vis_pool_[slot_], 0, kVisQueries);
+}
+
+void VulkanBackend::TimeEnd() {
+    if (time_pool_[slot_])
+        d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, time_pool_[slot_], 1);
+}
+
+double VulkanBackend::TimeResult(int slot) {
+    uint64_t ticks[2];
+    if (!time_pool_[slot] || d_.vkGetQueryPoolResults(dev_, time_pool_[slot], 0, 2,
+            sizeof ticks, ticks, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS)
+        return -1;
+    uint64_t mask = timestamp_bits_ == 64 ? UINT64_MAX : (uint64_t(1) << timestamp_bits_) - 1;
+    return ((ticks[1] - ticks[0]) & mask) * timestamp_period_ / 1e6;
 }
 
 // Everything recorded so far, done: the slot's commands submitted and waited for, and the other
@@ -906,6 +984,7 @@ void VulkanBackend::Begin() {
 void VulkanBackend::Submit() {
     if (!recording_) return;
     EndRendering();
+    TimeEnd();
     d_.vkEndCommandBuffer(cmd_);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
@@ -917,9 +996,13 @@ void VulkanBackend::Submit() {
         d_.vkWaitForFences(dev_, 1, &fences_[slot_ ^ 1], VK_TRUE, UINT64_MAX);
         submitted_[slot_ ^ 1] = false;
         VisResults(slot_ ^ 1);
+        double ms = TimeResult(slot_ ^ 1);
+        nv2a_frame_gpu_time(ms < 0 ? -1 : gpu_pending_ms_[slot_ ^ 1] + ms);
     }
     submitted_[slot_] = false;
     VisResults(slot_);
+    double ms = TimeResult(slot_);
+    if (ms >= 0) gpu_partial_ms_ += ms;
     d_.vkResetCommandBuffer(cmd_, 0);
     recording_ = false;
     ring_pos_ = 0;
@@ -931,6 +1014,22 @@ void VulkanBackend::Submit() {
 void VulkanBackend::EndFrame() {
     if (!recording_) return;
     EndRendering();
+    TimeEnd();
+    uint64_t cpu_ns;
+#ifdef _WIN32
+    FILETIME created, exited, kernel, user;
+    GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user);
+    cpu_ns = (((uint64_t(kernel.dwHighDateTime) << 32) | kernel.dwLowDateTime) +
+              ((uint64_t(user.dwHighDateTime) << 32) | user.dwLowDateTime)) * 100;
+#else
+    struct timespec cpu;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu);
+    cpu_ns = uint64_t(cpu.tv_sec) * 1000000000 + cpu.tv_nsec;
+#endif
+    if (cpu_frame_ns_) nv2a_frame_cpu_time((cpu_ns - cpu_frame_ns_) / 1e6);
+    cpu_frame_ns_ = cpu_ns;
+    gpu_pending_ms_[slot_] = gpu_partial_ms_;
+    gpu_partial_ms_ = 0;
     d_.vkEndCommandBuffer(cmd_);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
@@ -946,6 +1045,8 @@ void VulkanBackend::EndFrame() {
         d_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
         submitted_[slot_] = false;
         VisResults(slot_);
+        double ms = TimeResult(slot_);
+        nv2a_frame_gpu_time(ms < 0 ? -1 : gpu_pending_ms_[slot_] + ms);
     }
     d_.vkResetCommandBuffer(cmd_, 0);
     ring_pos_ = 0;

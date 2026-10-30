@@ -25,6 +25,9 @@
 #include <SDL.h>
 #include <pthread.h>
 #include <SDL_vulkan.h>
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
 
 #define FRAMES_IN_FLIGHT 2
 #define MAX_SWAP_IMAGES 8
@@ -33,6 +36,24 @@ static SDL_Window *s_window;
 static double s_aspect = 4.0 / 3.0;
 static int s_vsync;                /* 0 off, 1 mailbox, 2 adaptive, 3 FIFO */
 static volatile bool s_resized;
+static bool s_rotation_suboptimal;
+static int s_cpu_us = -1, s_gpu_us = -1;
+
+void nv2a_frame_cpu_time(double ms)
+{
+    __atomic_store_n(&s_cpu_us, ms < 0 ? -1 : (int)(ms * 1000), __ATOMIC_RELAXED);
+}
+
+void nv2a_frame_gpu_time(double ms)
+{
+    __atomic_store_n(&s_gpu_us, ms < 0 ? -1 : (int)(ms * 1000), __ATOMIC_RELAXED);
+}
+
+static bool swapchain_needs_resize(VkResult result)
+{
+    return result == VK_ERROR_OUT_OF_DATE_KHR ||
+           (result == VK_SUBOPTIMAL_KHR && !s_rotation_suboptimal);
+}
 
 static VkInstance s_instance;
 #ifdef __APPLE__
@@ -176,6 +197,10 @@ static const struct { char c; uint8_t rows[7]; } s_glyphs[] = {
     { 'F', { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 } },
     { 'P', { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 } },
     { 'S', { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E } },
+    { 'C', { 0x0F, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0F } },
+    { 'G', { 0x0F, 0x10, 0x10, 0x17, 0x11, 0x11, 0x0F } },
+    { 'U', { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E } },
+    { '-', { 0, 0, 0, 0x0E, 0, 0, 0 } },
     { 'm', { 0x00, 0x00, 0x1A, 0x15, 0x15, 0x11, 0x11 } },
     { 's', { 0x00, 0x00, 0x0E, 0x10, 0x0E, 0x01, 0x1E } },
     { 'a', { 0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F } },
@@ -191,7 +216,7 @@ static const uint8_t *glyph(char c)
 }
 
 /* Frame statistics over half a second, refreshed as they complete. */
-static char s_fps_text[48] = "-- FPS";
+static char s_fps_text[96] = "-- FPS  CPU -- ms  GPU -- ms";
 
 static void fps_track(void)
 {
@@ -199,7 +224,6 @@ static void fps_track(void)
     static unsigned last_flips;
     static uint64_t last_flip_ns, window_ns;
     static unsigned frames;
-    static double max_ms;
     static double jitter_sum;
     static unsigned jitter_n;
     unsigned flips = __atomic_load_n(&nv2a_pcrtc_start_writes, __ATOMIC_ACQUIRE);
@@ -213,8 +237,6 @@ static void fps_track(void)
     if (flips != last_flips) {
         if (last_flip_ns) {
             double ms = (now - last_flip_ns) / 1e6;
-            if (ms > max_ms)
-                max_ms = ms;
             jitter_sum += fabs(ms - 1000.0 / 60.0);
             jitter_n++;
         }
@@ -226,8 +248,13 @@ static void fps_track(void)
         double secs = (now - window_ns) / 1e9;
         unsigned frames_logged = frames;
         double fps = frames / secs;
-        snprintf(s_fps_text, sizeof s_fps_text, "%.0f FPS  %.1f ms  max %.1f",
-                 fps, frames ? secs * 1000.0 / frames : 0.0, max_ms);
+        int cpu = __atomic_load_n(&s_cpu_us, __ATOMIC_RELAXED);
+        int gpu = __atomic_load_n(&s_gpu_us, __ATOMIC_RELAXED);
+        char cpu_text[24] = "--", gpu_text[24] = "--";
+        if (cpu >= 0) snprintf(cpu_text, sizeof cpu_text, "%.1f", cpu / 1000.0);
+        if (gpu >= 0) snprintf(gpu_text, sizeof gpu_text, "%.1f", gpu / 1000.0);
+        snprintf(s_fps_text, sizeof s_fps_text, "%.0f FPS  CPU %s ms  GPU %s ms",
+                 fps, cpu_text, gpu_text);
         /* NV2A_FPS_LOG=1: to stderr; NV2A_FPS_LOG=<path>: appended to that
          * file (where stderr is hard to reach, e.g. a Steam launch). */
         const char *fl = getenv("NV2A_FPS_LOG");
@@ -248,7 +275,6 @@ static void fps_track(void)
         }
         window_ns = now;
         frames = 0;
-        max_ms = 0;
         jitter_sum = 0;
         jitter_n = 0;
     }
@@ -356,7 +382,7 @@ int nv2a_window_create(const char *title, int width, int height,
     /* Native Wayland when the session has it, X11 otherwise. SDL2 picks
      * X11 first, so on a Wayland desktop the game went through XWayland.
      * SDL_VIDEODRIVER still overrides. (Windows has its one driver.) */
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
     if (!getenv("SDL_VIDEODRIVER")) {
         /* Under gamescope (the Steam Deck's Game Mode) X11: its frame
          * counting -- the performance overlay's frame rate and frame times
@@ -682,8 +708,10 @@ static bool create_swapchain(PGRAPHVkState *r)
     uint32_t nf = 32;
     VkSwapchainKHR old = s_swapchain;
 
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(r->physical_device, s_surface, &caps);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, s_surface, &nf, formats);
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(r->physical_device, s_surface, &caps) != VK_SUCCESS)
+        return false;
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, s_surface, &nf, formats) != VK_SUCCESS)
+        return false;
     if (!nf)
         return false;
 
@@ -735,6 +763,15 @@ static bool create_swapchain(PGRAPHVkState *r)
             .clipped = VK_TRUE,
             .oldSwapchain = old,
         };
+#ifdef __ANDROID__
+        // Our final blit is already in landscape coordinates. Ask the Android
+        // compositor to handle display rotation instead of pre-rotating pixels.
+        if (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+            ci.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+        s_rotation_suboptimal = ci.preTransform != caps.currentTransform;
+        fprintf(stderr, "nv2a: Android surface transform %u, presenting %u (supported 0x%x)\n",
+                caps.currentTransform, ci.preTransform, caps.supportedTransforms);
+#endif
         if (vkCreateSwapchainKHR(r->device, &ci, NULL, &s_swapchain) != VK_SUCCESS) {
             s_swapchain = VK_NULL_HANDLE;
             return false;
@@ -1122,7 +1159,7 @@ static void present_pixels(PGRAPHVkState *r, VkBuffer buf, int w, int h)
     };
     res = vkQueuePresentKHR(r->queue, &pi);
     nv2a_vk_queue_unlock();
-    if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
+    if (swapchain_needs_resize(res))
         s_resized = true;
 }
 
@@ -1262,6 +1299,25 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo);
 static pthread_mutex_t s_present_mu = PTHREAD_MUTEX_INITIALIZER;
 static PGRAPHState *volatile s_pg;
 
+#ifdef __ANDROID__
+static bool s_android_surface_available = true;
+JNIEXPORT void JNICALL Java_org_ngb_port_GameActivity_surfaceAvailable(
+        JNIEnv *env, jclass activity, jboolean available)
+{
+    (void)env; (void)activity;
+    pthread_mutex_lock(&s_present_mu);
+    s_android_surface_available = available;
+    if (!available && s_instance && s_surface) {
+        if (s_pg) destroy_swapchain(s_pg->vk_renderer_state);
+        vkDestroySurfaceKHR(s_instance, s_surface, NULL);
+        s_surface = VK_NULL_HANDLE;
+        fprintf(stderr, "nv2a: Android presentation surface released\n");
+    }
+    s_resized = true;
+    pthread_mutex_unlock(&s_present_mu);
+}
+#endif
+
 void nv2a_host_vk_present(PGRAPHState *pg)
 {
     s_pg = pg;
@@ -1295,6 +1351,13 @@ static bool present_external_now(void)
 static void present_locked(PGRAPHState *pg, bool on_pfifo)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
+#ifdef __ANDROID__
+    if (!s_android_surface_available) return;
+    if (!s_surface && s_instance) {
+        if (!SDL_Vulkan_CreateSurface(s_window, s_instance, &s_surface)) return;
+        fprintf(stderr, "nv2a: Android presentation surface restored\n");
+    }
+#endif
     VkCommandBuffer cmd;
     uint32_t idx;
     VkResult res;
@@ -1505,7 +1568,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         VkBufferImageCopy region = {
             .bufferRowLength = w,
             .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
-            .imageOffset = { 0, 0, 0 },
+            .imageOffset = { (int32_t)(s_extent.width - w), 0, 0 },
             .imageExtent = { w, h, 1 },
         };
         vkCmdCopyBufferToImage(cmd, s_ovl_buf[f], s_images[idx],
@@ -1543,7 +1606,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         };
         res = vkQueuePresentKHR(r->queue, &pi);
         nv2a_vk_queue_unlock();
-        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
+        if (swapchain_needs_resize(res))
             s_resized = true;
     }
     lat_note(ext);

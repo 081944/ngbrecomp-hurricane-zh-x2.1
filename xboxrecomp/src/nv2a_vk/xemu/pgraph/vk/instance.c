@@ -23,6 +23,9 @@
 #include "nv2a_vk_share.h"
 #include "xemu-version.h"
 #include "nv2a_host_vk.h"
+#ifdef __ANDROID__
+#include "android_vulkan.h"
+#endif
 
 #define VkExtensionPropertiesArray GArray
 #define StringArray GArray
@@ -182,7 +185,14 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
     PGRAPHVkState *r = pg->vk_renderer_state;
     VkResult result;
 
+#ifdef __ANDROID__
+    PFN_vkGetInstanceProcAddr selected = ngb_android_vulkan_proc();
+    if (!selected) { error_setg(errp, "No Android Vulkan driver selected"); return false; }
+    volkInitializeCustom(selected);
+    result = VK_SUCCESS;
+#else
     result = volkInitialize();
+#endif
     if (result != VK_SUCCESS) {
         error_setg(errp, "volkInitialize failed");
         return false;
@@ -390,6 +400,16 @@ static void add_optional_device_extension_names(
     s_push_descriptor_enabled = add_extension_if_available(
         available_extensions, enabled_extension_names,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+#ifdef __ANDROID__
+    // The Android 11 loader filters newer core entry points. Enabling the
+    // equivalent KHR extensions makes their device entry points available.
+    if (r->vk_api_version < VK_API_VERSION_1_3) {
+        add_extension_if_available(available_extensions, enabled_extension_names,
+                                  VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        add_extension_if_available(available_extensions, enabled_extension_names,
+                                  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    }
+#endif
 }
 
 static bool check_device_support_required_extensions(VkPhysicalDevice device)
@@ -577,7 +597,7 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
     };
 
     bool require_draw_features = true;
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)
     const char *renderer = getenv("NGB_RENDERER");
     require_draw_features = !renderer || strcmp(renderer, "d3d")
                          || getenv("NGB_D3D_KEEP_NV2A");
@@ -607,8 +627,13 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
     };
     bool have13 = false;
-    if (r->vk_api_version >= VK_API_VERSION_1_3 &&
-        r->device_props.apiVersion >= VK_API_VERSION_1_3) {
+    /* Android 11's loader advertises 1.1 even when the selected Turnip device
+     * exposes 1.3. Device features are determined by that device, not the loader. */
+    if (r->device_props.apiVersion >= VK_API_VERSION_1_3
+#ifndef __ANDROID__
+        && r->vk_api_version >= VK_API_VERSION_1_3
+#endif
+       ) {
         VkPhysicalDeviceVulkan13Features avail13 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         };

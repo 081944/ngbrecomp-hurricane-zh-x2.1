@@ -6,8 +6,14 @@ if(NOT EXISTS ${TP}/volk/volk.c)
     message(FATAL_ERROR "nv2a_vk: run third_party/fetch.sh first")
 endif()
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(NV2A_GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+if(NOT TARGET PkgConfig::NV2A_GLIB)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(NV2A_GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+endif()
+find_package(Threads REQUIRED)
+if(ANDROID)
+    link_libraries(ngb_vulkan)
+endif()
 find_package(SDL2 REQUIRED)
 # glslang's C interface. Its CMake package when there is one: a static
 # glslang is several archives (MachineIndependent, GenericCodeGen, ...) that
@@ -27,6 +33,17 @@ else()
 endif()
 
 set(X ${CMAKE_CURRENT_SOURCE_DIR}/xemu)
+# Git on Windows can check out the shim's directory symlink as a text file.
+# Materialize just its headers in the build tree without altering the checkout.
+if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/shim/hw/xbox/nv2a")
+    file(GLOB_RECURSE NV2A_SHIM_HEADERS CONFIGURE_DEPENDS RELATIVE "${X}"
+        "${X}/*.h" "${X}/*.inc")
+    foreach(header ${NV2A_SHIM_HEADERS})
+        configure_file("${X}/${header}"
+            "${CMAKE_CURRENT_BINARY_DIR}/shim/hw/xbox/nv2a/${header}" COPYONLY)
+    endforeach()
+    include_directories("${CMAKE_CURRENT_BINARY_DIR}/shim")
+endif()
 file(GLOB NV2A_VK_PGRAPH  ${X}/pgraph/*.c)
 file(GLOB NV2A_VK_GLSL    ${X}/pgraph/glsl/*.c)
 file(GLOB NV2A_VK_VK      ${X}/pgraph/vk/*.c)
@@ -66,6 +83,7 @@ target_include_directories(xbox_nv2a_vk
             ${TP}/stb)
 target_compile_definitions(xbox_nv2a_vk PRIVATE
     VK_NO_PROTOTYPES $<$<PLATFORM_ID:Linux>:VK_USE_PLATFORM_XLIB_KHR VK_USE_PLATFORM_WAYLAND_KHR>
+    $<$<PLATFORM_ID:Android>:VK_USE_PLATFORM_ANDROID_KHR>
     VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0
     XXH_INLINE_ALL _GNU_SOURCE)
 target_compile_options(xbox_nv2a_vk PRIVATE
@@ -76,5 +94,6 @@ target_link_libraries(xbox_nv2a_vk PUBLIC
     xbox_kernel xbox_video platform
     PkgConfig::NV2A_GLIB SDL2::SDL2
     ${NV2A_GLSLANG}
-    $<IF:$<PLATFORM_ID:Windows>,winpthread,${CMAKE_DL_LIBS} m pthread>
+    $<$<PLATFORM_ID:Windows>:winpthread>
+    $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_DL_LIBS} m Threads::Threads>
     $<$<PLATFORM_ID:Windows>:dxgi dxguid>)   # dxgi: the display's vertical blank (nv2a_host.c)   # libstdc++: the C++ link brings it (statically under -static-libstdc++)

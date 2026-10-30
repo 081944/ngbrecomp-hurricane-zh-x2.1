@@ -47,6 +47,10 @@ void nv2a_quality_get(int *render_scale, int *anisotropy, int *shadow_scale, int
  * a 2D BGRA colour image in TRANSFER_SRC_OPTIMAL, rows top down, left valid
  * until the next call. VK_NULL_HANDLE goes back to the renderer's picture. */
 void nv2a_present_set_external(VkImage image, uint32_t width, uint32_t height);
+/* Latest completed frame: main game thread CPU time and GPU command time.
+ * Negative GPU time means timestamp queries are unavailable. */
+void nv2a_frame_cpu_time(double ms);
+void nv2a_frame_gpu_time(double ms);
 
 #ifdef __cplusplus
 }

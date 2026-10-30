@@ -2,6 +2,14 @@
 #   _WIN32 -> backed by Direct3D 11 (d3d8_*.c, d3d8_combiners.c, d3d8_vsh.c)
 #   POSIX  -> backed by OpenGL 3.3 core via SDL2 + libepoxy (d3d8_gl.c)
 
+option(XBOXRECOMP_EXTERNAL_D3D "Consumer supplies its own D3D host hooks" OFF)
+if(XBOXRECOMP_EXTERNAL_D3D)
+    add_library(xbox_d3d8 INTERFACE)
+    target_include_directories(xbox_d3d8 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(xbox_d3d8 INTERFACE platform)
+    return()
+endif()
+
 if(WIN32)
     add_library(xbox_d3d8 STATIC
         d3d8_device.c

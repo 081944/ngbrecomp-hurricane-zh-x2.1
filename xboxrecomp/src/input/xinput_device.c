@@ -15,6 +15,36 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __ANDROID__
+static unsigned g_touch_buttons, g_touch_packet;
+static int g_touch_axes[4], g_touch_enabled;
+void xbox_AndroidTouchSet(unsigned buttons, int lx, int ly, int rx, int ry)
+{
+    __atomic_store_n(&g_touch_buttons, buttons, __ATOMIC_RELAXED);
+    int values[4] = {lx, ly, rx, ry};
+    for (int i = 0; i < 4; i++) __atomic_store_n(&g_touch_axes[i], values[i], __ATOMIC_RELAXED);
+    __atomic_store_n(&g_touch_enabled, 1, __ATOMIC_RELEASE);
+}
+
+static DWORD touch_merge(DWORD port, XBOX_INPUT_STATE *state, DWORD result)
+{
+    if (port != 0 || !state || !__atomic_load_n(&g_touch_enabled, __ATOMIC_ACQUIRE)) return result;
+    if (result != ERROR_SUCCESS) memset(state, 0, sizeof(*state));
+    unsigned buttons = __atomic_load_n(&g_touch_buttons, __ATOMIC_RELAXED);
+    state->Gamepad.wButtons |= (WORD)(buttons >> 8);
+    for (int i = 0; i < 8; i++)
+        if (buttons & (1u << i)) state->Gamepad.bAnalogButtons[i] = 255;
+    SHORT *axes[4] = {&state->Gamepad.sThumbLX, &state->Gamepad.sThumbLY,
+                      &state->Gamepad.sThumbRX, &state->Gamepad.sThumbRY};
+    for (int i = 0; i < 4; i++) {
+        int value = __atomic_load_n(&g_touch_axes[i], __ATOMIC_RELAXED);
+        if (value) *axes[i] = (SHORT)value;
+    }
+    state->dwPacketNumber += __atomic_add_fetch(&g_touch_packet, 1, __ATOMIC_RELAXED);
+    return ERROR_SUCCESS;
+}
+#endif
+
 /* ======================================================================== */
 #if defined(_WIN32) && !defined(XBOX_SDL_BACKENDS)
 /* ====================  XInput backend  ================================== */
@@ -614,6 +644,9 @@ static DWORD input_get_state(DWORD dwPort, XBOX_INPUT_STATE *pState, int raw)
 
 int xbox_InputControllerPresent(void)
 {
+#ifdef __ANDROID__
+    if (__atomic_load_n(&g_touch_enabled, __ATOMIC_ACQUIRE)) return 1;
+#endif
     for (int i = 0; i < XBOX_MAX_CONTROLLERS; i++)
         if (g_pads[i])
             return 1;
@@ -641,6 +674,9 @@ DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
 BOOL xbox_InputIsConnected(DWORD dwPort)
 {
     if (dwPort >= XBOX_MAX_CONTROLLERS) return FALSE;
+#ifdef __ANDROID__
+    if (dwPort == 0 && __atomic_load_n(&g_touch_enabled, __ATOMIC_ACQUIRE)) return TRUE;
+#endif
     return g_controller_connected[dwPort];
 }
 
@@ -649,7 +685,11 @@ DWORD xbox_InputGetCapabilities(DWORD dwPort, DWORD dwFlags, XBOX_INPUT_CAPABILI
     (void)dwFlags;
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pCaps)
         return ERROR_DEVICE_NOT_CONNECTED;
-    if (!g_pads[dwPort])
+    if (!g_pads[dwPort]
+#ifdef __ANDROID__
+            && !(dwPort == 0 && __atomic_load_n(&g_touch_enabled, __ATOMIC_ACQUIRE))
+#endif
+       )
         return ERROR_DEVICE_NOT_CONNECTED;
 
     memset(pCaps, 0, sizeof(XBOX_INPUT_CAPABILITIES));
@@ -663,9 +703,17 @@ DWORD xbox_InputGetCapabilities(DWORD dwPort, DWORD dwFlags, XBOX_INPUT_CAPABILI
 
 DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *state)
 {
+#ifdef __ANDROID__
+    return touch_merge(port, state, input_get_state(port, state, 0));
+#else
     return input_get_state(port, state, 0);
+#endif
 }
 DWORD xbox_InputGetStateRaw(DWORD port, XBOX_INPUT_STATE *state)
 {
+#ifdef __ANDROID__
+    return touch_merge(port, state, input_get_state(port, state, 1));
+#else
     return input_get_state(port, state, 1);
+#endif
 }
