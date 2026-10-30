@@ -439,7 +439,7 @@ static void ac97_clear_reset_bits(void)
     }
 }
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
 #include "../platform/mmio_decode.h"
 static uint64_t ac97_mac_rd(void *d, uint32_t off, int size)
 {
@@ -485,7 +485,7 @@ static LONG CALLBACK ac97_write_veh(PEXCEPTION_POINTERS ep)
             if (!VirtualProtect(g_ac97_page, AC97_TRAP_BYTES,
                                 PAGE_READWRITE, &old))
                 return EXCEPTION_CONTINUE_SEARCH;
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
             int ok = mmio_emulate(ep->ContextRecord, (uint32_t)(fault - (uintptr_t)g_ac97_page),
                                   g_ac97_page, ac97_mac_rd, ac97_mac_wr);
             ac97_clear_reset_bits();
@@ -1624,7 +1624,7 @@ void xbox_WatchInit(void)
     if (!spec || !*spec || g_memory_base == NULL || g_watch_page)
         return;
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
     fprintf(stderr, "RECOMP_WATCH requires x86 single-step support\n");
     return;
 #endif

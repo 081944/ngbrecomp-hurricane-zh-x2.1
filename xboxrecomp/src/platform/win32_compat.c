@@ -1102,6 +1102,14 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
 {
     w32_object *o = (w32_object *)h;
     if (!o || o->kind != K_THREAD) return FALSE;
+#ifdef __ANDROID__
+    /* Bionic has no pthread_cancel. No runtime caller currently needs remote
+     * termination: fail explicitly instead of signalling a still-live thread. */
+    if (o == t_self_obj)
+        ExitThread(exitCode);
+    SetLastError(ERROR_NOT_SUPPORTED);
+    return FALSE;
+#else
     pthread_cancel(o->thread);
     pthread_mutex_lock(&o->lock);
     o->exit_code = exitCode;
@@ -1110,6 +1118,7 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
     pthread_cond_broadcast(&o->cond);
     pthread_mutex_unlock(&o->lock);
     return TRUE;
+#endif
 }
 
 BOOL SetThreadPriority(HANDLE h, int priority)
@@ -1709,6 +1718,11 @@ VOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 {
 #if defined(__APPLE__)
     memset_s(ptr, cnt, 0, cnt);
+#elif defined(__ANDROID__)
+    /* Available on every supported API level; volatile stores cannot be
+     * discarded when the caller is clearing a dead buffer. */
+    volatile unsigned char *p = ptr;
+    while (cnt--) *p++ = 0;
 #else
     explicit_bzero(ptr, cnt);
 #endif
@@ -2340,6 +2354,9 @@ VOID RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR *args)
 #else
 #include <ucontext.h>
 #endif
+#if defined(__linux__) && defined(__aarch64__)
+#include <asm/sigcontext.h>
+#endif
 
 /* Vectored exception handlers over sigaction.
  *
@@ -2364,6 +2381,12 @@ static void veh_ctx_from(CONTEXT *c, const ucontext_t *uc)
     c->Rsp = uc->uc_mcontext->__ss.__sp;
     c->Rbp = uc->uc_mcontext->__ss.__fp;
     c->native_context = (void *)uc;
+#elif defined(__linux__) && defined(__aarch64__)
+    memset(c, 0, sizeof(*c));
+    c->Rip = uc->uc_mcontext.pc;
+    c->Rsp = uc->uc_mcontext.sp;
+    c->Rbp = uc->uc_mcontext.regs[29];
+    c->native_context = (void *)uc;
 #else
     const greg_t *g = uc->uc_mcontext.gregs;
     c->Rax = (uint64_t)g[REG_RAX]; c->Rcx = (uint64_t)g[REG_RCX];
@@ -2381,7 +2404,7 @@ static void veh_ctx_from(CONTEXT *c, const ucontext_t *uc)
 
 static void veh_ctx_to(ucontext_t *uc, const CONTEXT *c)
 {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
     /* The ARM64 decoder updates the native context directly. */
     (void)uc;
     (void)c;
@@ -2399,6 +2422,25 @@ static void veh_ctx_to(ucontext_t *uc, const CONTEXT *c)
     g[REG_EFL] = (greg_t)c->EFlags;
 #endif
 }
+
+#if defined(__linux__) && defined(__aarch64__)
+/* Linux puts the data-abort syndrome in the signal frame's ESR record.
+ * WnR is bit 6; integer register state alone cannot identify a write. */
+static int veh_a64_is_write(const ucontext_t *uc)
+{
+    const unsigned char *p = uc->uc_mcontext.__reserved;
+    const unsigned char *end = p + sizeof(uc->uc_mcontext.__reserved);
+    while ((size_t)(end - p) >= sizeof(struct _aarch64_ctx)) {
+        const struct _aarch64_ctx *h = (const void *)p;
+        if (!h->magic || h->size < sizeof(*h) || h->size > (size_t)(end - p))
+            break;
+        if (h->magic == ESR_MAGIC && h->size >= sizeof(struct esr_context))
+            return (int)((((const struct esr_context *)p)->esr >> 6) & 1);
+        p += h->size;
+    }
+    return 0;
+}
+#endif
 
 static DWORD veh_code(int sig, const siginfo_t *si)
 {
@@ -2437,6 +2479,8 @@ static void veh_signal(int sig, siginfo_t *si, void *uc_)
         rec.NumberParameters = 2;
 #if defined(__APPLE__) && defined(__aarch64__)
         rec.ExceptionInformation[0] = (uc->uc_mcontext->__es.__esr >> 6) & 1;
+#elif defined(__linux__) && defined(__aarch64__)
+        rec.ExceptionInformation[0] = veh_a64_is_write(uc);
 #else
         /* Page-fault error code bit 1 is set for a write. */
         rec.ExceptionInformation[0] = (uc->uc_mcontext.gregs[REG_ERR] & 2) ? 1 : 0;

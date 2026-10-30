@@ -33,6 +33,34 @@ static int g_mmio_decode_fail = 0;
 #include "platform/win32_compat.h"
 #endif
 
+#if defined(__aarch64__) && !defined(_WIN32)
+#include "platform/mmio_decode.h"
+
+static uint64_t nv2a_a64_read(void *device, uint32_t offset, int size)
+{
+    g_mmio_read_count++;
+    return nv2a_mmio_read(device, offset, size);
+}
+
+static void nv2a_a64_write(void *device, uint32_t offset, uint64_t value, int size)
+{
+    g_mmio_write_count++;
+    nv2a_mmio_write(device, offset, value, size);
+}
+
+static bool decode_and_handle(PCONTEXT ctx, uint32_t offset, int is_write)
+{
+    NV2AState *device = nv2a_get_state();
+    (void)is_write;
+    if (!device) return false;
+    if (mmio_emulate(ctx, offset, device, nv2a_a64_read, nv2a_a64_write))
+        return true;
+    if (++g_mmio_decode_fail <= 20)
+        fprintf(stderr, "[NV2A] ARM64 MMIO decode failed at PC=%p offset=%08X\n",
+                (void *)(uintptr_t)ctx->Rip, offset);
+    return false;
+}
+#else
 /* ============================================================
  * x86-64 register access helpers
  * ============================================================ */
@@ -365,6 +393,7 @@ static bool decode_and_handle(PCONTEXT ctx, uint32_t mmio_offset, int is_write)
     return false;
 }
 
+#endif /* host instruction decoder */
 /* ============================================================
  * Public API
  * ============================================================ */

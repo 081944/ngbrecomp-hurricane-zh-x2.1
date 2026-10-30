@@ -57,10 +57,15 @@ typedef struct HostFiber {
 static HostFiber s_fibers[MAX_FIBERS];
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
 /* AAPCS64: x19..x30, d8..d15, floating-point control and status. */
 __asm__(
+#ifdef __APPLE__
     ".text\n.p2align 2\n.globl _ngb_ctx_switch\n_ngb_ctx_switch:\n"
+#else
+    ".text\n.p2align 2\n.globl ngb_ctx_switch\n"
+    ".type ngb_ctx_switch,%function\nngb_ctx_switch:\n"
+#endif
     "sub sp, sp, #176\n"
     "stp x19, x20, [sp, #0]\nstp x21, x22, [sp, #16]\n"
     "stp x23, x24, [sp, #32]\nstp x25, x26, [sp, #48]\n"
@@ -192,7 +197,7 @@ static void fiber_prepare(HostFiber *f)
         fprintf(stderr, "[FIBER] no host stack for fiber 0x%08X\n", f->guest);
         abort();
     }
-#ifdef __APPLE__
+#if defined(__aarch64__)
     sp = (uint64_t *)((char *)f->stack + HOST_FIBER_STACK - 176);
     memset(sp, 0, 176);
     sp[11] = (uint64_t)(uintptr_t)fiber_host_entry;

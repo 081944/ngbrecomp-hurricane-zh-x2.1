@@ -10,11 +10,15 @@ static uint8_t *s_page;
 /* volatile: changed from inside the signal handler. */
 static volatile uint32_t s_last_write, s_last_write_off;
 static volatile int s_reads, s_writes, s_steps, s_step_armed;
+static volatile int s_fault_write, s_direction_errors;
 
 static uint64_t dev_read(void *dev, uint32_t off, int size)
 {
     (void)dev; (void)size;
     s_reads++;
+#if defined(__aarch64__)
+    if (s_fault_write) s_direction_errors++;
+#endif
     return 0xC0DE0000u | off;
 }
 
@@ -22,6 +26,9 @@ static void dev_write(void *dev, uint32_t off, uint64_t val, int size)
 {
     (void)dev; (void)size;
     s_writes++;
+#if defined(__aarch64__)
+    if (!s_fault_write) s_direction_errors++;
+#endif
     s_last_write = (uint32_t)val;
     s_last_write_off = off;
 }
@@ -32,6 +39,7 @@ static LONG mmio_handler(PEXCEPTION_POINTERS ep)
     if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
         return EXCEPTION_CONTINUE_SEARCH;
     a = ep->ExceptionRecord->ExceptionInformation[1];
+    s_fault_write = (int)ep->ExceptionRecord->ExceptionInformation[0];
     if (a < (uintptr_t)s_page || a >= (uintptr_t)s_page + 4096)
         return EXCEPTION_CONTINUE_SEARCH;
     if (s_step_armed) {
@@ -79,6 +87,34 @@ int main(void)
     CHECK(s_writes == 1 && s_last_write == 0x12345678u && s_last_write_off == 0x100);
     reg[1] = 7;                                  /* C7: imm write */
     CHECK(s_writes == 2 && s_last_write == 7 && s_last_write_off == 0x104);
+
+#if defined(__aarch64__)
+    /* Exercise Linux's ESR write flag and the decoder's narrow, wide and
+     * SIMD forms through real page faults, not manufactured contexts. */
+    {
+        volatile uint8_t *r8 = s_page + 0x120;
+        volatile uint16_t *r16 = (volatile uint16_t *)(s_page + 0x124);
+        volatile uint64_t *r64 = (volatile uint64_t *)(s_page + 0x128);
+        CHECK(*r8 == 0x20);
+        *r8 = 0xA5;
+        CHECK(s_last_write == 0xA5 && s_last_write_off == 0x120);
+        CHECK(*r16 == 0x124);
+        *r16 = 0xABCD;
+        CHECK(s_last_write == 0xABCD && s_last_write_off == 0x124);
+        CHECK(*r64 == 0xC0DE0128u);
+        *r64 = 0x1234567887654321ULL;
+        CHECK(s_last_write == 0x87654321u && s_last_write_off == 0x128);
+        uint64_t vector[2];
+        void *address = s_page + 0x140;
+        __asm__ volatile("ldr q0, [%0]\nstr q0, [%1]"
+                         : : "r"(address), "r"(vector) : "v0", "memory");
+        CHECK(vector[0] == 0xC0DE0140u && vector[1] == 0xC0DE0148u);
+        __asm__ volatile("ldr q0, [%0]\nstr q0, [%1]"
+                         : : "r"(vector), "r"(address) : "v0", "memory");
+        CHECK(s_last_write == 0xC0DE0148u && s_last_write_off == 0x148);
+        CHECK(s_direction_errors == 0);
+    }
+#endif
 
 #if defined(__x86_64__)
     /* Step a real store through the unprotected page, then re-trap it. */

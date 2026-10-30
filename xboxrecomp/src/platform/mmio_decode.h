@@ -40,7 +40,7 @@
 typedef uint64_t (*mmio_read_fn)(void *dev, uint32_t off, int size);
 typedef void     (*mmio_write_fn)(void *dev, uint32_t off, uint64_t val, int size);
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
 #include "mmio_decode_a64.h"
 static inline int mmio_emulate(PCONTEXT ctx, uint32_t off, void *dev,
                                mmio_read_fn rd, mmio_write_fn wr)

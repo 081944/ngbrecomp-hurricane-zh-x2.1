@@ -191,8 +191,9 @@ int main(void)
         const struct { uint32_t in, want; const char *what; } cases[] = {
             { 0x80000000u, 0x00000000u, "contiguous base maps to physical 0" },
             { 0x80001000u, 0x00001000u, "inside the contiguous window" },
-            { 0x83FFFFFFu, 0x03FFFFFFu, "last byte of the window" },
-            { 0x84000000u, 0x84000000u, "just past the window is unchanged" },
+            { 0x84000000u, 0x04000000u, "upper half of the 128 MB window" },
+            { 0x87FFFFFFu, 0x07FFFFFFu, "last byte of the window" },
+            { 0x88000000u, 0x88000000u, "just past the window is unchanged" },
             { 0x00040000u, 0x00040000u, "an ordinary guest VA is unchanged" },
         };
         for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {

@@ -44,5 +44,8 @@ else()
     find_package(Threads REQUIRED)
     # m: _clearfp/_controlfp sit on <fenv.h>.
     target_link_libraries(platform PUBLIC Threads::Threads m)
+    if(ANDROID)
+        target_link_libraries(platform PUBLIC ${CMAKE_DL_LIBS})
+    endif()
     target_compile_options(platform PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
 endif()

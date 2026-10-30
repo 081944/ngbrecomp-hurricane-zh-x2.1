@@ -196,8 +196,11 @@ int main(int argc, char **argv)
         unsigned char *m1 = p + size + probe;
         unsigned char ignored = 0;
         if (read_byte_in_child(m1, &ignored)) {
-            *m1 = 0xA5;
-            check(p[probe] == 0xA5, "a write through mirror 1 reaches the base",
+            /* C sees different offsets in one allocation, not mmap aliases.
+             * Keep these hardware-memory accesses ordered: ARM64 otherwise
+             * hoists the base load ahead of the mirror store. */
+            *(volatile unsigned char *)m1 = 0xA5;
+            check(*(volatile unsigned char *)(p + probe) == 0xA5, "a write through mirror 1 reaches the base",
                   "mirror is a separate copy, not an alias");
         } else {
             check(0, "a write through mirror 1 reaches the base",

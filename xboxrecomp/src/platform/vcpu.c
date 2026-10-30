@@ -181,7 +181,7 @@ static void dispatch(void)
 
 static void request_preempt(vcpu_thread *h)
 {
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)
     /* A prior signal may have landed in libc and deferred. Do not leave a
      * guest spin loop holding the CPU forever with preempt already set. */
     if (h && h->preempt && !pthread_equal(h->thread, pthread_self())) {
@@ -270,6 +270,42 @@ static void yield_now(vcpu_thread *t)
 #include <mach-o/getsect.h>
 #include <sys/ucontext.h>
 static uintptr_t s_text_lo, s_text_hi;
+#elif defined(__ANDROID__)
+#include <link.h>
+#include <ucontext.h>
+static uintptr_t s_text_lo, s_text_hi;
+static uintptr_t s_vdso_lo, s_vdso_hi;
+static void vcpu_init_once(void);
+
+/* The guest may be in an executable probe or in the game's shared library.
+ * Locate this module rather than assuming the process main image is ours. */
+static int find_guest_text(struct dl_phdr_info *info, size_t size, void *data)
+{
+    uintptr_t address = (uintptr_t)vcpu_init_once;
+    int ours = 0;
+    (void)size; (void)data;
+    int vdso = info->dlpi_name && strstr(info->dlpi_name, "vdso") != NULL;
+    for (int i = 0; i < info->dlpi_phnum; i++) {
+        const ElfW(Phdr) *p = &info->dlpi_phdr[i];
+        uintptr_t lo = info->dlpi_addr + p->p_vaddr;
+        if (p->p_type == PT_LOAD && address >= lo && address - lo < p->p_memsz)
+            ours = 1;
+    }
+    if (!ours && !vdso) return 0;
+    for (int i = 0; i < info->dlpi_phnum; i++) {
+        const ElfW(Phdr) *p = &info->dlpi_phdr[i];
+        if (p->p_type == PT_LOAD && (p->p_flags & PF_X)) {
+            uintptr_t lo = info->dlpi_addr + p->p_vaddr;
+            uintptr_t *low = vdso ? &s_vdso_lo : &s_text_lo;
+            uintptr_t *high = vdso ? &s_vdso_hi : &s_text_hi;
+            if (!*low || lo < *low) *low = lo;
+            if (lo + p->p_memsz > *high) *high = lo + p->p_memsz;
+        }
+    }
+    return 0;
+}
+#endif
+#if defined(__APPLE__) || defined(__ANDROID__)
 static void preempt_signal(int sig, siginfo_t *si, void *opaque)
 #else
 static void preempt_signal(int sig)
@@ -282,10 +318,26 @@ static void preempt_signal(int sig)
 #ifdef __APPLE__
     (void)si;
     uintptr_t pc = ((ucontext_t *)opaque)->uc_mcontext->__ss.__pc;
-    /* Darwin libc uses locks even in getenv. Yielding while it holds one
+#elif defined(__ANDROID__)
+    (void)si;
+#if defined(__aarch64__)
+    uintptr_t pc = ((ucontext_t *)opaque)->uc_mcontext.pc;
+#elif defined(__x86_64__)
+    uintptr_t pc = ((ucontext_t *)opaque)->uc_mcontext.gregs[REG_RIP];
+#else
+#error "Android vcpu supports arm64 and x86-64 only"
+#endif
+#endif
+#if defined(__APPLE__) || defined(__ANDROID__)
+    /* Host libc uses locks even in getenv. Yielding while it holds one
      * can strand the next guest thread in that same lock. Retry next quantum
      * when the interrupted PC is back in the executable. */
-    if (pc < s_text_lo || pc >= s_text_hi)
+    if ((pc < s_text_lo || pc >= s_text_hi)
+#ifdef __ANDROID__
+            /* vDSO clock reads hold no libc locks and can be interrupted. */
+            && (pc < s_vdso_lo || pc >= s_vdso_hi)
+#endif
+       )
         return;
 #endif
     if (t && !t->in_vcpu && compat_host_depth() == 0) {
@@ -333,6 +385,14 @@ static void vcpu_init_once(void)
     const uint8_t *text = getsegmentdata((const struct mach_header_64 *)_dyld_get_image_header(0), "__TEXT", &text_size);
     s_text_lo = (uintptr_t)text;
     s_text_hi = s_text_lo + text_size;
+#elif defined(__ANDROID__)
+    dl_iterate_phdr(find_guest_text, NULL);
+    if (!s_text_lo || !s_text_hi) {
+        fprintf(stderr, "vcpu: cannot locate guest module text\n");
+        abort();
+    }
+#endif
+#if defined(__APPLE__) || defined(__ANDROID__)
     sa.sa_sigaction = preempt_signal;
     sa.sa_flags = SA_RESTART | SA_SIGINFO;
 #else
