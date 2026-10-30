@@ -159,7 +159,7 @@ public final class SetupActivity extends Activity {
         importDriver.setEnabled(!importing);
         launch.setEnabled(!importing && !launching);
         if (!importing) status.setText(launching ? "正在启动游戏……"
-                : !ready ? "选择已提取的美版游戏文件夹，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。"
+                : !ready ? "选择 x2.1 汉化版（vb-zh-x2.1）的游戏文件夹或镜像，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。"
                 : failCount >= 2 ? "游戏连续启动失败。可尝试重新导入游戏文件夹或导入其他驱动 ZIP，或点“启动游戏”重试。"
                 : "游戏文件已就绪。");
     }
