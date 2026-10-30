@@ -79,10 +79,14 @@ void ngb_pc_set_setting(int which, int value);
 enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASPECT,
        S_SKIP, S_LAUNCHER, S_MSAA, S_HEALTH, S_NINPO, S_ESSENCE, S_ALLDIFF, S_SCARABS, S_ALLCOST, S_EXTRACOST,
        S_GLOW, S_QUICKFREEZE, S_QUICKSCALE, S_INFITEMS, S_INFAMMO, S_POSAUDIO, S_HUD, S_AUDIOOUT,
-       S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD, S_ALLWEAP,
+       S_MISSIONS, S_ARCADE, S_MOVIES, S_LOADDETAIL, S_RTHREAD,
+       S_UNUSED31,                /* upstream's Intercept (#109), left out: x2.1 has its own; kept so the numbers stay ngb_pc_setting's */
+       S_ALLWEAP,
        S_ESSCHARGE, S_CUTSKIP,
        S_UNLOCKS,                 /* not a setting: Cheats' row opening the Unlocks page */
        S_COUNT };
+_Static_assert(S_RTHREAD == 30 && S_ALLWEAP == 32 && S_ESSCHARGE == 33 && S_CUTSKIP == 34,
+               "the S_ numbers are ngb_pc_setting's (src/ingame_menu.c)");
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
@@ -92,7 +96,7 @@ static const char *const s_label[S_COUNT] = {
     "Golden Scarabs", "All Costumes", "Extra Costume", "Smoother Glow", "Quick Menu Pause",
     "Quick Menu", "Infinite Items", "Infinite Projectiles", "Positional Audio", "HUD",
     "Audio Output", "Missions", "Arcade Ninja Gaiden", "Movie Theater", "Lower Detail Under Load",
-    "Multithreaded Renderer", "All Weapons", "Essence-Only Charging", "Skip Any Cutscene", "Unlocks",
+    "Multithreaded Renderer", "", "All Weapons", "Essence-Only Charging", "Skip Any Cutscene", "Unlocks",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -126,6 +130,7 @@ static const char *const s_help[S_COUNT] = {
     "MOVIE THEATER in the main menu without earning it.",
     "Eases off detail when busy, as on the Xbox; Ryu's shadow may flicker.",
     "Drawing on a thread of its own, for slower CPUs. May have bugs. Needs restart.",
+    "",
     "Every weapon and projectile weapon, at its highest level. Turned off, they are taken back.\nA save made while it is on keeps them.",
     "Holding attack no longer charges an Ultimate Technique: only absorbing essence does.",
     "Start skips any movie or in-game cutscene, watched before or not. Off: as on the Xbox.",
@@ -1025,8 +1030,11 @@ static void draw_page(int focused, int cat, int row)
         }
     }
     if (focused && row >= 0 && row < n)
-        {   /* a help of two lines: split at its \n */
-            const char *h = s_help[s_cat_rows[cat][row]], *nl = strchr(h, '\n');
+        {   /* a help of two lines: split at its \n (Hurricane x2.1: the Chinese of the whole help, then split) */
+            const char *h = s_help[s_cat_rows[cat][row]], *zh = ngb_zh(h), *nl;
+            if (zh)
+                h = zh;
+            nl = strchr(h, '\n');
             char first[160];
             if (nl && (size_t)(nl - h) < sizeof first) {
                 memcpy(first, h, (size_t)(nl - h));
