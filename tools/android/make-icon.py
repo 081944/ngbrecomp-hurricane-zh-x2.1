@@ -12,7 +12,7 @@ and the blade inside it.
 import argparse
 import os
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "..", "android", "app", "src", "main", "res")
@@ -24,17 +24,33 @@ SAFE = 0.80             # art size on the adaptive canvas
 WHITE = (255, 255, 255, 255)
 
 
+def trim_border(img, tol=8):
+    """Drop a uniform border, so art delivered with margins still fills the icon."""
+    bg = Image.new("RGB", img.size, img.getpixel((0, 0))[:3])
+    diff = ImageChops.difference(img.convert("RGB"), bg).convert("L")
+    bbox = diff.point(lambda v: 255 if v > tol else 0).getbbox()
+    return img.crop(bbox) if bbox else img
+
+
+def square(img, fill=None):
+    """Centre the art on a square canvas without cropping it."""
+    side = max(img.size)
+    canvas = Image.new("RGBA", (side, side), fill or (0, 0, 0, 0))
+    canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2), img)
+    return canvas
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("art")
+    ap.add_argument("--no-trim", action="store_true",
+                    help="keep a uniform border the art was delivered with")
     args = ap.parse_args()
 
     src = Image.open(args.art).convert("RGBA")
-    if src.width != src.height:
-        side = min(src.size)
-        left = (src.width - side) // 2
-        top = (src.height - side) // 2
-        src = src.crop((left, top, left + side, top + side))
+    if not args.no_trim:
+        src = trim_border(src)
+    src = square(src)
 
     for density, scale in DENSITIES.items():
         out = os.path.join(RES, f"mipmap-{density}")
