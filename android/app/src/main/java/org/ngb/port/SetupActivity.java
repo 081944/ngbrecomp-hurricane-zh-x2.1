@@ -40,6 +40,9 @@ public final class SetupActivity extends Activity {
     private long gameExitAt, gameStartAt;
     private File game;
     private File marker;
+    /** -2 not checked yet, 0 this build's XBE, 1 another version's, -1 absent. */
+    private static final int XBE_UNKNOWN = -2;
+    private int xbeState = XBE_UNKNOWN;
 
     /* Extraction of a ~7 GB image runs on the import thread inside the JNI
      * call; the C side publishes byte counters the UI thread polls here. */
@@ -56,6 +59,7 @@ public final class SetupActivity extends Activity {
     };
 
     private static native int nativeImportGame(int fd, String dest);
+    private static native int nativeCheckGame(String dir);
     private static native long[] nativeInstallProgress();
     private static native String nativeInstallError();
 
@@ -80,7 +84,11 @@ public final class SetupActivity extends Activity {
     }
 
     private boolean gameReady() {
-        return new File(game, "default.xbe").isFile() && marker.isFile();
+        if (!new File(game, "default.xbe").isFile() || !marker.isFile()) return false;
+        // A folder left by another build (the US one) must not count as
+        // imported: this build only runs the XBE it was recompiled from.
+        if (xbeState == XBE_UNKNOWN) xbeState = nativeCheckGame(game.getPath());
+        return xbeState == 0;
     }
 
     /** The window always has content: a blank root is what reads as a black screen. */
@@ -145,7 +153,9 @@ public final class SetupActivity extends Activity {
 
     private void refresh() {
         if (!uiReady) return;
+        boolean present = new File(game, "default.xbe").isFile() && marker.isFile();
         boolean ready = gameReady();
+        boolean wrongVersion = present && !ready;
         // The import UI exists only while the game folder is missing or
         // incomplete (or after repeated failed starts); once the folder is
         // there this is a plain launcher with a manual start fallback.
@@ -159,6 +169,7 @@ public final class SetupActivity extends Activity {
         importDriver.setEnabled(!importing);
         launch.setEnabled(!importing && !launching);
         if (!importing) status.setText(launching ? "正在启动游戏……"
+                : wrongVersion ? "已安装的游戏文件不是本程序所需的版本（x2.1 汉化版）。\n请重新导入汉化版的游戏 ISO 或游戏文件夹，导入后会自动替换。"
                 : !ready ? "选择 x2.1 汉化版（vb-zh-x2.1）的游戏文件夹或镜像，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。"
                 : failCount >= 2 ? "游戏连续启动失败。可尝试重新导入游戏文件夹或导入其他驱动 ZIP，或点“启动游戏”重试。"
                 : "游戏文件已就绪。");
@@ -229,6 +240,7 @@ public final class SetupActivity extends Activity {
                     }
                     try { if (!marker.exists()) marker.createNewFile(); }
                     catch (IOException ignored) {}
+                    xbeState = 0;  // the C side accepted the extracted XBE
                     startGame();   // straight into the game after extraction
                 });
             }, "ngb-iso-import").start();
@@ -262,6 +274,12 @@ public final class SetupActivity extends Activity {
                 if (marker.exists() && !marker.delete()) throw new IOException("无法更新导入状态");
                 copyTree(tree, DocumentsContract.getTreeDocumentId(tree), game);
                 if (!new File(game, "default.xbe").isFile()) throw new IOException("所选文件夹中没有 default.xbe");
+                // Same check the game itself does on start-up, done here so a
+                // folder of another version fails at import instead of booting
+                // into the "wrong disc" box.
+                xbeState = nativeCheckGame(game.getPath());
+                if (xbeState != 0)
+                    throw new IOException("所选文件夹中的游戏不是「飓风版[中英] vb-zh-x2.1」");
                 if (!marker.createNewFile()) throw new IOException("无法保存导入状态");
             } catch (Exception e) { error = e.getMessage(); }
             final String message = error;

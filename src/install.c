@@ -813,8 +813,7 @@ int ngb_install_iso_fd(int fd, const char *installed, char *out, size_t n)
     s_cancel = 0;
     rc = extract_iso(src, part);
     if (rc == 0 && ngb_check_xbe(part) == 1 && !getenv("NGB_ANY_XBE")) {
-        fail("This is not the retail USA Ninja Gaiden Black (NTSC) this "
-             "build was made from.");
+        fail("%s", NGB_WRONG_DISC);
         rc = -1;
     }
     if (rc == 0) {

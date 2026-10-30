@@ -33,6 +33,21 @@ Java_org_ngb_port_SetupActivity_nativeImportGame(JNIEnv *env, jclass cls,
     return rc;
 }
 
+/* 0 when dir/default.xbe is the very XBE this build was recompiled from, so
+ * the setup screen can tell "imported, of the wrong version" (a US folder
+ * left by another build) apart from "imported". */
+JNIEXPORT jint JNICALL
+Java_org_ngb_port_SetupActivity_nativeCheckGame(JNIEnv *env, jclass cls,
+    jstring dir)
+{
+    (void)cls;
+    const char *d = (*env)->GetStringUTFChars(env, dir, NULL);
+    if (!d) return -1;
+    int rc = ngb_check_xbe(d);
+    (*env)->ReleaseStringUTFChars(env, dir, d);
+    return rc;
+}
+
 /* { bytes done, bytes total } of the running/last import. */
 JNIEXPORT jlongArray JNICALL
 Java_org_ngb_port_SetupActivity_nativeInstallProgress(JNIEnv *env, jclass cls)
