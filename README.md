@@ -89,7 +89,7 @@ Plays with the on-screen touch controls (an Xbox 360 pad), or with any controlle
 the touch controls hide while one is connected. Needs Android 10 or newer (13 or newer for full speed:
 the game tells the system how long its frames take, which keeps the CPU clocks up), a GPU with Vulkan
 1.3, or an older Vulkan with its dynamic rendering, synchronization2 and push descriptors as extensions
-(on Adreno, Turnip has them), and about 8 GB of memory.
+(on Adreno, Turnip has them).
 
 On Adreno GPUs (Snapdragon phones) whose own driver lacks what the game needs, it uses Turnip, Mesa's
 open driver for Adreno, built into the app (RECOMP SETTINGS → Graphics → GPU Driver: Auto, System or
