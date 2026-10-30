@@ -11,7 +11,7 @@
  * whole and with a gold edge while held.
  *
  * Places are in screen heights from the left or right edge (a tall screen keeps its controls in the corners;
- * a less wide one draws the d-pad and right stick in towards the middle).
+ * a less wide one draws the d-pad in towards the middle).
  *
  * Threads: the touches arrive on Android's UI thread (SDL's event watch, run as they are sent); the pad state
  * is read wherever the input is polled; the picture is made by whichever thread presents (the PFIFO thread or
@@ -52,7 +52,8 @@ typedef struct {
 
 static const Ctrl s_ctrl[NCTRL] = {
     [LSTICK]  = { STICK,  0, 0.30f, 0.70f, 0.17f,  "left stick", "touch_pad" },
-    [RSTICK]  = { STICK,  1, 0.72f, 0.84f, 0.12f,  "right stick", "touch_pad" },
+    [RSTICK]  = { STICK,  1, 0.29f, 0.90f, 0.11f,  "right stick", "touch_pad" },   /* (under the face
+                                                       buttons: the game's prompts sit at the picture's lower right) */
     [DPAD_ID] = { DPAD,   0, 0.74f, 0.84f, 0.12f,  "d-pad", "touch_dpad" },
     [BA]      = { BUTTON, 1, 0.28f, 0.70f, 0.07f,  "A", "360_A" },
     [BB]      = { BUTTON, 1, 0.16f, 0.58f, 0.07f,  "B", "360_B" },
@@ -81,7 +82,7 @@ static struct { SDL_FingerID id; int ctrl; bool used; } s_finger[MAX_FINGERS];
 static float centre_x_at(const Ctrl *c, float aspect)
 {
     float x = c->x;
-    if (c == &s_ctrl[DPAD_ID] || c == &s_ctrl[RSTICK]) {   /* (in from the middle on a less wide screen) */
+    if (c == &s_ctrl[DPAD_ID]) {   /* (in from the middle on a less wide screen) */
         float most = aspect / 2 - 0.16f;
         x = x < most ? x : most;
     }
