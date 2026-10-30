@@ -32,6 +32,9 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 
 ## Getting started
 
+On every system, the first start after installing takes longer to load (the shaders are prepared then and
+kept); later starts are quicker.
+
 ### Linux and Steam Deck
 
 1. Download `NinjaGaidenBlack-x86_64.AppImage` from the releases page and make it executable
