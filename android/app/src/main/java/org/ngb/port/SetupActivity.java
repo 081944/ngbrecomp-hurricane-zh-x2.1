@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -17,11 +18,11 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * The root activity. With the game imported it immediately (re)launches the
- * game -- from onCreate and again from onResume, so that returning to the
- * app (icon, recents) never lands on an empty window. The import UI only
- * shows while there is no game or right after the game exits; the in-game
- * touch menu handles driver switching afterwards.
+ * The root activity. With the game imported this is a launcher only: the
+ * import UI never shows (the game relaunches right away after exiting),
+ * except as a last resort after repeated failed starts, so a broken
+ * driver can still be swapped from here. Without a game it shows the
+ * first-time import screen.
  */
 public final class SetupActivity extends Activity {
     private static final int PICK_GAME = 1;
@@ -29,9 +30,12 @@ public final class SetupActivity extends Activity {
     private static final int GAME = 3;
     /** After the game exits, stay here this long before auto-relaunching. */
     private static final long RELAUNCH_GRACE_MS = 5000;
+    /** A start that ends this quickly counts as a failed launch. */
+    private static final long FAILED_LAUNCH_MS = 15000;
     private TextView status;
-    private Button select, importDriver;
+    private Button select, importDriver, launch;
     private boolean importing, launching, uiReady;
+    private int failCount;
     private long gameExitAt, gameStartAt;
     private File game;
     private File marker;
@@ -77,6 +81,10 @@ public final class SetupActivity extends Activity {
         importDriver.setOnClickListener(v -> startActivityForResult(
                 new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), PICK_DRIVER));
         layout.addView(importDriver);
+        launch = new Button(this);
+        launch.setText("启动游戏");
+        launch.setOnClickListener(v -> startGame());
+        layout.addView(launch);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(layout);
         setContentView(scroll);
@@ -86,9 +94,8 @@ public final class SetupActivity extends Activity {
 
     private void maybeStartGame() {
         if (launching || importing || !gameReady()) return;
+        if (failCount >= 2) return;   // repeated failures: wait for the button
         if (SystemClock.elapsedRealtime() - gameExitAt < RELAUNCH_GRACE_MS) return;
-        launching = true;
-        refresh();
         startGame();
     }
 
@@ -108,11 +115,20 @@ public final class SetupActivity extends Activity {
     private void refresh() {
         if (!uiReady) return;
         boolean ready = gameReady();
+        // The import UI exists only while the game folder is missing or
+        // incomplete (or after repeated failed starts); once the folder is
+        // there this is a plain launcher with a manual start fallback.
+        boolean showImport = !ready || failCount >= 2;
+        select.setVisibility(showImport ? View.VISIBLE : View.GONE);
+        importDriver.setVisibility(showImport ? View.VISIBLE : View.GONE);
+        launch.setVisibility(ready ? View.VISIBLE : View.GONE);
         select.setEnabled(!importing);
         importDriver.setEnabled(!importing);
+        launch.setEnabled(!importing && !launching);
         if (!importing) status.setText(launching ? "正在启动游戏……"
-                : ready ? "游戏文件已就绪。"
-                : "选择已提取的美版游戏文件夹，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。");
+                : !ready ? "选择已提取的美版游戏文件夹，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。"
+                : failCount >= 2 ? "游戏连续启动失败。可尝试重新导入游戏文件夹或导入其他驱动 ZIP，或点“启动游戏”重试。"
+                : "游戏文件已就绪。");
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
@@ -121,7 +137,7 @@ public final class SetupActivity extends Activity {
             // The game exited (back / in-game quit) or could not start.
             launching = false;
             gameExitAt = SystemClock.elapsedRealtime();
-            if (!uiReady) buildUi(); else refresh();
+            long ranFor = gameExitAt - gameStartAt;
             boolean backgroundKill = getSharedPreferences("graphics", 0)
                     .getBoolean("auto_relaunch", false);
             if (backgroundKill) {
@@ -137,7 +153,19 @@ public final class SetupActivity extends Activity {
                 if (alarms != null)
                     alarms.set(android.app.AlarmManager.ELAPSED_REALTIME,
                             SystemClock.elapsedRealtime() + 1500, relaunch);
+                return;
             }
+            if (ranFor >= FAILED_LAUNCH_MS) failCount = 0;
+            if (ranFor < FAILED_LAUNCH_MS && ++failCount >= 2) {
+                // Repeated failed starts: stop auto-relaunching (that would
+                // just loop) and show the import screen again so the game
+                // folder or driver can be swapped from here.
+                buildUi();
+                return;
+            }
+            // The game folder exists: straight back into the game.
+            refresh();
+            startGame();
             return;
         }
         if (result != RESULT_OK || data == null || data.getData() == null) return;
