@@ -37,15 +37,14 @@ static SHORT axis(const Uint8 *k, int neg, int pos)
 
 void ngb_bind_play_state(const Uint8 *k, Uint32 mouse, XBOX_INPUT_STATE *st, int look_x, int look_y);
 
-/* A button that skips a movie or cutscene: Start, A or B on the pad (or the keys bound to them),
- * from the first pad's state as the title reads it. */
+/* The button that skips a movie: Start on the pad (or the key bound to it), as for the in-game cutscenes
+ * (#139), from the first pad's state as the title reads it. */
 int ngb_skip_button(void)
 {
     XBOX_INPUT_STATE st;
     if (xbox_InputGetState(0, &st) != 0)
         return 0;
-    return (st.Gamepad.wButtons & XBOX_GAMEPAD_START) || st.Gamepad.bAnalogButtons[0] > 0x40 ||
-           st.Gamepad.bAnalogButtons[1] > 0x40;
+    return (st.Gamepad.wButtons & XBOX_GAMEPAD_START) != 0;
 }
 
 

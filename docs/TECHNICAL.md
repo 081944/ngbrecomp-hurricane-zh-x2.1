@@ -115,8 +115,8 @@ new renderer only), shadow resolution (Ryu's shadow map at 2x, 4x, 8x or 10x the
 128x128, for smooth instead of blocky edges), V-Sync (Off, Mailbox, FIFO, or Adaptive:
 synced, but a late frame is shown at once instead of waiting a refresh -- Vulkan's FIFO relaxed), an FPS
 counter, and skipping the intros (the boot movie, which the game itself will not let you skip;
-the New Game prologue and the story movies play, and Start, A or B ends any of them; from the
-next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
+the New Game prologue and the story movies play -- the game's own Start does not end the prologue -- and
+Skip Any Cutscene lets Start end them; from the next start). They are saved to `~/.config/NinjaGaidenBlack/settings.ini` as they change.
 `--settings` shows the old settings screen before the game.
 
 All Difficulties (Cheats > Unlocks, saved): New Game offers every difficulty, Ninja Dog to Master Ninja,
@@ -159,8 +159,8 @@ buttons at 0xD219A8, 0x78 a player), the event has been watched (one byte an eve
 0xDB9C6E: the chapter 1 waterfall is 0x6E, its byte 0xDB94E5) and its script has made it skippable (0x8D3A66, set
 and cleared by the script's own commands in sub_001DD300). The function is taken from the generated code with
 the watched test passed while the option is on; a cutscene its script never makes skippable still is not, and
-the watched bytes are not written, so saves do not change. The same option lets Start, A or B end a movie
-(`src/movie_skip.c`); it is on unless turned off.
+the watched bytes are not written, so saves do not change. The same option lets Start end a movie
+(`src/movie_skip.c`). Off unless chosen (0.9.43 alone had it on).
 
 Cheats, for getting past a hard spot (`src/cheats.c`, applied each frame; for the session
 only, never saved, so a new start has them off): Infinite Health (Ryu's health refilled each

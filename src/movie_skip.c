@@ -11,13 +11,13 @@
  *
  * Skipped with Skip Intros: the boot movie (2_VI_WIDE_B.sfd / 4_VI_STD_B.sfd).
  * Not the New Game prologue (ninja_gaiden.sfd): it is the story's start, and
- * Start, A or B ends it like any movie (#28). Which movie is playing
+ * with Skip Any Cutscene Start ends it like any movie (#28). Which movie is playing
  * comes from the movie file the title last read (ngb_movie_read, from the
  * kernel's read hook): it opens every movie at boot to probe them, so the
  * last one opened says nothing.
  *
- * And any movie, by pressing Start, A or B (ngb_skip_button, src/keyboard.c),
- * with Skip Any Cutscene on (Gameplay, setting 34, the default; it also skips
+ * And any movie, by pressing Start (ngb_skip_button, src/keyboard.c),
+ * with Skip Any Cutscene on (Gameplay, setting 34, off unless chosen: the game's own Start does not end the prologue; it also skips
  * the in-game cutscenes, src/cutscene_skip.c) -- once every button has been
  * let go since it began, so neither the press that started it nor one held
  * through it ends it.

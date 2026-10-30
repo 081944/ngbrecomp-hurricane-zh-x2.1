@@ -22,7 +22,7 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
   corners, optional HUD-free view, menus keep the game's own 16:19
 - Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
   controller, mouse support in the menus
-- Skippable intros and movies, unlock-all options for difficulties and costumes, optional cheats
+- Skippable intros, movies and cutscenes (an option), unlock-all options for difficulties and costumes, optional cheats
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
 - Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
   7.1 output
@@ -98,11 +98,11 @@ of the pause menu. Changes apply at once and are saved.
 - **Sound**: Positional Audio (3D sounds placed left and right: Clear, the default, by level only;
   Console, through the sound chip's filters as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output; a change needs a restart of the game)
-- **Gameplay** (each off unless chosen, but Skip Any Cutscene): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
+- **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
   Pack's guard counter Black left out: tap guard as an attack lands to turn it aside; **Essence-Only
   Charging**, Ultimate Techniques charged only by absorbing essence, not by holding attack (#120); **Skip Any
-  Cutscene** (on unless turned off), Start skipping movies and in-game cutscenes not yet watched (#139)
+  Cutscene**, Start skipping movies and in-game cutscenes not yet watched (#139)
 - **Cheats** (for the session only): infinite health, ninpo, essence, items, projectiles; golden scarabs;
   all weapons (every melee and projectile weapon at its highest level; turned off, it takes back what it
   gave and puts back your own levels and pickups; a save made while it is on keeps the weapons)
@@ -147,8 +147,8 @@ melee weapon; Up and Down then change category, Left and Right choose, A / Enter
 Escape closes. Its keys are in Controls.
 
 In the menus the mouse points and clicks, Esc goes back and Q / E switch the pause menu's tabs.
-With Skip Any Cutscene (Gameplay, on unless turned off), movies can be skipped with Start, A or B (or the keys
-for them) and in-game cutscenes with Start, watched before or not.
+With Skip Any Cutscene (Gameplay), movies and in-game cutscenes can be skipped with Start (or
+its key), watched before or not.
 
 Other keys: **F10** frame-rate counter, **F11** or **Alt+Enter** fullscreen.
 
@@ -164,8 +164,6 @@ the game was in.
 ## Known issues
 
 - Above 1x render resolution, a faint light line can show across the dagger in the pause menu (#83).
-- With **Multithreaded Renderer** on, the game can freeze during play (#138). Turning it off (Graphics,
-  needs a restart) avoids it.
 - The Windows build has been tested under Proton and in a Windows 11 virtual machine; reports from
   real Windows PCs are especially welcome.
 
