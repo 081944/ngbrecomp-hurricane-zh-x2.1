@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ninja Gaiden Black (static recompilation) for Android: SDL's activity running libmain.so (packaging/android/build.sh) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.gamboozino.ngbrecomp"
+    android:versionCode="945"
+    android:versionName="0.9.45">
+
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x403000" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- reading the player's disc image where they put it (src/android_install.c): all files on Android 11 and
+         later, the storage permission on 10 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <application android:label="Ninja Gaiden Black"
+        android:appCategory="game"
+        android:hasCode="true"
+        android:extractNativeLibs="true"
+        android:largeHeap="true"
+        android:requestLegacyExternalStorage="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <!-- simpleperf from the NDK can sample it (a release build stays unprofileable to other apps) -->
+        <profileable android:shell="true" />
+        <activity android:name=".NgbActivity"
+            android:label="Ninja Gaiden Black"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

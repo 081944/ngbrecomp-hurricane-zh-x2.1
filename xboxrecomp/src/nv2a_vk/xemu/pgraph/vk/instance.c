@@ -577,7 +577,7 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
     };
 
     bool require_draw_features = true;
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)   /* (Mali and Adreno lack some: the Direct3D renderer does not use them) */
     const char *renderer = getenv("NGB_RENDERER");
     require_draw_features = !renderer || strcmp(renderer, "d3d")
                          || getenv("NGB_D3D_KEEP_NV2A");

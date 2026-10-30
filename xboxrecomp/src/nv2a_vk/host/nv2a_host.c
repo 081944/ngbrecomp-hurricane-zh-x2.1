@@ -1069,7 +1069,11 @@ void async_safe_run_on_cpu(CPUState *cpu, run_on_cpu_func func,
  * host's own SIGUSR1 sampler calls it after sampling the guest thread, so one
  * `kill -USR1` shows both sides of a stall. */
 #ifndef _WIN32
+#if defined(__ANDROID__) && __ANDROID_API__ < 33
+#include "platform/android_backtrace.h"
+#else
 #include <execinfo.h>
+#endif
 #include <signal.h>
 
 static void sample_pfifo(int sig)

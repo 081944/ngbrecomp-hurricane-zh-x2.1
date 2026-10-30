@@ -6,8 +6,15 @@ if(NOT EXISTS ${TP}/volk/volk.c)
     message(FATAL_ERROR "nv2a_vk: run third_party/fetch.sh first")
 endif()
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(NV2A_GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+# GLib, or on Android (no GLib) the slice of it the NV2A code uses (shim/glib-lite)
+if(ANDROID)
+    set(NV2A_GLIB_LITE ON)
+    set(NV2A_GLIB)
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(NV2A_GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+    set(NV2A_GLIB PkgConfig::NV2A_GLIB)
+endif()
 find_package(SDL2 REQUIRED)
 # glslang's C interface. Its CMake package when there is one: a static
 # glslang is several archives (MachineIndependent, GenericCodeGen, ...) that
@@ -52,7 +59,11 @@ add_library(xbox_nv2a_vk OBJECT
     ${TP}/nv2a_vsh_cpu/src/nv2a_vsh_disassembler.c
     ${TP}/nv2a_vsh_cpu/src/nv2a_vsh_emulator.c
     ${TP}/nv2a_vsh_cpu/src/nv2a_vsh_emulator_execution_state.c
+    $<$<BOOL:${NV2A_GLIB_LITE}>:${CMAKE_CURRENT_SOURCE_DIR}/shim/glib-lite/glib_lite.c>
 )
+if(NV2A_GLIB_LITE)
+    target_include_directories(xbox_nv2a_vk BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shim/glib-lite)
+endif()
 target_include_directories(xbox_nv2a_vk
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/host
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shim
@@ -67,6 +78,7 @@ target_include_directories(xbox_nv2a_vk
             ${TP}/stb)
 target_compile_definitions(xbox_nv2a_vk PRIVATE
     VK_NO_PROTOTYPES $<$<PLATFORM_ID:Linux>:VK_USE_PLATFORM_XLIB_KHR VK_USE_PLATFORM_WAYLAND_KHR>
+    $<$<PLATFORM_ID:Android>:VK_USE_PLATFORM_ANDROID_KHR>
     VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0
     XXH_INLINE_ALL _GNU_SOURCE)
 target_compile_options(xbox_nv2a_vk PRIVATE
@@ -75,7 +87,7 @@ target_compile_options(xbox_nv2a_vk PRIVATE
     -Wno-missing-field-initializers -Wno-unused-function)
 target_link_libraries(xbox_nv2a_vk PUBLIC
     xbox_kernel xbox_video platform
-    PkgConfig::NV2A_GLIB SDL2::SDL2
+    ${NV2A_GLIB} SDL2::SDL2
     ${NV2A_GLSLANG}
-    $<IF:$<PLATFORM_ID:Windows>,winpthread,${CMAKE_DL_LIBS} m pthread>
+    $<IF:$<PLATFORM_ID:Windows>,winpthread,${CMAKE_DL_LIBS} m $<$<NOT:$<PLATFORM_ID:Android>>:pthread>>
     $<$<PLATFORM_ID:Windows>:dxgi dxguid>)   # dxgi: the display's vertical blank (nv2a_host.c)   # libstdc++: the C++ link brings it (statically under -static-libstdc++)

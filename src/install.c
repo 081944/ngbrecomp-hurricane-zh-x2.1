@@ -1108,7 +1108,18 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
         if (has_xbe(installed)) { snprintf(out, n, "%s", installed); goto check; }
         if (has_xbe(beside))    { snprintf(out, n, "%s", beside);    goto check; }
         if (remembered_game(save_dir, out, n)) goto check;
-#if !defined(_WIN32)
+#if defined(__ANDROID__)
+        {   /* the player's disc image found on the phone, installed with its progress shown (src/android_install.c) */
+            int ngb_android_pick_disc(char *out, size_t n);
+            int ngb_android_install(const char *src, const char *installed, char *out, size_t n);
+            if (!ngb_android_pick_disc(picked, sizeof picked))
+                return -1;
+            if (ngb_android_install(picked, installed, out, n) != 0)
+                return -1;
+            remember_game(save_dir, installed, out);
+            return 0;
+        }
+#elif !defined(_WIN32)
         switch (run_setup(exe_dir, installed, out, n)) {
         case 1:
             remember_game(save_dir, installed, out);   /* a folder picked: found there next time */
