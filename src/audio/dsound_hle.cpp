@@ -8,7 +8,7 @@
 // 5.1 by Audio Output, on Auto when the default output device has six channels or more (the title is told its
 // speakers are surround, and mixes for them); NGB_AUDIO_CHANNELS=2 or 6 overrides it. NGB_DSOUND_LOG=1 logs the
 // calls as they first come (2 every volume change too, 3 every Lock); NGB_DSOUND_WAV=<file> writes what plays
-// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out, NGB_DSOUND_XTALK=0 the crosstalk effect (comparing).
+// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out, NGB_DSOUND_XTALK=1 adds the crosstalk effect (comparing).
 #include <SDL.h>
 
 #include <algorithm>
@@ -358,8 +358,10 @@ struct Reverb {
 // SCDA-XBERecomp has it from the image: each side of a pair takes the other side's output of 11 samples before
 // through a one pole filter, -0.77 of it at low frequencies -- what keeps the HRTF's two ears apart on speakers
 // (the filters give the far ear the more bass, this takes it back out of the near one). It runs on the reverb
-// as well, which the image writes into the same bins. "Console" alone: "Clear" and "Off" are not the console's
-// speaker pipeline, and on its own it thins centred sounds by 5 dB.
+// as well, which the image writes into the same bins. Off unless NGB_DSOUND_XTALK=1, and then for "Console" alone:
+// 0.9.40 ran it, and its bass came out mostly out of phase between the speakers (#126); xemu running the image on
+// its DSP sounds as "Console" does without it (level, width and tone within 0.3 dB over the attract demo), so the
+// library leaves it switched off there or never reaches it.
 struct CrossFeed {
     static constexpr uint32_t kDelay = 11;
     static constexpr float kPole = 0.924f, kFeed = -0.0585f;  // image coefficients 0x7645A1, 0xF88313
@@ -663,7 +665,7 @@ void MixVoice(Voice& v, float* out, float* send, uint32_t frames, int mode) {
     }
 }
 
-// 48 kHz: the voices, the reverb, "Console"'s crosstalk effect on the 3D submixes, those onto the speakers' pairs; stereo folds
+// 48 kHz: the voices, the reverb, the 3D submixes onto the speakers' pairs (the crosstalk effect first, if asked); stereo folds
 // the centre and the back pair
 // into the front (and drops the sub)
 void Render(float* out, uint32_t frames) {
@@ -678,7 +680,7 @@ void Render(float* out, uint32_t frames) {
         static const bool reverb = !(std::getenv("NGB_DSOUND_REVERB") && *std::getenv("NGB_DSOUND_REVERB") == '0');
         if (reverb) g_reverb.Run(send.data(), lanes.data(), frames);
     }
-    static const bool xtalk = !(std::getenv("NGB_DSOUND_XTALK") && *std::getenv("NGB_DSOUND_XTALK") == '0');
+    static const bool xtalk = std::getenv("NGB_DSOUND_XTALK") && *std::getenv("NGB_DSOUND_XTALK") == '1';
     for (uint32_t i = 0; xtalk && g_positional.load() == 1 && i < frames; i++) {
         float* m = &lanes[size_t(i) * kLanes];
         g_front_feed.Run(m[kBinCrosstalkFrontLeft], m[kBinCrosstalkFrontRight]);
