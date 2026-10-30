@@ -1,7 +1,51 @@
-# Android ARM64 port: Snapdragon 8 Gen 2 baseline
+# Android ARM64 port
 
-Status: runtime bring-up in progress, 2026-10-30. No playable Android game build
-or target-device gameplay has been verified. This is not a 60 fps support claim.
+Status: **playable**, 2026-10-30. The x2.1 build runs on an ARM64 phone (OnePlus 8,
+Adreno 650, Mesa Turnip v25.3.0-R11) with touch controls, a touch settings menu,
+ISO/folder import and driver switching. The bring-up audit further down is kept as
+history: it describes the checkout before any of this existed.
+
+## What the port does now
+
+- `libmain.so` is the whole game, statically recompiled from the x2.1 `default.xbe`
+  for `arm64-v8a`, drawn through Vulkan. No JIT, no executable guest memory.
+- `libngbsetup.so` (`src/install.c` + `src/android_setup.c`) is loaded by the setup
+  Activity only, so the import screen never pulls the game library in.
+- First run: the setup screen appears only when `game/default.xbe` is missing or is
+  not the XBE this build was made from (`ngb_check_xbe`). It imports either a folder
+  (SAF tree) or a disc image (SAF fd, `ngb_install_iso_fd`, extracted into
+  `game.partial` and renamed into place). After a successful import the game starts
+  by itself; a manual start button and a two-failed-starts fallback stay behind it.
+- In game, the **☰** button opens `TouchMenu.java` on the presenter thread:
+  display (render scale, MSAA, aspect, V-Sync, FPS), quality (texture filtering,
+  shadow resolution, glow, detail under load, HUD), audio (positional, channels) and
+  graphics driver (system driver, imported ZIPs, ZIP import). A driver change
+  restarts the app through `AlarmManager` so the process reloads the new library.
+- Driver ZIPs land in the app's own `files/drivers/<id>/`; nothing is written to
+  shared storage except the game folder, which the player imported on purpose.
+
+Not implemented on Android: the hand-over to the arcade programs (`NinjaTrilogy` /
+`NinjaTomoe`, `CMakeLists.txt` returns early for Android), the F1 settings overlay,
+and keyboard/mouse input. No sustained-performance numbers have been recorded yet;
+the 8 Gen 2 acceptance gate below is still open.
+
+## Building and packaging
+
+```powershell
+# one-off: SDL2, GLib, glslang and the Vulkan loader for arm64-v8a
+./tools/android/build-deps.ps1
+./tools/android/build-glib.ps1
+# debug APK, or -Release for the signed one that goes on a release page
+./tools/android/build-apk.ps1
+./tools/android/build-apk.ps1 -Release
+./tools/android/build-apk.ps1 -Install -Serial '<adb serial>'      # also installs
+python ./tools/android/make-icon.py ../icon03.png                   # launcher icons
+```
+
+`android/keystore/ngb-android.jks` is committed on purpose: the published APK has to
+upgrade over local debug builds and anyone checking out the branch has to be able to
+rebuild it. It is a shared test key, not a secret — do not treat an APK as trusted
+because of it.
 
 ## Implementation progress
 

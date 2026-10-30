@@ -66,3 +66,5 @@ __pycache__/
 
 # appimagetool, downloaded by packaging/appimage/build.sh
 packaging/appimage/.cache/
+# packaged APKs (uploaded to Releases, not committed)
+dist/

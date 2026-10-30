@@ -19,7 +19,24 @@ android {
         }
         androidTest { assets.srcDir rootProject.file('../build/android-driver-tests') }
     }
-    buildTypes { release { minifyEnabled false } }
+    signingConfigs {
+        // Committed on purpose: the published APK has to upgrade over the
+        // debug builds and has to be reproducible by anyone who checks out
+        // the branch. It is a shared test key, not a secret.
+        ngb {
+            storeFile rootProject.file('keystore/ngb-android.jks')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.ngb }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.ngb
+        }
+    }
     compileOptions {
         // The Java sources carry the Chinese UI strings; do not let javac
         // fall back to the Windows code page.

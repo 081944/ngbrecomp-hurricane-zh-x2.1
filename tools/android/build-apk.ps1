@@ -2,7 +2,8 @@ param(
     [string]$Ndk = $env:NDK_ROOT,
     [string]$Gradle,
     [switch]$Install,
-    [string]$Serial
+    [string]$Serial,
+    [switch]$Release
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -41,10 +42,12 @@ Get-ChildItem -LiteralPath (Join-Path $build 'driver-hooks') -Filter '*.so' |
 # staged for the APK. Gradle does not always locate an NDK for prebuilt libraries.
 $strip = Join-Path $Ndk 'toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-strip.exe'
 Invoke-Checked $strip @('--strip-debug', (Join-Path $native 'libmain.so'), (Join-Path $native 'libSDL2.so'), (Join-Path $native 'libngbsetup.so'))
-Invoke-Checked $Gradle @('-p', (Join-Path $root 'android'), 'assembleDebug', '--console', 'plain')
-$apk = Join-Path $root 'android/app/build/outputs/apk/debug/app-debug.apk'
-if (-not (Test-Path -LiteralPath $apk)) { throw 'Gradle did not produce the expected APK.' }
-Write-Output "Debug APK: $apk"
+$variant = if ($Release) { 'release' } else { 'debug' }
+$task = if ($Release) { 'assembleRelease' } else { 'assembleDebug' }
+Invoke-Checked $Gradle @('-p', (Join-Path $root 'android'), $task, '--console', 'plain')
+$apk = Join-Path $root "android/app/build/outputs/apk/$variant/app-$variant.apk"
+if (-not (Test-Path -LiteralPath $apk)) { throw "Gradle did not produce the expected $variant APK." }
+Write-Output "$variant APK: $apk"
 if ($Install) {
     if (-not $Serial) { throw 'Pass an explicit -Serial for the intended target device.' }
     Invoke-Checked adb @('-s', $Serial, 'install', '-r', $apk)

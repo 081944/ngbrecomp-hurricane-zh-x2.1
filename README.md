@@ -62,6 +62,30 @@ recompiled; its main-menu entry is not shown.
 Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers. Keys: F1 settings over the game,
 F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbox / xemu saves. Its folders (`ngb-hurricane-zh-x2.1` under `%LOCALAPPDATA%` and `%APPDATA%`) are its own, so it can sit beside ngbrecomp's retail install.
 
+## Android (arm64)
+
+This branch also builds the same x2.1 game for ARM64 Android phones and handhelds: the recompiled code is
+compiled for `arm64-v8a` and drawn through Vulkan — still a static recompilation, not an emulator.
+Grab `ngb-hurricane-zh-x2.1-android-*.apk` from [Releases](../../releases), or build it yourself
+([docs/ANDROID.md](docs/ANDROID.md)).
+
+Needs Android 11 (API 30) or newer, a 64-bit ARM device, and a **Vulkan 1.3** driver. Stock Adreno 6xx/7xx
+drivers usually report Vulkan 1.1, so a Mesa Turnip driver packaged as a ZIP (KIMCHI's builds, for example)
+is normally required; the first-run screen and the in-game menu both import one. Installing the image needs
+about 6 GB free plus the image itself, and 8 GB of RAM is recommended.
+
+1. Install the APK, open it, and pick **导入游戏 ISO** (your vb-zh-x2.1 `.iso`) or **导入游戏文件夹**.
+   Extraction takes a few minutes and the game starts by itself afterwards; the folder is imported only once.
+2. The **☰** button opens the touch menu: Display (render resolution, MSAA, aspect ratio, V-Sync, FPS
+   counter), Quality (texture filtering, shadow resolution, smoother glow, detail under load, HUD), Audio
+   (positional audio, output channels) and Graphics driver (the system driver, imported drivers, and a
+   ZIP import). A newly picked driver restarts the game to take effect.
+3. On-screen controls are the pad. A Bluetooth or USB gamepad works too.
+
+Differences from the PC build: no keyboard/mouse or rebinding, no F1 settings overlay (the ☰ menu replaces
+it), and the hand-over to the arcade programs (`NinjaTrilogy` / `NinjaTomoe`) is not available on Android.
+Saves and settings live in the app's own folder, so uninstalling the app deletes them.
+
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
