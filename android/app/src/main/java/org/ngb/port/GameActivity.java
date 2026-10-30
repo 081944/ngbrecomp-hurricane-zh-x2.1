@@ -6,6 +6,7 @@ import org.libsdl.app.SDLActivity;
 public final class GameActivity extends SDLActivity {
     private VirtualPad pad;
     private TouchMenu touchMenu;
+    private boolean paused;
     private static native void surfaceAvailable(boolean available);
     @Override protected org.libsdl.app.SDLSurface createSDLSurface(android.content.Context context) {
         return new org.libsdl.app.SDLSurface(context) {
@@ -54,7 +55,12 @@ public final class GameActivity extends SDLActivity {
     }
     @Override protected void onPause() {
         if (pad != null) pad.release();
+        paused = true;
         super.onPause();
+    }
+    @Override protected void onResume() {
+        paused = false;
+        super.onResume();
     }
     @Override public void setOrientationBis(int width, int height, boolean resizable, String hint) {
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
@@ -136,9 +142,14 @@ public final class GameActivity extends SDLActivity {
     }
 
     @Override protected void onDestroy() {
-        super.onDestroy();
         // This Activity owns a separate process so a driver change starts with
         // fresh SDL, Vulkan and guest state instead of reusing native globals.
+        // Tell Setup when the system finished us in the background (OEM
+        // cleanup), so it can relaunch the game instead of showing a menu.
+        if (paused)
+            getSharedPreferences("graphics", 0).edit()
+                    .putBoolean("auto_relaunch", true).commit();
+        super.onDestroy();
         android.os.Process.killProcess(android.os.Process.myPid());
     }
 }

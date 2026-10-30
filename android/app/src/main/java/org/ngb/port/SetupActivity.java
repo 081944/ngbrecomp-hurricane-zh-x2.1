@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -16,18 +17,22 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * A launcher, not a setup screen: once the game folder is imported the app
- * goes straight into the game. The setup UI only appears while there is no
- * game (import the folder, optionally a driver ZIP); the in-game touch menu
- * handles driver switching afterwards.
+ * The root activity. With the game imported it immediately (re)launches the
+ * game -- from onCreate and again from onResume, so that returning to the
+ * app (icon, recents) never lands on an empty window. The import UI only
+ * shows while there is no game or right after the game exits; the in-game
+ * touch menu handles driver switching afterwards.
  */
 public final class SetupActivity extends Activity {
     private static final int PICK_GAME = 1;
     private static final int PICK_DRIVER = 2;
     private static final int GAME = 3;
+    /** After the game exits, stay here this long before auto-relaunching. */
+    private static final long RELAUNCH_GRACE_MS = 5000;
     private TextView status;
     private Button select, importDriver;
-    private boolean importing;
+    private boolean importing, launching, uiReady;
+    private long gameExitAt, gameStartAt;
     private File game;
     private File marker;
 
@@ -37,8 +42,20 @@ public final class SetupActivity extends Activity {
         if (base == null) { finish(); return; }
         game = new File(base, "game");
         marker = new File(base, "game-import-complete");
-        if (gameReady()) { startGame(); return; }
+        buildUi();
+    }
 
+    @Override protected void onResume() {
+        super.onResume();
+        maybeStartGame();
+    }
+
+    private boolean gameReady() {
+        return new File(game, "default.xbe").isFile() && marker.isFile();
+    }
+
+    /** The window always has content: a blank root is what reads as a black screen. */
+    private void buildUi() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int padding = (int)(24 * getResources().getDisplayMetrics().density);
@@ -63,36 +80,64 @@ public final class SetupActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(layout);
         setContentView(scroll);
+        uiReady = true;
         refresh();
     }
 
-    private boolean gameReady() {
-        return new File(game, "default.xbe").isFile() && marker.isFile();
+    private void maybeStartGame() {
+        if (launching || importing || !gameReady()) return;
+        if (SystemClock.elapsedRealtime() - gameExitAt < RELAUNCH_GRACE_MS) return;
+        launching = true;
+        refresh();
+        startGame();
     }
 
     private void startGame() {
+        gameStartAt = SystemClock.elapsedRealtime();
+        launching = true;
+        refresh();
+        startActivityForResult(gameIntent(), GAME);
+    }
+
+    private Intent gameIntent() {
         Intent intent = new Intent(this, GameActivity.class);
         intent.putExtra("silent_test", getIntent().getBooleanExtra("silent_test", false));
-        startActivityForResult(intent, GAME);
+        return intent;
     }
 
     private void refresh() {
+        if (!uiReady) return;
         boolean ready = gameReady();
         select.setEnabled(!importing);
         importDriver.setEnabled(!importing);
-        if (!importing) status.setText(ready
-                ? "游戏文件已就绪。"
+        if (!importing) status.setText(launching ? "正在启动游戏……"
+                : ready ? "游戏文件已就绪。"
                 : "选择已提取的美版游戏文件夹，其中应包含 default.xbe。\n需要约 6 GB 可用空间，请使用你自己的游戏副本。\n导入完成后游戏将自动启动。");
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request == GAME) {
-            // The game owns a process that exits on exit; a cancelled result
-            // (back, or a failed start) lands back here, where the driver can
-            // be changed before the next attempt.
-            if (result != RESULT_OK && !gameReady())
-                status.setText("游戏未启动。请检查驱动或重新导入游戏文件夹。");
+            // The game exited (back / in-game quit) or could not start.
+            launching = false;
+            gameExitAt = SystemClock.elapsedRealtime();
+            if (!uiReady) buildUi(); else refresh();
+            boolean backgroundKill = getSharedPreferences("graphics", 0)
+                    .getBoolean("auto_relaunch", false);
+            if (backgroundKill) {
+                // The system finished the backgrounded game (OEM cleanup):
+                // bring it right back via an alarm, which may start
+                // activities although this process is in the background.
+                getSharedPreferences("graphics", 0).edit().remove("auto_relaunch").commit();
+                status.setText("游戏在后台被系统结束，正在重新启动……");
+                android.app.PendingIntent relaunch = android.app.PendingIntent.getActivity(
+                        this, 1002, gameIntent(), android.app.PendingIntent.FLAG_IMMUTABLE);
+                android.app.AlarmManager alarms =
+                        (android.app.AlarmManager) getSystemService(ALARM_SERVICE);
+                if (alarms != null)
+                    alarms.set(android.app.AlarmManager.ELAPSED_REALTIME,
+                            SystemClock.elapsedRealtime() + 1500, relaunch);
+            }
             return;
         }
         if (result != RESULT_OK || data == null || data.getData() == null) return;
@@ -134,7 +179,9 @@ public final class SetupActivity extends Activity {
                     status.setText("导入失败：" + message + "\n请检查空间和文件夹后重试。");
                     return;
                 }
-                startGame();   // first import: straight into the game
+                launching = true;      // first import: straight into the game
+                refresh();
+                startGame();
             });
         }, "ngb-import").start();
     }
