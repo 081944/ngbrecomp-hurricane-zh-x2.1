@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <application android:label="Ninja Gaiden Black"
+        android:icon="@mipmap/ic_launcher"
         android:appCategory="game"
         android:hasCode="true"
         android:extractNativeLibs="true"

@@ -78,7 +78,9 @@ javac -source 8 -target 8 -nowarn -Xlint:none -cp "$platform/android.jar" -d "$a
     "$here"/java/io/github/gamboozino/ngbrecomp/*.java 2>"$apk/javac.log"
 "$tools/d8" --release --min-api $api --lib "$platform/android.jar" --output "$apk/dex" \
     $(find "$apk/classes" -name '*.class')
-"$tools/aapt2" link -o "$apk/base.apk" -I "$platform/android.jar" --manifest "$here/AndroidManifest.xml"
+"$tools/aapt2" compile --dir "$here/res" -o "$apk/res.zip"   # (the icon: the AppImage's)
+"$tools/aapt2" link -o "$apk/base.apk" -I "$platform/android.jar" --manifest "$here/AndroidManifest.xml" \
+    "$apk/res.zip"
 cp "$apk/dex/classes.dex" "$apk/root/"
 ndkbin=$(echo "$ndk"/toolchains/llvm/prebuilt/*/bin)
 "$ndkbin/llvm-strip" -o "$apk/root/lib/$abi/libmain.so" "$out/build/libmain.so"
