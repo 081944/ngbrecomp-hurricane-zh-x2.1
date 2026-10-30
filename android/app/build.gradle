@@ -1,0 +1,24 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.ngb.port'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'org.ngb.port'
+        minSdk 30
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0-dev'
+        testInstrumentationRunner 'org.ngb.port.DriverInstrumentation'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    sourceSets {
+        main {
+            java.srcDir rootProject.file('../build/android-deps/src/SDL/android-project/app/src/main/java')
+            jniLibs.srcDir rootProject.file('../build/android-package/jniLibs')
+        }
+        androidTest { assets.srcDir rootProject.file('../build/android-driver-tests') }
+    }
+    buildTypes { release { minifyEnabled false } }
+    packaging { jniLibs { useLegacyPackaging true } }
+}

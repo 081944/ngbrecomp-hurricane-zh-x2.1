@@ -8,6 +8,14 @@ cmake_minimum_required(VERSION 3.20)
 # ============================================================================
 
 project(ninja_gaiden_black C CXX)
+if(ANDROID)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    add_link_options("-Wl,-z,max-page-size=16384")
+    include(cmake/android-deps.cmake)
+    # This port supplies the game's D3D hooks and Vulkan drawing. The generic
+    # desktop D3D/OpenGL backend is not part of the Android build.
+    set(XBOXRECOMP_EXTERNAL_D3D ON CACHE BOOL "" FORCE)
+endif()
 if(APPLE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
     message(FATAL_ERROR "The macOS port currently supports Apple Silicon only")
 endif()
@@ -160,7 +168,7 @@ endif()
 # ── The Direct3D renderer (docs/renderer.md, src/d3d/NOTICE) ────
 
 if(NGB_NV2A_VK)
-    if(APPLE)
+    if(APPLE OR ANDROID)
         find_package(glslang CONFIG REQUIRED)
     endif()
     set(XRTP ${XBOXRECOMP_DIR}/third_party)
@@ -177,7 +185,7 @@ if(NGB_NV2A_VK)
         ${XRTP}/Vulkan-Headers/include ${XRTP}/volk ${XRTP}/VulkanMemoryAllocator/include)
     target_compile_definitions(ngb_d3d PRIVATE VK_NO_PROTOTYPES
         VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0)
-    if(APPLE)
+    if(APPLE OR ANDROID)
         target_link_libraries(ngb_d3d PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
     endif()
     target_compile_features(ngb_d3d PRIVATE cxx_std_20)
@@ -195,7 +203,7 @@ target_compile_options(ngb_audio PRIVATE -O2 -fno-strict-aliasing)
 
 # ── Executable ──────────────────────────────────────────────────
 
-add_executable(${PROJECT_NAME}
+set(NGB_HOST_SOURCES
     src/main.c
     src/recomp_manual.c
     src/fibers.c
@@ -211,6 +219,17 @@ add_executable(${PROJECT_NAME}
     $<TARGET_OBJECTS:ngb_audio>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
 )
+if(ANDROID)
+    add_library(${PROJECT_NAME} SHARED ${NGB_HOST_SOURCES} src/android.c)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ngb_vulkan)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE main=SDL_main)
+    add_executable(ngb_shader_probe EXCLUDE_FROM_ALL tools/android/shader_probe.cpp src/d3d/vk/spirv.cpp)
+    target_include_directories(ngb_shader_probe PRIVATE src/d3d)
+    target_compile_features(ngb_shader_probe PRIVATE cxx_std_20)
+    target_link_libraries(ngb_shader_probe PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
+else()
+    add_executable(${PROJECT_NAME} ${NGB_HOST_SOURCES})
+endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
 if(WIN32)   # the resource script includes these: rebuilt when they change, not only ngb.rc
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc PROPERTIES OBJECT_DEPENDS
@@ -238,6 +257,10 @@ if(WIN32)
     if(MSVC)
         target_link_options(${PROJECT_NAME} PRIVATE /LARGEADDRESSAWARE)
     endif()
+elseif(ANDROID)
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME main)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} m log SDL2::SDL2)
+    target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--no-undefined")
 else()
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${NGB_EXE_NAME})
     # -rdynamic: the crash handler names the faulting sub_XXXXXXXX via dladdr.
@@ -255,6 +278,9 @@ endif()
 # when its code has been generated. They draw with the GPU model's own NV2A renderer, so they need it.
 
 function(ngb_arcade_program target output gen_dir xbe dsound)
+    if(ANDROID)
+        return() # Android image handover needs an in-app implementation.
+    endif()
     file(GLOB gen_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}/*.c")
     if(NOT gen_sources OR NOT NGB_NV2A_VK)
         return()
@@ -316,7 +342,7 @@ endfunction()
 ngb_arcade_program(ninja_trilogy NinjaTrilogy gen_trilogy NinjaTrilogy.xbe trilogy)
 ngb_arcade_program(ninja_tomoe NinjaTomoe gen_tomoe NinjaTomoe.xbe tomoe)
 
-if(NOT WIN32)
+if(NOT WIN32 AND NOT ANDROID)
     find_package(Qt6 QUIET COMPONENTS Widgets)
     if(Qt6_FOUND)
         set(CMAKE_AUTORCC ON)
