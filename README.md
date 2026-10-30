@@ -170,9 +170,9 @@ Prompts" on the "Controls" page, Auto, Xbox, PlayStation or PC).
 | Map | Tab | | Karma window | R |
 | Pause | Esc, Enter | | First-person view | Z |
 
-After loading, the right stick (or the mouse) looks around in first person, as on the Xbox; click the
-right stick (V) to turn the third-person camera instead. With **Start in Third Person** (RECOMP
-SETTINGS → Controls) the stick turns the third-person camera after every load. **Invert Camera X / Y**
+After loading, the right stick (or the mouse) turns the third-person camera; click it (V) to look around
+in first person. Turn off **Start in Third Person** (RECOMP SETTINGS → Controls) to start each load in
+first person, as on the Xbox. **Invert Camera X / Y**
 flips the stick and mouse for the third-person camera, **Invert First-Person X** first-person left and
 right; first-person up and down is the game's own Options → Controller Settings → 1st Person Camera
 Control. **Camera Sensitivity** (25%–300%) sets how fast the mouse, the right stick and the camera keys
