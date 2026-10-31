@@ -158,10 +158,15 @@ writes it as an ordinary file, the shim include path then resolves to nothing, a
 no privilege needed -- and hide the difference from git:
 
 ```sh
-cmd //c "mklink /J xboxrecomp\\src\\nv2a_vk\\shim\\hw\\xbox\\nv2a $(pwd)/xboxrecomp/src/nv2a_vk/xemu"
+[ -e xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a ] ||
+  cmd //c "mklink /J xboxrecomp\\src\\nv2a_vk\\shim\\hw\\xbox\\nv2a $(pwd)/xboxrecomp/src/nv2a_vk/xemu"
 git update-index --skip-worktree xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a
-echo 'xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a/' >> .git/info/exclude
+grep -qxF 'xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a/' .git/info/exclude ||
+  echo 'xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a/' >> .git/info/exclude
 ```
+
+Each line is idempotent, so running the block again on a tree that already has the
+junction, the flag and the exclude changes nothing.
 
 The exclude line is the part that matters for the GUI clients: libgit2 (GitHub Desktop)
 follows the junction and offers the 73 files inside it as new ones. Adding them would
