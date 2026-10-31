@@ -142,6 +142,17 @@ ADB currently sees a OnePlus 8 (IN2010), reporting API 30 and 4096-byte pages.
 It can help with some low-level tests if an API-30 probe is built, but is outside
 the proposed initial target and cannot establish target-device performance.
 
+A Windows checkout without the symlink privilege cannot materialise
+`xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a`, a symlink to `../../../xemu`: git
+writes it as an ordinary file, the shim include path then resolves to nothing, and
+`git status` reports the link as deleted. Put a directory junction in its place --
+no privilege needed -- and hide the difference from git:
+
+```sh
+cmd //c "mklink /J xboxrecomp\\src\\nv2a_vk\\shim\\hw\\xbox\\nv2a $(pwd)/xboxrecomp/src/nv2a_vk/xemu"
+git update-index --skip-worktree xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a
+```
+
 ## Confirmed source blockers
 
 | Area | Location | Required work |
