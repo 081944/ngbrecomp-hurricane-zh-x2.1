@@ -160,7 +160,13 @@ no privilege needed -- and hide the difference from git:
 ```sh
 cmd //c "mklink /J xboxrecomp\\src\\nv2a_vk\\shim\\hw\\xbox\\nv2a $(pwd)/xboxrecomp/src/nv2a_vk/xemu"
 git update-index --skip-worktree xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a
+echo 'xboxrecomp/src/nv2a_vk/shim/hw/xbox/nv2a/' >> .git/info/exclude
 ```
+
+The exclude line is the part that matters for the GUI clients: libgit2 (GitHub Desktop)
+follows the junction and offers the 73 files inside it as new ones. Adding them would
+replace the symlink in the index with a directory holding a second copy of `xemu/`, and
+every POSIX checkout would then compile that copy instead of the real tree.
 
 ## Confirmed source blockers
 
