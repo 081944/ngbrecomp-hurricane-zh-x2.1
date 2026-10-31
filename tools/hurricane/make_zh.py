@@ -115,11 +115,32 @@ def engine_glyphs(rows):
     return full, new, cells, len(b1), b1[-1], fnv1a(pal_raw), page
 
 
+# The game's text table has no half-width cells: it reads the string two bytes at a time, so a lone ASCII
+# byte swallows the byte after it -- "PC版设置" came out as "版设置" (0x50 0x43 read as one cell). ASCII goes
+# in as its full-width cell instead (JIS X 0208 rows 1-3: the same codes the rest of the charmap uses).
+_FW = {}
+for _c in range(0x21, 0x7F):
+    if 0x30 <= _c <= 0x39:
+        _FW[chr(_c)] = bytes((0x82, 0x4F + _c - 0x30))
+    elif 0x41 <= _c <= 0x5A:
+        _FW[chr(_c)] = bytes((0x82, 0x60 + _c - 0x41))
+    elif 0x61 <= _c <= 0x7A:
+        _FW[chr(_c)] = bytes((0x82, 0x81 + _c - 0x61))
+_FW.update({'.': b'\x81\x44', ',': b'\x81\x41', ':': b'\x81\x46', '(': b'\x81\x69', ')': b'\x81\x6A',
+            '/': b'\x81\x5E', '+': b'\x81\x7B', '-': b'\x81\x7C', '%': b'\x81\x93'})
+
+
 def encode(zh, cmap):
     out = bytearray()
     for ch in zh:
-        if ord(ch) < 0x80:
-            out += ch.encode('ascii')
+        if ch == '\n':
+            out += b'\n'
+        elif ch == ' ':
+            continue                      # (Chinese needs none)
+        elif ch in _FW:
+            out += _FW[ch]
+        elif 0xFF01 <= ord(ch) <= 0xFF5E and chr(ord(ch) - 0xFEE0) in _FW:
+            out += _FW[chr(ord(ch) - 0xFEE0)]      # (already full-width in the tsv)
         else:
             assert ch in cmap, 'not in the font: %r in %s' % (ch, zh)
             out += cmap[ch][0]
