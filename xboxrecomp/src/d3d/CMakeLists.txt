@@ -25,6 +25,10 @@ if(WIN32)
     # Offline smoke test for the pure format layer (no D3D11 device needed).
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/d3d8_smoke
                      ${CMAKE_CURRENT_BINARY_DIR}/d3d8_smoke)
+elseif(ANDROID)
+    # no OpenGL layer there: the titles built for Android draw through the NV2A model (nv2a_vk)
+    add_library(xbox_d3d8 INTERFACE)
+    target_include_directories(xbox_d3d8 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})   # (d3d8_xbox.h's types)
 else()
     add_library(xbox_d3d8 STATIC
         d3d8_gl.c
@@ -41,10 +45,13 @@ else()
     target_link_libraries(xbox_d3d8 PUBLIC platform SDL2::SDL2 ${EPOXY_LINK_LIBRARIES})
 endif()
 
+if(ANDROID)
+    return()
+endif()
 target_include_directories(xbox_d3d8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(MSVC)
     target_compile_options(xbox_d3d8 PRIVATE /W4 /O2)
 else()
-    target_compile_options(xbox_d3d8 PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
+    target_compile_options(xbox_d3d8 PRIVATE -Wall -Wextra -Wno-unused-parameter ${XBOXRECOMP_OPT_LEVEL})
 endif()

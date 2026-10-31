@@ -85,15 +85,18 @@ void ngb_menu_set_running(const NgbSettings *s)
  * cheat, 16 every costume (saved), 17 an extra costume (0-3, saved), 18 Smoother
  * Glow (src/d3d/vk/glow_options.h), 19 quick-menu pause, 20 quick-menu scale (100..0
  * percent, in tens), 21 infinite items, 22 infinite projectiles (cheats, src/cheats.c), 23 positional
- * audio (0 off, 1 the HRTF filters, 2 panning only; #30, #86), 24 the HUD (src/hud.c, #80), 25 the audio
- * output (0 auto, 1 stereo, 2 5.1; src/audio). A change applies at once (8, 9 and 25 at the next start) and is saved, the cheats'
- * not. */
+ * audio (0 off, 1 the HRTF filters, 2 clear, their levels only; #30, #86), 24 the HUD (src/hud.c, #80), 25 the audio
+ * output (0 auto, 1 stereo, 2 5.1; src/audio), 26-28 the main menu's MISSIONS, ARCADE NINJA GAIDEN and
+ * MOVIE THEATER unlocked (src/cheats.c, saved), 29 Lower Detail Under Load (src/d3d/d3d.c), 30 the render thread
+ * (src/d3d/hle.cpp, the Multithreaded Renderer), 31 unused (upstream's Intercept, #109, left out: x2.1 has its own), 32 all weapons (a cheat), 33 Essence-Only Charging (src/ut_charge.c), 34 Skip Any Cutscene (src/cutscene_skip.c). A change applies at once (8, 9 and 25 at the next start, 30 after a restart) and is saved, the
+ * cheats' not. */
 int ngb_cheat(int which);
 void ngb_cheat_set(int which, int on);
 void ngb_audio_set_positional(int mode);  /* src/audio/dsound.c: positional audio (23) */
 void ngb_audio_set_output(int choice);    /* src/audio/dsound.c: the audio output (25) */
 void ngb_set_all_difficulties(int on);   /* src/cheats.c */
 void ngb_set_all_costumes(int on);
+void ngb_set_unlock(int which, int on);
 
 int ngb_pc_setting(int which)
 {
@@ -103,9 +106,15 @@ int ngb_pc_setting(int which)
         return ngb_cheat(3);
     if (which == 21 || which == 22)                    /* infinite items, infinite projectiles */
         return ngb_cheat(which - 17);
+    if (which == 32)                                   /* all weapons */
+        return ngb_cheat(6);
     if (which == 14 || which == 16 || which == 17) {
         ngb_pc_setting(0);
         return which == 14 ? s_running.all_difficulties : which == 16 ? s_running.all_costumes : s_running.movie_43;
+    }
+    if (which >= 26 && which <= 28) {
+        ngb_pc_setting(0);
+        return s_running.unlock[which - 26];
     }
     if (!s_have_running) {
         ngb_settings_load(&s_running);
@@ -130,6 +139,11 @@ int ngb_pc_setting(int which)
     case 20: return s_running.quick_menu_scale;
     case 23: return s_running.positional_audio;
     case 24: return s_running.show_hud;
+    case 29: return s_running.detail_under_load;
+    case 30: return s_running.render_thread;
+    case 33: return s_running.essence_charging;
+    case 34: return s_running.skip_cutscenes;
+    case 35: return s_running.gpu_driver;
     case 25: return s_running.audio_output;
     default: return s_running.show_fps;
     }
@@ -137,14 +151,15 @@ int ngb_pc_setting(int which)
 
 void ngb_pc_set_setting(int which, int value)
 {
-    if ((which >= 11 && which <= 13) || which == 15 || which == 21 || which == 22) {
-        ngb_cheat_set(which == 15 ? 3 : which >= 21 ? which - 17 : which - 11, value);
+    if ((which >= 11 && which <= 13) || which == 15 || which == 21 || which == 22 || which == 32) {
+        ngb_cheat_set(which == 32 ? 6 : which == 15 ? 3 : which >= 21 ? which - 17 : which - 11, value);
         return;
     }
     ngb_pc_setting(0);
     switch (which) {
     case 14: s_running.all_difficulties = value; ngb_set_all_difficulties(value); break;
     case 16: s_running.all_costumes = value; ngb_set_all_costumes(value); break;
+    case 26: case 27: case 28: s_running.unlock[which - 26] = !!value; ngb_set_unlock(which - 26, !!value); break;
     case 17: s_running.movie_43 = !!value; break;   /* the next movie (src/pc_menu.c) */
     case 0: s_running.scale = value; break;
     case 1: s_running.anisotropy = value; break;
@@ -163,6 +178,11 @@ void ngb_pc_set_setting(int which, int value)
     case 18: s_running.smooth_glow = !!value; break;
     case 23: s_running.positional_audio = value < 0 ? 0 : value > 2 ? 2 : value; ngb_audio_set_positional(s_running.positional_audio); break;
     case 24: s_running.show_hud = !!value; break;
+    case 29: s_running.detail_under_load = !!value; break;
+    case 30: s_running.render_thread = !!value; break;   /* at the next start */
+    case 33: s_running.essence_charging = !!value; break;
+    case 34: s_running.skip_cutscenes = !!value; break;
+    case 35: s_running.gpu_driver = value < 0 ? 0 : value > 2 ? 2 : value; break;   /* at the next start */
     case 25:   /* the mixer's at the next start; the arcade's at its next */
         s_running.audio_output = value < 0 ? 0 : value > 2 ? 2 : value;
         ngb_audio_set_output(s_running.audio_output);
@@ -292,6 +312,14 @@ static uint64_t s_tab_rat;
  * Enter) gives its page the pad, B (Esc) gives it back; while the page has
  * it the game sees no pad, and the key for the page (KEY_UP .. KEY_BACK, the
  * back already acted on) is returned. */
+/* The page keeps the pad after a back it acted on itself (src/pause_tab.c: B on Cheats' Unlocks page
+ * goes back to Cheats, not out of the page). */
+void ngb_pause_tab_hold(void)
+{
+    s_tab_focus = 1;
+    s_wait_release = false;
+}
+
 int ngb_pause_tab_key(int *focus)
 {
     static const struct { uint32_t bit; int key; } map[] = {
@@ -534,7 +562,9 @@ void ngb_keep_game_for_restart(void);   /* src/main.c */
 static void restart_program(void)
 {
     ngb_keep_game_for_restart();
-#if !defined(_WIN32)
+#if defined(__ANDROID__)
+    fprintf(stderr, "[MENU] Android: no starting again yet; exiting\n");   /* (the program is the app's process) */
+#elif !defined(_WIN32)
     char self[4096];
     long n = ngb_exe_path(self, sizeof self);
     if (n > 0 && s_argv) {
@@ -1405,7 +1435,7 @@ bool nv2a_overlay_wanted(void)
         s_tab_focus = 0;
         s_wait_release = true;
     }
-    if (s_wait_release && !(b & 0x3FFFF)) {
+    if (s_wait_release && !(b & 0x1FFFFF)) {   /* every bit of pad_bits: X (bit 20) too, or its press reached the game (#111) */
         s_wait_release = false;
         usb_gamepad_block = 0;
         if (s_back_pending) {
@@ -1760,14 +1790,25 @@ bool nv2a_overlay_frame(uint32_t *px, int w, int h, const uint32_t *backdrop)
 _Noreturn void ngb_renderer_fatal(const char *detail)
 {
     char msg[2048];   /* Hurricane: in Chinese too (UTF-8), before the English (user 2026-10-18) */
+#ifdef __ANDROID__
     snprintf(msg, sizeof msg,
-             "本程序需要支持 Vulkan 1.3（dynamic rendering 与 push descriptors）的显卡和驱动，"
+             "Ninja Gaiden Black needs a phone GPU whose Vulkan driver has dynamic rendering, "
+             "synchronization2 and push descriptors (Vulkan 1.3, or those as extensions), and this phone's "
+             "does not:\n\n%s\n\n"
+             "A system update sometimes brings a newer driver. Please report your phone's model and chip on "
+             "the project's GitHub page.", detail);
+#else
+    snprintf(msg, sizeof msg,
+             "本程序需要显卡驱动支持 Vulkan 1.3 的 dynamic rendering 与 synchronization2"
+             "（Vulkan 1.3 自带，或旧版驱动以扩展提供）以及 push descriptors，"
              "这台电脑不满足：\n\n%s\n\n"
              "请更新显卡驱动。大约 2016 年以前的显卡（例如 Nvidia GTX 600、700 系列）不受支持。\n\n"
-             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3 (dynamic rendering and push "
-             "descriptors), and this system does not offer it (see above). "
+             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3's dynamic rendering and synchronization2 "
+             "(in Vulkan 1.3, or as extensions of an older one) and push descriptors, and this system does not "
+             "offer them (see above). "
              "Please update your graphics driver. GPUs from before about 2016 (for example Nvidia's "
              "GTX 600 and 700 series) are not supported.", detail);
+#endif
     fprintf(stderr, "[D3D] %s\n", msg);
     fflush(stderr);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ninja Gaiden Black", msg, NULL);

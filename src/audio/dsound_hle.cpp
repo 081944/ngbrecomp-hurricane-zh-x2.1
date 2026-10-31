@@ -1,13 +1,14 @@
 // DirectSound (XDK 5849) on a host mixer: the title's sound buffers read from guest memory as they play, mixed into
 // 48 kHz stereo or 5.1 for SDL's output. Modelled on SCDA-XBERecomp's xdk/dsound.cpp (see NOTICE): its buffers, 3D pass,
 // mix bins and I3DL2 reverb, ported to this title's library (tools/dsound_symbols.txt: the calls it makes, buffers
-// only, no streams) and given the sound chip's HRTF filters for Positional Audio's "Console" choice.
+// only, no streams) and given the sound chip's HRTF filters for Positional Audio's "Console" choice ("Clear": their
+// levels alone).
 //
 // The emulated sound chip (xboxrecomp/src/apu) is not started with this; NGB_AUDIO_ENGINE=apu goes back to it.
 // 5.1 by Audio Output, on Auto when the default output device has six channels or more (the title is told its
 // speakers are surround, and mixes for them); NGB_AUDIO_CHANNELS=2 or 6 overrides it. NGB_DSOUND_LOG=1 logs the
 // calls as they first come (2 every volume change too, 3 every Lock); NGB_DSOUND_WAV=<file> writes what plays
-// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out (comparing).
+// (48 kHz, 16-bit); NGB_DSOUND_REVERB=0 leaves the reverb out, NGB_DSOUND_XTALK=1 adds the crosstalk effect (comparing).
 #include <SDL.h>
 
 #include <algorithm>
@@ -30,6 +31,7 @@ extern "C" {
 uint32_t xbox_HeapAlloc(uint32_t size, uint32_t align);
 extern volatile int apu_host_paused;   // xboxrecomp/src/apu/apu_core.c: a menu holds the game
 int xbox_guest_set_event(uint32_t handle);   // xboxrecomp kernel_bridge.c
+#include "nv2a_vk/host/threadload.h"
 }
 
 using kernel::HostPtr;
@@ -68,7 +70,7 @@ constexpr uint32_t kDsErrInvalidCall = 0x88780032u, kEFail = 0x80004005u;
 
 std::atomic<int> g_positional{2};
 bool g_surround = false;
-int g_output_choice = 0;  // Audio Output: 0 auto, 1 stereo, 2 5.1 (dsound_hle_set_output)  // the output is 5.1: FL FR C LFE BL BR, SDL's order and the mix bins'  // Positional Audio: 0 off, 1 console (the HRTF filters), 2 panning
+int g_output_choice = 0;  // Audio Output: 0 auto, 1 stereo, 2 5.1 (dsound_hle_set_output)  // the output is 5.1: FL FR C LFE BL BR, SDL's order and the mix bins'  // Positional Audio: 0 off, 1 console (the HRTF filters), 2 clear (their levels)
 int g_log = -1;
 
 bool Log() {
@@ -90,7 +92,7 @@ struct Ear {
 };
 struct EarPair {
     Ear e[2];  // left, right
-    float pan[2] = {1, 1};  // "Panning": each ear's level from its filter's strength, at constant power
+    float pan[2] = {1, 1};  // "Clear": each ear's level from its filter's strength, at constant power
 };
 
 struct Voice {
@@ -101,7 +103,7 @@ struct Voice {
     uint32_t rate = 48000;
     // the buffer
     uint32_t data = 0, bytes = 0, loop_start = 0, loop_len = 0;
-    uint32_t owned = 0;  // memory made with the buffer (a size and no data)
+    uint32_t owned = 0, owned_bytes = 0;  // memory made with the buffer (a size and no data)
     bool playing = false, looping = false;
     double pos = 0;  // frames
     uint32_t freq = 0;
@@ -137,6 +139,11 @@ struct Voice {
 std::recursive_mutex g_lock;
 std::map<uint32_t, Voice> g_voices;
 std::vector<uint32_t> g_free_objects;  // released buffers' objects, for the next
+// released buffers' memory by size, for the next buffers: the title creates and releases a buffer for many of the
+// sounds it streams, and that memory was never given back, so the heap ran out after a few hours of play (#137).
+// It is kept here rather than freed: the guest heap neither splits nor joins blocks, so a freed block went to the
+// next small allocation and the next buffer took new memory all the same.
+std::multimap<uint32_t, uint32_t> g_spare_memory;
 std::vector<uint32_t> g_events;        // notifications reached, set at the next DirectSoundDoWork (the title's thread)
 float g_listener[3] = {}, g_front[3] = {0, 0, 1}, g_top[3] = {0, 1, 0};
 // IDirectSound_SetMixBinHeadroom: a step halves the bin; the library starts bins 0..30 at 1 and 31 at 0
@@ -347,6 +354,30 @@ struct Reverb {
     }
 } g_reverb;
 
+// dsstdfx's crosstalk effect (the image's last: the four 3D submixes in, the front and back pairs out), as
+// SCDA-XBERecomp has it from the image: each side of a pair takes the other side's output of 11 samples before
+// through a one pole filter, -0.77 of it at low frequencies -- what keeps the HRTF's two ears apart on speakers
+// (the filters give the far ear the more bass, this takes it back out of the near one). It runs on the reverb
+// as well, which the image writes into the same bins. Off unless NGB_DSOUND_XTALK=1, and then for "Console" alone:
+// 0.9.40 ran it, and its bass came out mostly out of phase between the speakers (#126); xemu running the image on
+// its DSP sounds as "Console" does without it (level, width and tone within 0.3 dB over the attract demo), so the
+// library leaves it switched off there or never reaches it.
+struct CrossFeed {
+    static constexpr uint32_t kDelay = 11;
+    static constexpr float kPole = 0.924f, kFeed = -0.0585f;  // image coefficients 0x7645A1, 0xF88313
+    float s[2] = {}, past[2][kDelay] = {};
+    uint32_t at = 0;
+    void Run(float& left, float& right) {
+        s[0] = kPole * s[0] + kFeed * past[1][at] + 1e-20f;  // the offset keeps silence out of denormals
+        s[1] = kPole * s[1] + kFeed * past[0][at] + 1e-20f;
+        left += s[0];
+        right += s[1];
+        past[0][at] = left;
+        past[1][at] = right;
+        at = (at + 1) % kDelay;
+    }
+} g_front_feed, g_back_feed;
+
 // ── 3D: where a voice is, as the library's 3D pass works it out ──
 
 float Dot(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
@@ -395,6 +426,10 @@ EarPair Ears(float azimuth, float elevation) {
         for (int i = 0; i < kHrtfTaps; i++) ear.tap[i] = (t[i] & 0x80 ? -float(t[i] & 0x7F) : float(t[i])) / 128.0f;
         ear.delay = t[31];
     }
+    // "Clear": the filters' strengths as the ears' levels, a few dB apart, the pair scaled to constant power
+    // (0 dB). 0.9.40 gave each ear its filter's RMS gain instead, +2 to +5 dB by direction, most where the
+    // filters carry the most bass; it was heard as boomy and muffled. A pan by the direction with the table's
+    // delay between the ears was also tried for 0.9.40 and heard as worse.
     float e[2] = {};
     for (int c = 0; c < 2; c++)
         for (int i = 0; i < kHrtfTaps; i++) e[c] += p.e[c].tap[i] * p.e[c].tap[i];
@@ -554,7 +589,7 @@ void ReadFrame(Voice& v, const Cursor& at, float x[2]) {
     }
 }
 
-// a mono 3D voice through one ear's filter (or its "Panning" level), from its recent samples
+// a mono 3D voice through one ear's filter (or its "Clear" level), from its recent samples
 float EarOut(const Voice& v, const Ear& e, float pan, int mode) {
     auto at = [&](int back) { return v.ear[(v.ear_pos - 1 - back) % kEarLength]; };
     if (mode == 2) return pan * at(0);
@@ -630,7 +665,8 @@ void MixVoice(Voice& v, float* out, float* send, uint32_t frames, int mode) {
     }
 }
 
-// 48 kHz: the voices, the reverb, the 3D submixes onto the speakers' pairs; stereo folds the centre and the back pair
+// 48 kHz: the voices, the reverb, the 3D submixes onto the speakers' pairs (the crosstalk effect first, if asked); stereo folds
+// the centre and the back pair
 // into the front (and drops the sub)
 void Render(float* out, uint32_t frames) {
     static std::vector<float> lanes, send;
@@ -643,6 +679,12 @@ void Render(float* out, uint32_t frames) {
             if (v.playing) MixVoice(v, lanes.data(), send.data(), frames, mode);
         static const bool reverb = !(std::getenv("NGB_DSOUND_REVERB") && *std::getenv("NGB_DSOUND_REVERB") == '0');
         if (reverb) g_reverb.Run(send.data(), lanes.data(), frames);
+    }
+    static const bool xtalk = std::getenv("NGB_DSOUND_XTALK") && *std::getenv("NGB_DSOUND_XTALK") == '1';
+    for (uint32_t i = 0; xtalk && g_positional.load() == 1 && i < frames; i++) {
+        float* m = &lanes[size_t(i) * kLanes];
+        g_front_feed.Run(m[kBinCrosstalkFrontLeft], m[kBinCrosstalkFrontRight]);
+        g_back_feed.Run(m[kBinCrosstalkBackLeft], m[kBinCrosstalkBackRight]);
     }
     if (g_surround) {
         for (uint32_t i = 0; i < frames; i++) {
@@ -688,6 +730,7 @@ void WriteWav(const float* frames, uint32_t n) {
 
 // the device's pull; held by a menu, silence and the voices stay where they are
 void Pull(float* out, uint32_t frames) {
+    recomp_load_sample(RECOMP_LOAD_AUDIO);   // this thread's CPU time, for log.txt
     if (apu_host_paused) {
         std::memset(out, 0, size_t(frames) * Channels() * sizeof(float));
         return;
@@ -825,6 +868,28 @@ uint32_t NewObject() {
     return xbox_HeapAlloc(0x40, 16);
 }
 
+// a buffer's own memory, zeroed: the smallest released block it fits in, if there is one
+uint32_t OwnedMemory(Voice& v, uint32_t bytes) {
+    auto it = g_spare_memory.lower_bound(bytes);
+    uint32_t va = 0, size = bytes;
+    if (it != g_spare_memory.end()) {
+        size = it->first;
+        va = it->second;
+        g_spare_memory.erase(it);
+    } else {
+        va = xbox_HeapAlloc(bytes, 16);
+    }
+    if (va) std::memset(HostPtr(va), 0, bytes);
+    v.owned = va;
+    v.owned_bytes = va ? size : 0;
+    return va;
+}
+
+void SpareOwned(Voice& v) {
+    if (v.owned) g_spare_memory.emplace(v.owned_bytes, v.owned);
+    v.owned = v.owned_bytes = 0;
+}
+
 uint32_t NewBuffer(uint32_t desc, uint32_t out) {
     Start();
     uint32_t obj = NewObject();
@@ -839,8 +904,7 @@ uint32_t NewBuffer(uint32_t desc, uint32_t out) {
     v.is3d = flags & 0x10;
     v.headroom = DefaultHeadroom(flags);
     if (bytes) {
-        v.data = v.owned = xbox_HeapAlloc(bytes, 16);
-        if (v.data) std::memset(HostPtr(v.data), 0, bytes);
+        v.data = OwnedMemory(v, bytes);
         v.bytes = v.loop_len = bytes;
     }
     W32(out, obj);
@@ -966,6 +1030,7 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
             *r = uint32_t(v.refs);
             return 1;
         }
+        SpareOwned(v);
         g_free_objects.push_back(v.obj);
         g_voices.erase(v.obj);
         return 1;
@@ -973,8 +1038,9 @@ extern "C" int dsound_hle_call(int fn, uint32_t va, const uint32_t* a, uint32_t*
         return 1;
     case DSF_IDirectSoundBuffer_SetBufferData:
         if (a[1] == v.data && a[2] == v.bytes) return 1;
+        if (v.owned && a[1] != v.owned) SpareOwned(v);  // the title's own memory, or a new size: ours is unused
         v.data = a[1];
-        if (!a[1] && a[2]) v.data = v.owned = xbox_HeapAlloc(a[2], 16);  // a size and no data
+        if (!a[1] && a[2]) v.data = OwnedMemory(v, a[2]);  // a size and no data
         v.bytes = v.loop_len = a[2];
         v.loop_start = 0;
         v.pos = 0;

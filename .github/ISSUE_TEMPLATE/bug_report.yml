@@ -24,13 +24,14 @@ body:
         - Windows
         - Windows under Proton / Wine
         - Linux (built from source)
+        - Android (experimental)
     validations:
       required: true
   - type: input
     id: cpu
     attributes:
       label: CPU
-      description: For example "AMD Ryzen 5 5600X" or "Intel i7-3770". The game runs on one CPU core, like the Xbox, so its speed matters for slowdowns and stutter.
+      description: For example "AMD Ryzen 5 5600X" or "Intel i7-3770". The game runs on one CPU core, like the Xbox, so its speed matters for slowdowns and stutter. On Android, the phone's model, its chip (Snapdragon, Tensor, Dimensity, Exynos...) and the Android version.
   - type: input
     id: gpu
     attributes:
@@ -44,6 +45,7 @@ body:
         - "16:9"
         - "16:10"
         - "21:9"
+        - "32:9"
         - "4:3"
   - type: textarea
     id: what
@@ -65,5 +67,6 @@ body:
         For a graphics glitch: press F7 while it is on screen and attach the `ngb-trace-<n>` folder it
         writes to your home folder (`C:\Users\<you>` on Windows), zipped.
         For a crash or a problem starting: the log, `log.txt` beside the saves
-        (`%LOCALAPPDATA%\NinjaGaidenBlack` on Windows, `~/.local/share/NinjaGaidenBlack` on Linux),
+        (`%LOCALAPPDATA%\NinjaGaidenBlack` on Windows, `~/.local/share/NinjaGaidenBlack` on Linux,
+        `Android/data/io.github.gamboozino.ngbrecomp/files` on Android),
         or the terminal's output if you started it from one. See CONTRIBUTING.md.

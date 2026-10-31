@@ -3,19 +3,11 @@ cmake_minimum_required(VERSION 3.20)
 # ============================================================================
 # Ninja Gaiden Black - static recompilation (xboxrecomp)
 #
-# Native Linux (x86-64), Windows and macOS (arm64) builds. The generated code comes from the
+# Native Linux (x86-64), Windows, macOS (arm64) and Android (arm64, packaging/android) builds. The generated code comes from the
 # xboxrecomp pipeline (see README.md); it is not checked in.
 # ============================================================================
 
 project(ninja_gaiden_black C CXX)
-if(ANDROID)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    add_link_options("-Wl,-z,max-page-size=16384")
-    include(cmake/android-deps.cmake)
-    # This port supplies the game's D3D hooks and Vulkan drawing. The generic
-    # desktop D3D/OpenGL backend is not part of the Android build.
-    set(XBOXRECOMP_EXTERNAL_D3D ON CACHE BOOL "" FORCE)
-endif()
 if(APPLE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
     message(FATAL_ERROR "The macOS port currently supports Apple Silicon only")
 endif()
@@ -45,6 +37,20 @@ set(XBOXRECOMP_NV2A_VK ${NGB_NV2A_VK} CACHE BOOL "" FORCE)
 set(XBOXRECOMP_SDL_BACKENDS ON CACHE BOOL "" FORCE)   # Windows: same SDL audio/input as Linux
 set(XBOXRECOMP_WIN_VCPU ON CACHE BOOL "" FORCE)        # Windows: one virtual CPU, as on Linux
 
+# Optimisation: the level every target compiles at (the targets' own setting: CMake's Release -O3 comes
+# before it), and profile-guided optimisation -- NGB_PGO=generate builds a binary that records where its
+# time goes (LLVM_PROFILE_FILE), NGB_PGO=<file.profdata> one built with that profile (docs/TECHNICAL.md).
+set(NGB_OPT_LEVEL "-O2" CACHE STRING "optimisation level for every target (-O2, -O3)")
+set(NGB_PGO "" CACHE STRING "profile-guided optimisation: empty, generate, or a .profdata file")
+if(NGB_PGO STREQUAL "generate")
+    add_compile_options(-fprofile-instr-generate)
+    add_compile_definitions(NGB_PGO_GENERATE)   # src/main.c: the profile written on SIGINT/SIGTERM
+    add_link_options(-fprofile-instr-generate)
+elseif(NGB_PGO)
+    add_compile_options(-fprofile-instr-use=${NGB_PGO} -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date
+                        -Wno-backend-plugin)
+endif()
+
 set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/xboxrecomp" CACHE PATH
     "Path to the xboxrecomp toolkit root directory")
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
@@ -61,8 +67,8 @@ endif()
 # their flags can differ from the hand-written code, and so a host change
 # never recompiles them.
 # Fonts (SIL Open Font License, assets/fonts) built into the program: the
-# pause menu's pages until the game's own letters are loaded, its key labels
-# (src/pause_tab.c) and the frame rate overlay (src/fps_text.c).
+# pause menu's pages until the game's own letters are loaded and its key labels
+# (src/pause_tab.c).
 set(NGB_FONTS
     "EBGaramond-ExtraBoldItalic.ttf\;ngb_font_tab"
     "LiberationSerif-Regular.ttf\;ngb_font_body"
@@ -84,7 +90,13 @@ endforeach()
 
 # The keyboard and mouse prompts (Xelu's free prompts, CC0: assets/prompts/License-Xelu.txt), the dark
 # set and its blank key: each embedded, and a table of them by file name (src/pause_tab.c).
-file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png)
+file(GLOB NGB_KEY_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/keys/*.png
+                       ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/ps/*.png    # PlayStation buttons (#113)
+                       ${CMAKE_CURRENT_SOURCE_DIR}/assets/prompts/xbox/*.png) # the Controls page's Xbox combos
+if(ANDROID)   # the touch controls' sticks and d-pad (Kenney's Mobile Controls, CC0: assets/touch/License-Kenney.txt)
+    file(GLOB NGB_TOUCH_PNGS ${CMAKE_CURRENT_SOURCE_DIR}/assets/touch/*.png)
+    list(APPEND NGB_KEY_PNGS ${NGB_TOUCH_PNGS})
+endif()
 set(key_decls "")
 set(key_rows "")
 list(LENGTH NGB_KEY_PNGS key_count)
@@ -118,6 +130,9 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/menu_font.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/fps_text.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hud.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/ut_charge.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cutscene_skip.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/render_list.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/playtime.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/quick_select.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main_menu.c
@@ -158,7 +173,7 @@ else()
     # Lifted code is one big function per guest routine, so the flags that
     # make a function's codegen superlinear are capped.
     target_compile_options(ngb_gen PRIVATE
-        -O2 -fno-strict-aliasing -fwrapv
+        ${NGB_OPT_LEVEL} -fno-strict-aliasing -fwrapv
         -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable
         -Wno-parentheses-equality -Wno-tautological-compare
         -Wno-incompatible-pointer-types-discards-qualifiers
@@ -178,18 +193,24 @@ if(NGB_NV2A_VK)
         src/d3d/vk/spirv.cpp
         src/d3d/gpu/shaders.cpp
         src/d3d/gpu/vertex.cpp
-        src/d3d/gpu/texture.cpp)
+        src/d3d/gpu/texture.cpp
+        src/d3d/gpu/threaded.cpp)
     target_include_directories(ngb_d3d PRIVATE
         src
-        src/d3d src/d3d/compat ${XBOXRECOMP_DIR}/src/nv2a_vk/host
+        src/d3d src/d3d/compat ${XBOXRECOMP_DIR}/src ${XBOXRECOMP_DIR}/src/nv2a_vk/host
         ${XRTP}/Vulkan-Headers/include ${XRTP}/volk ${XRTP}/VulkanMemoryAllocator/include)
     target_compile_definitions(ngb_d3d PRIVATE VK_NO_PROTOTYPES
         VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0)
+    # the virtual CPU on Windows (platform's XBOX_WIN_VCPU, without its wait wrappers): the render thread's frame
+    # wait hands it over there too (src/d3d/gpu/threaded.cpp)
+    if(WIN32 AND XBOXRECOMP_WIN_VCPU)
+        target_compile_definitions(ngb_d3d PRIVATE XBOX_WIN_VCPU)
+    endif()
     if(APPLE OR ANDROID)
         target_link_libraries(ngb_d3d PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
     endif()
     target_compile_features(ngb_d3d PRIVATE cxx_std_20)
-    target_compile_options(ngb_d3d PRIVATE -O2 -fno-strict-aliasing)
+    target_compile_options(ngb_d3d PRIVATE ${NGB_OPT_LEVEL} -fno-strict-aliasing)
 endif()
 
 # ── DirectSound on a host mixer (src/audio, src/audio/NOTICE) ────
@@ -197,13 +218,14 @@ endif()
 find_package(SDL2 REQUIRED)
 add_library(ngb_audio OBJECT src/audio/dsound_hle.cpp)
 target_include_directories(ngb_audio PRIVATE src/audio src/d3d/compat
-    $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
+    $<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>
+    ${XBOXRECOMP_DIR}/src)
 target_compile_features(ngb_audio PRIVATE cxx_std_20)
-target_compile_options(ngb_audio PRIVATE -O2 -fno-strict-aliasing)
+target_compile_options(ngb_audio PRIVATE ${NGB_OPT_LEVEL} -fno-strict-aliasing)
 
 # ── Executable ──────────────────────────────────────────────────
 
-set(NGB_HOST_SOURCES
+set(NGB_MAIN_SOURCES
     src/main.c
     src/recomp_manual.c
     src/fibers.c
@@ -214,25 +236,19 @@ set(NGB_HOST_SOURCES
     $<$<BOOL:${NGB_NV2A_VK}>:${CMAKE_CURRENT_SOURCE_DIR}/src/bindings.c>
     src/install.c
     src/launch.c
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_main.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/touch_pad.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_install.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_gpu.c>
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
     $<TARGET_OBJECTS:ngb_audio>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/ngb.rc>
 )
-if(ANDROID)
-    add_library(${PROJECT_NAME} SHARED ${NGB_HOST_SOURCES} src/android.c)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ngb_vulkan)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE main=SDL_main)
-    # The setup UI runs in its own process and must not load the whole game
-    # library: a small standalone library for the SAF ISO import instead.
-    add_library(ngbsetup SHARED src/install.c src/android_setup.c)
-    target_include_directories(ngbsetup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    add_executable(ngb_shader_probe EXCLUDE_FROM_ALL tools/android/shader_probe.cpp src/d3d/vk/spirv.cpp)
-    target_include_directories(ngb_shader_probe PRIVATE src/d3d)
-    target_compile_features(ngb_shader_probe PRIVATE cxx_std_20)
-    target_link_libraries(ngb_shader_probe PRIVATE glslang::glslang glslang::glslang-default-resource-limits)
+if(ANDROID)   # SDL's Java activity loads the game as libmain.so and calls its SDL_main (packaging/android)
+    add_library(${PROJECT_NAME} SHARED ${NGB_MAIN_SOURCES})
 else()
-    add_executable(${PROJECT_NAME} ${NGB_HOST_SOURCES})
+    add_executable(${PROJECT_NAME} ${NGB_MAIN_SOURCES})
 endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
 if(WIN32)   # the resource script includes these: rebuilt when they change, not only ngb.rc
@@ -263,8 +279,13 @@ if(WIN32)
     endif()
 elseif(ANDROID)
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME main)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} m log SDL2::SDL2)
-    target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--no-undefined")
+    target_link_libraries(${PROJECT_NAME} PRIVATE android log m SDL2::SDL2)
+    # libadrenotools (Turnip loaded for this app: src/android_gpu.c), from packaging/android/build.sh
+    find_library(NGB_ADRENOTOOLS adrenotools REQUIRED)
+    find_library(NGB_LINKERNSBYPASS linkernsbypass REQUIRED)
+    find_path(NGB_ADRENOTOOLS_INCLUDE adrenotools/driver.h REQUIRED)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${NGB_ADRENOTOOLS_INCLUDE})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${NGB_ADRENOTOOLS} ${NGB_LINKERNSBYPASS})
 else()
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${NGB_EXE_NAME})
     # -rdynamic: the crash handler names the faulting sub_XXXXXXXX via dladdr.
@@ -282,11 +303,8 @@ endif()
 # when its code has been generated. They draw with the GPU model's own NV2A renderer, so they need it.
 
 function(ngb_arcade_program target output gen_dir xbe dsound)
-    if(ANDROID)
-        return() # Android image handover needs an in-app implementation.
-    endif()
     file(GLOB gen_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/${gen_dir}/*.c")
-    if(NOT gen_sources OR NOT NGB_NV2A_VK)
+    if(NOT gen_sources OR NOT NGB_NV2A_VK OR ANDROID)   # (not on Android yet)
         return()
     endif()
     # with its DirectSound hooks (src/audio, tools/take_dsound.py trilogy|tomoe)
@@ -308,7 +326,7 @@ function(ngb_arcade_program target output gen_dir xbe dsound)
         target_compile_options(${target}_gen PRIVATE /bigobj /O2)
     else()
         target_compile_options(${target}_gen PRIVATE
-            -O2 -fno-strict-aliasing -fwrapv
+            ${NGB_OPT_LEVEL} -fno-strict-aliasing -fwrapv
             -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable
             -Wno-parentheses-equality -Wno-tautological-compare
             -Wno-incompatible-pointer-types-discards-qualifiers)
@@ -317,7 +335,7 @@ function(ngb_arcade_program target output gen_dir xbe dsound)
         src/trilogy/main.c
         src/launch.c
         src/recomp_manual.c
-        src/fps_text.c              # Show FPS (handed over by the game) in the game's lettering
+        src/fps_text.c              # Show FPS: the presenter's own letters here (no pause_tab.c)
         ${NGB_FONT_SOURCES}
         $<TARGET_OBJECTS:${target}_gen>
         $<TARGET_OBJECTS:ngb_audio>

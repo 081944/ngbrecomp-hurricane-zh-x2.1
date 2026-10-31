@@ -20,10 +20,8 @@ class CarryLifterTest(unittest.TestCase):
         generated = "\n".join(lifted)
 
         self.assertIn("_cf = (int)((esi) != 0);", generated)
-        self.assertIn(
-            "esi = _cf ? 0xFFFFFFFF : 0; /* sbb self (CF extend) */",
-            generated,
-        )
+        self.assertIn("esi = _cf ? 0xFFFFFFFF : 0;", generated)
+        self.assertIn("/* sbb self (CF extend)", generated)
 
     def test_cmp_sets_carry_for_a_following_sbb(self):
         # MSVC's branchless tolower inside _stricmp:
@@ -116,10 +114,8 @@ class CarryLifterTest(unittest.TestCase):
         generated = "\n".join(lifted)
 
         self.assertIn("_cf = (int)((eax) != 0);", generated)
-        self.assertIn(
-            "eax = _cf ? 0xFFFFFFFF : 0; /* sbb self (CF extend) */",
-            generated,
-        )
+        self.assertIn("eax = _cf ? 0xFFFFFFFF : 0;", generated)
+        self.assertIn("/* sbb self (CF extend)", generated)
 
     def test_neg_carry_not_preserved_across_flag_setter(self):
         neg = Instruction(0, 2, "neg", "eax", "f7d8")

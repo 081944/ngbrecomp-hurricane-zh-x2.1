@@ -26,6 +26,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from tools.recomp import config  # noqa: E402
 from tools.recomp.translator import FunctionTranslator  # noqa: E402
 
+try:
+    import pytest
+except ImportError:  # this file also runs as a plain script
+    pytest = None
+
+if pytest is not None:
+    @pytest.fixture(autouse=True)
+    def _restore_config_after_test():
+        """config._install changes process globals; do not leak them into test_config."""
+        yield
+        import importlib
+        importlib.reload(config)
+
 BASE = 0x00010000
 
 # jmp +6 (to BASE+8)                     -> EB 06

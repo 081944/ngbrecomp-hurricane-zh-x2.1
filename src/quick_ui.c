@@ -44,8 +44,13 @@ void ngb_quick_set_game_dir(const char *path) { snprintf(s_game_dir, sizeof s_ga
  * This exercises the real backend, without sending input to the desktop. */
 static void test_input(void)
 {
-    const char *path = getenv("NGB_TEST_INPUT");
-    if (!path || !getenv("NGB_TEST_HIDDEN"))
+    static const char *path;
+    static int checked;
+    if (!checked) {
+        checked = 1;
+        path = getenv("NGB_TEST_HIDDEN") ? getenv("NGB_TEST_INPUT") : NULL;
+    }
+    if (!path)
         return;
     static SDL_Joystick *pad;
     static long offset;
@@ -102,7 +107,7 @@ void ngb_quick_poll(void)
         int connected = xbox_InputGetStateRaw(p, &pad) == 0;
         bits |= ngb_bind_quick_state(s_keys, s_mouse, connected ? &pad : NULL);
     }
-    {   /* Toggle HUD (Controls; nothing bound by default): each new press flips Display & Audio > HUD */
+    {   /* Toggle HUD (Controls; nothing bound by default): each new press flips Display > HUD */
         static unsigned hud_held;
         unsigned hud = bits & NGB_BIND_HUD_BIT;
         if (hud && !hud_held && !ngb_bind_capturing())

@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "core/log.h"
+#include "gpu/headers.h"
 #include "kernel/kernel.h"
 
 namespace gpu {
@@ -269,12 +270,12 @@ const FormatInfo& Format(uint32_t f) {
 bool Describe(uint32_t header, TextureDesc& d) {
     using namespace kernel;
     if (!header) return false;
-    uint32_t common = R32(header);
+    uint32_t common = HeaderWord(header, 0);   // (as of the call drawn: gpu/headers.h)
     uint32_t type = common & 0x70000;  // 0x40000 texture, 0x50000 surface
     if (type != 0x40000 && type != 0x50000) return false;
     // D3DPixelContainer: Common, Data, Lock, Format, Size
-    uint32_t fmt = R32(header + 12), size = R32(header + 16);
-    d.data = mem::VirtualFromPhysical(R32(header + 4));
+    uint32_t fmt = HeaderWord(header, 3), size = HeaderWord(header, 4);
+    d.data = mem::VirtualFromPhysical(HeaderWord(header, 1));
     // Format: cube bit 2, dimensions bits 4 to 7, format 8 to 15, levels 16 to 19, log2 sizes from bit 20
     d.format = (fmt >> 8) & 0xFF;
     d.cube = fmt & 4;

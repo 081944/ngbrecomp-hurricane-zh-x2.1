@@ -28,6 +28,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 #include <sched.h>
 #include <fenv.h>
 #include <sys/mman.h>
@@ -302,6 +303,7 @@ typedef struct w32_object {
     /* event */
     int             signaled;
     int             manual_reset;
+    unsigned        set_gen;      /* events: SetEvent / PulseEvent count (wait_single) */
 
     /* semaphore */
     long            sem_count;
@@ -560,11 +562,16 @@ static DWORD wait_single(w32_object *o, DWORD ms)
 
     pthread_mutex_lock(&o->lock);
     DWORD result = WAIT_OBJECT_0;
+    /* A manual-reset event set (or pulsed) while this thread waited releases it, as Windows releases every
+     * waiter at the set: re-testing only the state, a waiter woken by the broadcast went back to sleep when
+     * another thread reset the event before it got the lock -- two threads waiting on the D3D vblank event
+     * missed vblanks for up to 150 ms that way, and movies played in jerks. */
+    unsigned gen0 = o->set_gen;
 
     for (;;) {
         int ready = 0;
         switch (o->kind) {
-        case K_EVENT:  ready = o->signaled; break;
+        case K_EVENT:  ready = o->signaled || (o->manual_reset && o->set_gen != gen0); break;
         case K_THREAD: ready = o->exited;   break;
         case K_SEM:    ready = (o->sem_count > 0); break;
         case K_MUTEX:
@@ -710,6 +717,7 @@ BOOL SetEvent(HANDLE h)
     if (!o || o->kind != K_EVENT) return FALSE;
     pthread_mutex_lock(&o->lock);
     o->signaled = 1;
+    o->set_gen++;
     pthread_cond_broadcast(&o->cond);
     pthread_mutex_unlock(&o->lock);
     return TRUE;
@@ -731,6 +739,7 @@ BOOL PulseEvent(HANDLE h)
     if (!o || o->kind != K_EVENT) return FALSE;
     pthread_mutex_lock(&o->lock);
     o->signaled = 1;
+    o->set_gen++;   /* (the waiters see it: wait_single) */
     pthread_cond_broadcast(&o->cond);
     o->signaled = 0;
     pthread_mutex_unlock(&o->lock);
@@ -811,9 +820,49 @@ BOOL ReleaseMutex(HANDLE h)
 /* Threads                                                               */
 /* ===================================================================== */
 
+/* A larger stack for signal handlers on this thread, where the C library gives a small one: Android's has a
+ * 16 KiB alternate stack on every thread (and its runtime's handlers take it), and the fault handlers --
+ * a device register's read or write, the crash report -- need more. Elsewhere nothing: the thread's stack. */
+#if defined(__ANDROID__)
+static pthread_key_t s_sigstack_key;
+static pthread_once_t s_sigstack_once = PTHREAD_ONCE_INIT;
+#define SIGSTACK_SIZE (256u << 10)
+
+static void sigstack_free(void *mem)
+{
+    stack_t off = { .ss_flags = SS_DISABLE };
+    sigaltstack(&off, NULL);
+    munmap(mem, SIGSTACK_SIZE);
+}
+
+static void sigstack_key_make(void)
+{
+    pthread_key_create(&s_sigstack_key, sigstack_free);
+}
+#endif
+
+void compat_signal_stack(void)
+{
+#if defined(__ANDROID__)
+    pthread_once(&s_sigstack_once, sigstack_key_make);
+    if (pthread_getspecific(s_sigstack_key))
+        return;
+    void *mem = mmap(NULL, SIGSTACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (mem == MAP_FAILED)
+        return;
+    stack_t ss = { .ss_sp = mem, .ss_size = SIGSTACK_SIZE };
+    if (sigaltstack(&ss, NULL) != 0) {
+        munmap(mem, SIGSTACK_SIZE);
+        return;
+    }
+    pthread_setspecific(s_sigstack_key, mem);
+#endif
+}
+
 static void *thread_trampoline(void *arg)
 {
     w32_object *o = (w32_object *)arg;
+    compat_signal_stack();
     t_self_obj = o;
     t_tid      = o->tid;
 
@@ -1102,15 +1151,9 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
 {
     w32_object *o = (w32_object *)h;
     if (!o || o->kind != K_THREAD) return FALSE;
-#ifdef __ANDROID__
-    /* Bionic has no pthread_cancel. No runtime caller currently needs remote
-     * termination: fail explicitly instead of signalling a still-live thread. */
-    if (o == t_self_obj)
-        ExitThread(exitCode);
-    SetLastError(ERROR_NOT_SUPPORTED);
-    return FALSE;
-#else
+#if !defined(__ANDROID__)   /* (Android's C library has no cancellation: the thread is only marked ended) */
     pthread_cancel(o->thread);
+#endif
     pthread_mutex_lock(&o->lock);
     o->exit_code = exitCode;
     o->exited    = 1;
@@ -1118,7 +1161,6 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
     pthread_cond_broadcast(&o->cond);
     pthread_mutex_unlock(&o->lock);
     return TRUE;
-#endif
 }
 
 BOOL SetThreadPriority(HANDLE h, int priority)
@@ -1186,6 +1228,7 @@ static void *timer_thread(void *arg)
 {
     w32_object *o = (w32_object *)arg;
     int once = (o->timer_period == 0);
+    compat_signal_stack();
 
     /* initial due time */
     if (o->timer_due) Sleep(o->timer_due);
@@ -1261,6 +1304,7 @@ struct w32_tp_args { PTP_SIMPLE_CALLBACK cb; PVOID ctx; };
 static void *w32_tp_trampoline(void *arg)
 {
     struct w32_tp_args *a = (struct w32_tp_args *)arg;
+    compat_signal_stack();
     a->cb(NULL, a->ctx);
     free(a);
     return NULL;
@@ -1719,10 +1763,8 @@ VOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 #if defined(__APPLE__)
     memset_s(ptr, cnt, 0, cnt);
 #elif defined(__ANDROID__)
-    /* Available on every supported API level; volatile stores cannot be
-     * discarded when the caller is clearing a dead buffer. */
-    volatile unsigned char *p = ptr;
-    while (cnt--) *p++ = 0;
+    memset(ptr, 0, cnt);
+    __asm__ __volatile__("" : : "r"(ptr) : "memory");   /* (no explicit_bzero: kept from being dropped) */
 #else
     explicit_bzero(ptr, cnt);
 #endif
@@ -2031,6 +2073,8 @@ static int anon_map_fd(const char *name)
     int fd = shm_open(shm_name, O_CREAT | O_RDWR | O_EXCL, 0600);
     if (fd >= 0) shm_unlink(shm_name);
     return fd;
+#elif defined(__ANDROID__)
+    return (int)syscall(__NR_memfd_create, name ? name : "xbox_map", 0);   /* (the libc wrapper is API 30) */
 #else
     return memfd_create(name ? name : "xbox_map", 0);
 #endif
@@ -2355,7 +2399,7 @@ VOID RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR *args)
 #include <ucontext.h>
 #endif
 #if defined(__linux__) && defined(__aarch64__)
-#include <asm/sigcontext.h>
+#include <asm/sigcontext.h>   /* the signal frame's records (esr_context) */
 #endif
 
 /* Vectored exception handlers over sigaction.
@@ -2381,7 +2425,7 @@ static void veh_ctx_from(CONTEXT *c, const ucontext_t *uc)
     c->Rsp = uc->uc_mcontext->__ss.__sp;
     c->Rbp = uc->uc_mcontext->__ss.__fp;
     c->native_context = (void *)uc;
-#elif defined(__linux__) && defined(__aarch64__)
+#elif defined(__aarch64__)
     memset(c, 0, sizeof(*c));
     c->Rip = uc->uc_mcontext.pc;
     c->Rsp = uc->uc_mcontext.sp;
@@ -2404,7 +2448,7 @@ static void veh_ctx_from(CONTEXT *c, const ucontext_t *uc)
 
 static void veh_ctx_to(ucontext_t *uc, const CONTEXT *c)
 {
-#if defined(__aarch64__) && !defined(_WIN32)
+#if defined(__aarch64__)
     /* The ARM64 decoder updates the native context directly. */
     (void)uc;
     (void)c;
@@ -2424,18 +2468,18 @@ static void veh_ctx_to(ucontext_t *uc, const CONTEXT *c)
 }
 
 #if defined(__linux__) && defined(__aarch64__)
-/* Linux puts the data-abort syndrome in the signal frame's ESR record.
- * WnR is bit 6; integer register state alone cannot identify a write. */
-static int veh_a64_is_write(const ucontext_t *uc)
+/* The fault's syndrome on Linux arm64: an esr_context record in the chain of _aarch64_ctx records
+ * (magic, size) in uc_mcontext.__reserved, which a zero magic ends. 0 when the kernel gave none. */
+static uint64_t veh_a64_esr(const ucontext_t *uc)
 {
-    const unsigned char *p = uc->uc_mcontext.__reserved;
+    const unsigned char *p = (const unsigned char *)uc->uc_mcontext.__reserved;
     const unsigned char *end = p + sizeof(uc->uc_mcontext.__reserved);
-    while ((size_t)(end - p) >= sizeof(struct _aarch64_ctx)) {
-        const struct _aarch64_ctx *h = (const void *)p;
-        if (!h->magic || h->size < sizeof(*h) || h->size > (size_t)(end - p))
+    while (p + sizeof(struct _aarch64_ctx) <= end) {
+        const struct _aarch64_ctx *h = (const struct _aarch64_ctx *)p;
+        if (!h->magic || h->size < sizeof(*h))
             break;
-        if (h->magic == ESR_MAGIC && h->size >= sizeof(struct esr_context))
-            return (int)((((const struct esr_context *)p)->esr >> 6) & 1);
+        if (h->magic == ESR_MAGIC)
+            return ((const struct esr_context *)p)->esr;
         p += h->size;
     }
     return 0;
@@ -2479,8 +2523,8 @@ static void veh_signal(int sig, siginfo_t *si, void *uc_)
         rec.NumberParameters = 2;
 #if defined(__APPLE__) && defined(__aarch64__)
         rec.ExceptionInformation[0] = (uc->uc_mcontext->__es.__esr >> 6) & 1;
-#elif defined(__linux__) && defined(__aarch64__)
-        rec.ExceptionInformation[0] = veh_a64_is_write(uc);
+#elif defined(__aarch64__)
+        rec.ExceptionInformation[0] = (veh_a64_esr(uc) >> 6) & 1;   /* ESR's WnR: a write */
 #else
         /* Page-fault error code bit 1 is set for a write. */
         rec.ExceptionInformation[0] = (uc->uc_mcontext.gregs[REG_ERR] & 2) ? 1 : 0;

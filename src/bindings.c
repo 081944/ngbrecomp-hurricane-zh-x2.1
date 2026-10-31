@@ -87,7 +87,7 @@ static const Action s_act[A_COUNT] = {
     { "Quick Menu: Next", "quick_right", "Opens the melee weapons on the next card; while open, selects the next entry.", SDL_SCANCODE_RIGHT, 0, P(P_DR), T_HOST, 8, 0 },
     { "Quick Menu: Confirm", "quick_confirm", "Equips the selected weapon or Ninpo, or uses the selected item.", SDL_SCANCODE_RETURN, 0, P(P_A), T_HOST, 16, 0 },
     { "Quick Menu: Cancel", "quick_cancel", "Closes the quick menu without applying the selection.", SDL_SCANCODE_ESCAPE, SDL_SCANCODE_BACKSPACE, P(P_B), T_HOST, 32, 0 },
-    { "Toggle HUD", "toggle_hud", "Shows or hides the HUD (Display & Audio > HUD). Not bound unless chosen.", 0, 0, 0, T_HOST,
+    { "Toggle HUD", "toggle_hud", "Shows or hides the HUD (Display > HUD). Not bound unless chosen.", 0, 0, 0, T_HOST,
       NGB_BIND_HUD_BIT, 0 },
 };
 
@@ -98,6 +98,11 @@ static int s_pad_identity = 1;
 
 static const char *const s_pad_name[P_COUNT] = {
     "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Start", "Back", "LS", "RS",
+    "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
+};
+/* The same buttons on a PlayStation pad, shown while one is in use (#113); saved as the names above */
+static const char *const s_pad_name_ps[P_COUNT] = {
+    "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "Start", "Select", "L3", "R3",
     "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
 };
 static const char *const s_mouse_name[6] = { "", "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse 4", "Mouse 5" };
@@ -178,6 +183,8 @@ const char *ngb_bind_pad_combo(int a)
     unsigned char tab[10];
     game_buttons(tab);
     int slot = game_slot(&s_act[a], tab);
+    if (ngb_pad_prompts_ps())
+        return slot == 8 ? "Square + Cross" : slot == 9 ? "Triangle + Circle" : NULL;
     return slot == 8 ? "X + A" : slot == 9 ? "Y + B" : NULL;
 }
 unsigned ngb_bind_generation(void) { return s_gen; }
@@ -196,12 +203,15 @@ static void identity_check(void)
 static int s_invert[2][2];
 static int s_third_start;
 static int s_mouse_pct = 100;   /* Camera Sensitivity, percent: the right stick, mouse and keys (#67) */
+static int s_prompts;           /* Button Prompts: 0 Auto (the device in use), 1 Xbox, 2 PlayStation, 3 PC */
+static const char *const s_prompts_ini[4] = { "auto", "xbox", "playstation", "pc" };
 
 void ngb_bind_defaults(void)
 {
     memset(s_invert, 0, sizeof s_invert);
-    s_third_start = 0;
+    s_third_start = 1;   /* (on from 0.9.45) */
     s_mouse_pct = 100;
+    s_prompts = 0;
     for (int a = 0; a < A_COUNT; a++) {
         s_bind[a][0] = s_act[a].key0;
         s_bind[a][1] = s_act[a].key1;
@@ -213,12 +223,68 @@ void ngb_bind_defaults(void)
 
 /* ---------- names ---------- */
 
+static void ensure(void);
+static void save(void);
+
+/* Button Prompts (the Controls page): which buttons the game's prompts show. Auto follows the device in use --
+ * the keyboard's keys while it is (xboxrecomp's xbox_InputKeyboardActive), a PlayStation pad's buttons while
+ * one is (xbox_InputPadPlayStation, #113), else the Xbox's; the others keep one set whatever is in use.
+ * NGB_PAD_PROMPTS (tests) overrides it: ps the PlayStation's, anything else the Xbox's. */
+int ngb_bind_prompts(void)
+{
+    ensure();
+    return s_prompts;
+}
+
+void ngb_bind_step_prompts(int dir)
+{
+    ensure();
+    s_prompts = (s_prompts + (dir < 0 ? 3 : 1)) % 4;
+    s_gen++;
+    save();
+}
+
+const char *ngb_bind_prompts_name(int v)
+{
+    static const char *const name[4] = { "Auto", "Xbox", "PlayStation", "PC" };
+    return name[v & 3];
+}
+
+static int prompts_forced(void)   /* NGB_PAD_PROMPTS: 2 PlayStation, 1 Xbox, 0 not set */
+{
+    static int forced = -1;
+    if (forced < 0) {
+        const char *e = getenv("NGB_PAD_PROMPTS");
+        forced = !e ? 0 : !SDL_strcasecmp(e, "ps") ? 2 : 1;
+    }
+    return forced;
+}
+
+/* The keys and mouse buttons in the prompts (src/pause_tab.c) */
+int ngb_prompts_keys(void)
+{
+    int p = ngb_bind_prompts();
+    if (prompts_forced())
+        return 0;
+    return p == 3 || (p == 0 && xbox_InputKeyboardActive());
+}
+
+/* A PlayStation pad's buttons in the prompts and the button names */
+int ngb_pad_prompts_ps(void)
+{
+    int p = ngb_bind_prompts();
+    if (prompts_forced())
+        return prompts_forced() == 2;
+    return p == 2 || (p == 0 && xbox_InputPadPlayStation());
+}
+
 void ngb_bind_input_name(int in, char *out, int n)
 {
     if (!in)
         snprintf(out, n, "-");
     else if (in & BIND_PAD)
-        snprintf(out, n, "%s", (in & 0xFF) < P_COUNT ? s_pad_name[in & 0xFF] : "?");
+        snprintf(out, n, "%s", (in & 0xFF) < P_COUNT ? (ngb_pad_prompts_ps() ? s_pad_name_ps : s_pad_name)[in & 0xFF]
+                                                     : "?");
     else if (in & BIND_MOUSE)
         snprintf(out, n, "%s", (in & 0xFF) >= 1 && (in & 0xFF) <= 5 ? s_mouse_name[in & 0xFF] : "Mouse ?");
     else {
@@ -307,6 +373,7 @@ static void save(void)
         return;
     fprintf(f, "# Ninja Gaiden Black controls in play (the Controls page writes this file):\n"
                "# action = key or mouse button, another, Pad <button>\n");
+    fprintf(f, "defaults = 1\n");   /* (the defaults it was written with: see ngb_bind_load) */
     for (int a = 0; a < A_COUNT; a++) {
         char k0[64], k1[64], p[64];
         ngb_bind_input_name(s_bind[a][0], k0, sizeof k0);
@@ -321,6 +388,7 @@ static void save(void)
     fprintf(f, "invert_first_person_x = %d\n", s_invert[1][0]);
     fprintf(f, "third_person_on_load = %d\n", s_third_start);
     fprintf(f, "mouse_sensitivity = %d\n", s_mouse_pct);
+    fprintf(f, "button_prompts = %s\n", s_prompts_ini[s_prompts]);
     fclose(f);
 }
 
@@ -334,6 +402,7 @@ void ngb_bind_load(void)
     if (!f)
         return;
     int first_set = 0;   /* a file from before the views were separate: its choice holds for both */
+    int defaults = 0;
     while (fgets(line, sizeof line, f)) {
         char key[64], val[400];
         if (line[0] == '#' || sscanf(line, " %63[^= ] = %399[^\r\n]", key, val) != 2)
@@ -344,6 +413,16 @@ void ngb_bind_load(void)
         }
         if (!strcmp(key, "invert_first_person_x") || !strcmp(key, "third_person_on_load")) {
             (void)val;   /* Hurricane: x2.1's own camera option and third-person start instead */
+            continue;
+        }
+        if (!strcmp(key, "defaults")) {
+            defaults = atoi(val);
+            continue;
+        }
+        if (!strcmp(key, "button_prompts")) {
+            for (int i = 0; i < 4; i++)
+                if (!SDL_strcasecmp(val, s_prompts_ini[i]))
+                    s_prompts = i;
             continue;
         }
         if (!strcmp(key, "mouse_sensitivity")) {
@@ -373,6 +452,10 @@ void ngb_bind_load(void)
     fclose(f);
     if (!first_set)
         s_invert[1][0] = s_invert[0][0];
+    /* Start in Third Person is on from 0.9.45: a file from before (which always wrote it, off unless chosen)
+     * gets it on once */
+    if (defaults < 1)
+        s_third_start = 1;
     s_invert[1][1] = 0;   /* first-person up/down: the game's own Options > 1st Person Camera Control */
     identity_check();
     s_gen++;

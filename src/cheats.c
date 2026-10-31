@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "xbox_memory_layout.h"
 
@@ -93,15 +94,16 @@ static void poke_tick(void)
     }
 }
 
-#define N_CHEATS 6
-/* infinite health, infinite ninpo, infinite essence, golden scarabs, infinite items, infinite projectiles */
+#define N_CHEATS 7
+/* infinite health, infinite ninpo, infinite essence, golden scarabs, infinite items, infinite projectiles,
+ * all weapons */
 static int s_cheat[N_CHEATS];
 
 int ngb_cheat(int which) { return which >= 0 && which < N_CHEATS ? s_cheat[which] : 0; }
 void ngb_cheat_set(int which, int on)
 {
     static const char *const name[N_CHEATS] = { "infinite health", "infinite ninpo", "infinite essence", "golden scarabs",
-                                                "infinite items", "infinite projectiles" };
+                                                "infinite items", "infinite projectiles", "all weapons" };
     if (which < 0 || which >= N_CHEATS)
         return;
     s_cheat[which] = !!on;
@@ -121,10 +123,12 @@ static void cheat_wrote(void)
  * throwing or shooting. With the cheat on, a removal of such an item is made as a change of 0, so
  * the game's own path runs and its caller sees it done. What an item is: its descriptor (the table
  * at [0xDB98E4], [0xDB5E24] of them): +0x0C 1 or 3 ammunition (shuriken, incendiary shuriken, smoke
- * bombs; arrows, explosive arrows, spears), +0x0D its class (5 an item), +0x1D its effect (0x12
+ * bombs; arrows, explosive arrows, spears), +0x18 its category (7 the bow's ammunition: the APFSDS
+ * Cores have 0 at +0x0C, #103), +0x0D its class (5 an item), +0x1D its effect (0x12
  * health, 0x13 ninpo, 0x16 the Jewel of the Demon Seal (a Ninpo upgraded, #52), 0x22 the Talisman of
- * Rebirth; not the jewels that raise the limits for good -- 0x14 Life of the Gods, 0x17 Lives of the
- * Thousand Gods (health), 0x15 Spirit of the Devils (Ki): Infinite Health and Ninpo are the cheats for those). */
+ * Rebirth, and the jewels that raise the limits for good -- 0x14 Life of the Gods, 0x17 Lives of the
+ * Thousand Gods (health), 0x15 Spirit of the Devils (Ki): the game itself stops their use at its highest
+ * limits (#52; left out until 0.9.46). */
 static uint32_t item_record(uint16_t item)
 {
     uint32_t base = MEM32(0xDB98E4), count = MEM32(0xDB5E24);
@@ -140,28 +144,34 @@ static int item_kept(uint16_t item)
     if (!r)
         return 0;
     uint8_t ammo = MEM8(r + 0x0C), cls = MEM8(r + 0x0D), effect = MEM8(r + 0x1D);
-    if (s_cheat[5] && (ammo == 1 || ammo == 3))
+    if (s_cheat[5] && (ammo == 1 || ammo == 3 || MEM16(r + 0x18) == 7))
         return 1;
     return s_cheat[4] && cls == 5 &&
-           (effect == 0x12 || effect == 0x13 || effect == 0x16 || effect == 0x22);
+           (effect == 0x12 || effect == 0x13 || (effect >= 0x14 && effect <= 0x17) || effect == 0x22);
 }
 
 static void item_count_change(void);
 
+static void weapons_seen(uint16_t item, int change);
+
 void sub_00154300(void)
 {
+    uint16_t item = (uint16_t)eax;
     if (ENV_ONCE("NGB_ITEM_LOG"))                     /* NGB_ITEM_LOG=1: every change of an item's count */
-        fprintf(stderr, "[ITEM] %03X %+d\n", (unsigned)(eax & 0xFFFF), (int)ebx);
-    if ((s_cheat[4] || s_cheat[5]) && (int32_t)ebx < 0 && item_kept((uint16_t)eax)) {
+        fprintf(stderr, "[ITEM] %03X %+d\n", (unsigned)item, (int)ebx);
+    if ((s_cheat[4] || s_cheat[5]) && (int32_t)ebx < 0 && item_kept(item)) {
         uint32_t keep = ebx;
         if (getenv("NGB_CHEAT_LOG"))
-            fprintf(stderr, "[CHEAT] item %03X kept (%d)\n", (unsigned)(eax & 0xFFFF), (int)ebx);
+            fprintf(stderr, "[CHEAT] item %03X kept (%d)\n", (unsigned)item, (int)ebx);
         ebx = 0;
         item_count_change();
         ebx = keep;
+        weapons_seen(item, 0);
         return;
     }
+    int change = (int32_t)ebx;
     item_count_change();
+    weapons_seen(item, change);
 }
 
 /* The game's sub_00154300 (generated, src/manual_functions.json) */
@@ -407,6 +417,255 @@ static void scarab_tick(void)
         fprintf(stderr, "[CHEAT] golden scarabs: %u held (%u brought)\n", want, brought);
 }
 
+/* All Weapons: every melee and projectile weapon Black gives, at its highest level, put in the inventory
+ * (as scarab_tick does) or raised to it, with a full stack of what it fires when none is held. A
+ * weapon's count is its level (+0x1E of its descriptor added); Lunar and Kitetsu are one item a level
+ * (0x12B, 0x133, 0x134 and 0x182, 0x0CC, 0x183), so a lower one held becomes the top one, and one picked
+ * up as usual with the cheat on goes into it. The original's Bow (0x08D) and Plasma Saber (0x0CE) are
+ * left out: Black has the Strongbow and the Mk.II. A stack (incendiary shuriken, smoke bombs, what the
+ * bows and the spear gun fire) is given once, not again when used up: Infinite Projectiles is the cheat
+ * for that.
+ *
+ * Turned off, it takes back what it gave: each item's state from before the cheat touched it is kept
+ * (s_had), with what the game itself gives or takes meanwhile added to it (sub_00154300, the pickups),
+ * and put back -- a weapon never had taken away, a Lunar picked up at its own level. A stack is left at
+ * what is held when that is less (the cheat's share is used first). A weapon in Ryu's hands is put back
+ * once he holds another, so the game never loses the one it draws (a level is changed in his hands, as
+ * Muramasa does). Nothing is given or taken under the pause menu: its weapon lists were made when it
+ * opened. In play only (Ryu has health).
+ *
+ * The slots the cheat writes carry its mark (s_mark, new for each record) in their fourth byte, which
+ * the game leaves alone and keeps in a save. A record is only ever applied to slots with its mark: a
+ * bag with none of them (another save loaded) ends it, and an item whose slot lost it (the story's
+ * own changes, not through sub_00154300) is left to the game. */
+static const struct { uint16_t item; uint8_t count, stack; uint16_t also[2]; } s_weapons[] = {
+    { 0x001, 3 },                           /* Dragon Sword */
+    { 0x0C9, 1 },                           /* True Dragon Sword */
+    { 0x026, 1 },                           /* Nunchaku */
+    { 0x134, 1, 0, { 0x12B, 0x133 } },      /* Lunar */
+    { 0x044, 2 },                           /* War Hammer */
+    { 0x095, 3 },                           /* Dabilahro */
+    { 0x0CA, 2 },                           /* Vigoorian Flail */
+    { 0x183, 1, 0, { 0x182, 0x0CC } },      /* Kitetsu */
+    { 0x0E1, 1 },                           /* Unlabored Flawlessness */
+    { 0x0CD, 1 },                           /* Dark Dragon Blade */
+    { 0x0F7, 1 },                           /* Plasma Saber Mk.II */
+    { 0x098, 1 },                           /* Spear Gun */
+    { 0x099, 0, 1 },                        /* spears */
+    { 0x000, 1 },                           /* Shuriken */
+    { 0x030, 1 },                           /* Windmill Shuriken */
+    { 0x008, 0, 1 },                        /* Incendiary Shuriken */
+    { 0x165, 0, 1 },                        /* Smoke Bomb */
+    { 0x0F8, 1 },                           /* Strongbow */
+    { 0x08E, 0, 1 },                        /* arrows */
+    { 0x0E2, 1 },                           /* the bow with explosive arrows */
+    { 0x0E3, 0, 1 },                        /* explosive arrows */
+    { 0x029, 1 },                           /* the bow with APFSDS cores */
+    { 0x02A, 0, 1 },                        /* APFSDS cores */
+};
+#define N_WEAPONS (sizeof s_weapons / sizeof s_weapons[0])
+
+/* What the player had of each, from before the cheat touched it */
+static struct { uint8_t seen, wrote, count; uint16_t item; } s_had[N_WEAPONS];
+static uint8_t s_mark;
+
+/* a slot the cheat wrote: its mark in the slot's fourth byte */
+static void weapons_mark(size_t i, uint32_t slot)
+{
+    MEM8(slot + 3) = s_mark;
+    s_had[i].wrote = 1;
+    cheat_wrote();
+}
+
+static uint32_t inventory_slot(uint16_t item)
+{
+    for (uint32_t a = 0x5891D0; a < 0x5891D0 + 4 * 0x80; a += 4)
+        if (MEM16(a) == item && MEM8(a + 2))
+            return a;
+    return 0;
+}
+
+static unsigned item_most(uint16_t item)
+{
+    uint32_t r = item_record(item);
+    return r ? MEM8(r + 0x24) : 0;
+}
+
+static unsigned item_level(uint16_t item)
+{
+    uint32_t r = item_record(item);
+    return r ? MEM8(r + 0x1E) : 0;
+}
+
+static int is_family(size_t i, uint16_t item)
+{
+    return item == s_weapons[i].item || (s_weapons[i].also[0] && item == s_weapons[i].also[0]) ||
+           (s_weapons[i].also[1] && item == s_weapons[i].also[1]);
+}
+
+/* the slot holding s_weapons[i] or a lower one of it */
+static uint32_t family_slot(size_t i)
+{
+    uint32_t slot = inventory_slot(s_weapons[i].item);
+    for (int k = 0; k < 2 && !slot && s_weapons[i].also[k]; k++)
+        slot = inventory_slot(s_weapons[i].also[k]);
+    return slot;
+}
+
+/* in Ryu's hands: the melee weapon or the projectile weapon he has out */
+static int equipped(uint16_t item)
+{
+    uint32_t p = 0x58A570 + MEM8(0x4B7640) * 0x210u;
+    return MEM16(p) == item || MEM16(p + 2) == item;
+}
+
+static void weapons_log(const char *what, uint16_t item, unsigned count)
+{
+    if (getenv("NGB_CHEAT_LOG"))
+        fprintf(stderr, "[CHEAT] all weapons: %s %03X x%u\n", what, item, count);
+}
+
+/* A change the game made to an item's count (eax, ebx of sub_00154300): the player's own, kept with
+ * what they had. A pickup is theirs; a weapon taken away (the story) is gone from what they had too. */
+static void weapons_seen(uint16_t item, int change)
+{
+    for (size_t i = 0; i < N_WEAPONS; i++) {
+        if (!s_had[i].seen || !is_family(i, item))
+            continue;
+        if (change > 0) {
+            if (s_had[i].count && s_had[i].item != item) {
+                unsigned most = item_most(item), n = (unsigned)change > most ? most : (unsigned)change;
+                if (item_level(item) > item_level(s_had[i].item))
+                    s_had[i].item = item, s_had[i].count = (uint8_t)n;
+            } else {
+                unsigned n = s_had[i].count + (unsigned)change, most = item_most(item);
+                s_had[i].item = item;
+                s_had[i].count = (uint8_t)(n > most ? most : n);
+            }
+        } else if (change < 0 && !s_weapons[i].stack && s_had[i].count && s_had[i].item == item) {
+            int n = s_had[i].count + change;
+            s_had[i].count = (uint8_t)(n > 0 ? n : 0);
+        }
+        if (!family_slot(i))
+            s_had[i].wrote = 0;                        /* nothing of the cheat's left to look for */
+    }
+}
+
+/* the cheat's items, each back to what the player had (one in Ryu's hands left for later) */
+static void weapons_restore(void)
+{
+    for (size_t i = 0; i < N_WEAPONS; i++) {
+        if (!s_had[i].seen)
+            continue;
+        uint32_t slot = family_slot(i);
+        if (s_had[i].wrote && slot) {
+            if (equipped(MEM16(slot)) && (!s_had[i].count || s_had[i].item != MEM16(slot)))
+                continue;                              /* in his hands: when he holds another (a level is
+                                                          changed in his hands, as Muramasa does) */
+            if (!s_had[i].count) {
+                weapons_log("taken back", MEM16(slot), MEM8(slot + 2));
+                MEM8(slot + 2) = 0;
+                MEM8(slot + 3) = 0;
+                MEM16(slot) = 0xFFFF;
+            } else {
+                unsigned n = s_had[i].count;
+                if (s_weapons[i].stack && MEM8(slot + 2) < n)
+                    n = MEM8(slot + 2);
+                MEM16(slot) = s_had[i].item;
+                MEM8(slot + 2) = (uint8_t)n;
+                MEM8(slot + 3) = 0;
+                weapons_log("put back", s_had[i].item, n);
+            }
+            cheat_wrote();
+        }
+        s_had[i].seen = s_had[i].wrote = 0;
+    }
+}
+
+static void weapons_tick(void)
+{
+    if (!MEM16(0x58A564))
+        return;
+    int wrote = 0, marked = 0, seen = 0;
+    for (size_t i = 0; i < N_WEAPONS; i++)
+        wrote |= s_had[i].wrote, seen |= s_had[i].seen;
+    for (uint32_t a = 0x5891D0; wrote && a < 0x5891D0 + 4 * 0x80; a += 4)
+        marked |= MEM8(a + 2) && MEM16(a) != 0xFFFF && MEM8(a + 3) == s_mark;
+    if (wrote && !marked) {
+        if (getenv("NGB_CHEAT_LOG"))
+            fprintf(stderr, "[CHEAT] all weapons: none of its slots in the bag (another save), the record ends\n");
+        memset(s_had, 0, sizeof s_had);
+        seen = 0;
+    }
+    for (size_t i = 0; i < N_WEAPONS; i++) {
+        uint32_t slot = s_had[i].wrote ? family_slot(i) : 0;
+        if (s_had[i].wrote && (!slot || MEM8(slot + 3) != s_mark))
+            s_had[i].wrote = 0;                        /* changed by the game itself: its own now */
+    }
+    if (MEM8(0xDB9AD5))                                /* under the pause menu: its lists stay true */
+        return;
+    if (!s_cheat[6]) {
+        weapons_restore();
+        return;
+    }
+    if (!seen) {                                       /* a new record, a new mark */
+        static unsigned n;
+        s_mark = (uint8_t)(0x80 | ((unsigned)time(NULL) + 37u * ++n) % 0x7F);
+    }
+    for (size_t i = 0; i < N_WEAPONS; i++) {
+        uint16_t item = s_weapons[i].item;
+        uint32_t slot = family_slot(i);
+        if (!s_had[i].seen) {
+            if (slot && equipped(MEM16(slot)) && MEM16(slot) != item)
+                continue;                              /* a lower one in his hands: when he holds another */
+            s_had[i].seen = 1;
+            s_had[i].item = slot ? MEM16(slot) : 0xFFFF;
+            s_had[i].count = slot ? MEM8(slot + 2) : 0;
+            if (s_weapons[i].stack && slot)
+                continue;                              /* a stack held: left as it is */
+        } else if (s_weapons[i].stack) {
+            continue;                                  /* given once */
+        }
+        /* a lower one picked up beside the top one (weapons_seen has it as the player's): into it */
+        for (int k = 0; k < 2 && s_weapons[i].also[k]; k++) {
+            uint32_t lower = inventory_slot(s_weapons[i].also[k]);
+            if (!lower || equipped(s_weapons[i].also[k]))
+                continue;
+            if (s_had[i].seen && (!s_had[i].count || item_level(MEM16(lower)) > item_level(s_had[i].item)))
+                s_had[i].item = MEM16(lower), s_had[i].count = MEM8(lower + 2);
+            uint32_t top = inventory_slot(item);
+            if (top) {
+                MEM8(lower + 2) = 0;
+                MEM8(lower + 3) = 0;
+                MEM16(lower) = 0xFFFF;
+                weapons_mark(i, top);
+            } else {
+                MEM16(lower) = item;
+                weapons_mark(i, lower);
+            }
+        }
+        unsigned want = s_weapons[i].count ? s_weapons[i].count : item_most(item), most = item_most(item);
+        if (!want || !item_record(item))
+            continue;
+        if (want > most)
+            want = most;
+        if (want > 254)
+            want = 254;                                /* 255: a count the game never changes */
+        slot = inventory_slot(item);
+        if (slot && MEM8(slot + 2) >= want)
+            continue;
+        for (uint32_t a = 0x5891D0; !slot && a < 0x5891D0 + 4 * 0x80; a += 4)
+            if (!MEM8(a + 2) || MEM16(a) == 0xFFFF)
+                slot = a;
+        if (!slot)
+            continue;                                  /* the bag is full */
+        MEM16(slot) = item;
+        MEM8(slot + 2) = (uint8_t)want;
+        weapons_mark(i, slot);
+        weapons_log("given", item, want);
+    }
+}
+
 /* Ryu's health filled (Infinite Health): the segments (0x58A534 + 2i, at most 0x58A524 + 2i; 0xFFFF a
  * segment not had) -- damage lowers them -- and 0x58A566, their sum, which the game makes again
  * from them. True when anything was filled. Each frame: a blow taking all of it at once still kills
@@ -458,6 +717,7 @@ static void cheat_tick(void)
     }
     if (s_cheat[3])
         scarab_tick();
+    weapons_tick();                                   /* All Weapons, or taking it back */
 }
 
 void ngb_aspect_tick(void);   /* src/pc_menu.c */
@@ -519,7 +779,13 @@ void ngb_frame_tick(void)
     ngb_zh_font_tick();
     { extern void ngb_camera_frame(void); ngb_camera_frame(); }   /* src/camera.c: which view the stick turns */
     { extern void ngb_quick_tick(void); ngb_quick_tick(); }
+    { extern void ngb_render_list_frame(void); ngb_render_list_frame(); }   /* src/render_list.c: its nodes back */
     pos_tick();
+    { extern void ngb_ut_charge_frame(void); ngb_ut_charge_frame(); }   /* src/ut_charge.c: Essence-Only Charging */
+    { extern void ngb_fps_tick(void); ngb_fps_tick(); }   /* src/fps_text.c: the frame counter's lettering */
+#ifdef __ANDROID__
+    { extern void ngb_android_frame(void); ngb_android_frame(); }   /* src/android_main.c: the clocks' hint */
+#endif
     ngb_aspect_frame_end();
     ngb_aspect_tick();
     cheat_tick();
@@ -543,6 +809,11 @@ void ngb_set_all_difficulties(int on) { s_all_difficulties = !!on; }
 /* Every costume (flags 1-4: the game's Costume Selection at New Game, as after clearing each
  * difficulty), the same way -- and the three it has but never offers (src/costume_menu.c). */
 void ngb_set_all_costumes(int on) { s_all_costumes = !!on; }
+/* The main menu's MISSIONS, ARCADE NINJA GAIDEN and MOVIE THEATER (flags 10, 11 and 12, set in the system
+ * data as the game earns them), the same way: read as set, nothing written. which 0-2 in that order. */
+static int s_unlock[3];
+void ngb_set_unlock(int which, int on) { if (which >= 0 && which < 3) s_unlock[which] = !!on; }
+int ngb_unlock(int which) { return which >= 0 && which < 3 ? s_unlock[which] : 0; }
 
 /**
  * sub_001DB520
@@ -656,7 +927,8 @@ void sub_001DB520(void)
 {
     if (ENV_ONCE("NGB_FLAG_LOG"))
         fprintf(stderr, "[FLAG] %u (all difficulties %d)\n", ecx, s_all_difficulties);
-    if ((s_all_difficulties && ecx >= 5 && ecx <= 9) || (s_all_costumes && ecx >= 1 && ecx <= 4)) {
+    if ((s_all_difficulties && ecx >= 5 && ecx <= 9) || (s_all_costumes && ecx >= 1 && ecx <= 4) ||
+        (ecx >= 10 && ecx <= 12 && s_unlock[ecx - 10])) {
         eax = 1;
         esp += 4;   /* ret */
         return;

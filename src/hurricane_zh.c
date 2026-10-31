@@ -148,14 +148,19 @@ float ngb_zh_text(uint8_t *m, int w, int h, const char *s, float px, float sx, f
  * mode (as the original, whose menus are English there; x2.1 put its Chinese in the strings both columns share,
  * docs/17 of the localization), so the column does not choose: each frame both point at the Chinese while
  * ngb_zh_on() -- once the glyph page has what the string needs -- else at the English. */
-static struct { uint32_t en_slot, jp_slot, en, zh; int new_glyphs; } s_ent[96];
+/* (96 until 0.9.45: the PC pages' 99 strings since 0.9.40 filled it, and the main menu's two stayed English) */
+static struct { uint32_t en_slot, jp_slot, en, zh; int new_glyphs; } s_ent[256];
 static int s_nent, s_glyphs;      /* s_glyphs: 1 the page has the added cells, -1 it cannot */
 
 void ngb_zh_engine_text(uint32_t en_slot, uint32_t jp_slot, const char *en)
 {
     const NgbZhText *t = ngb_zh_find("", en);
-    if (!t || !t->sjis || s_nent == (int)(sizeof s_ent / sizeof s_ent[0]))
+    if (!t || !t->sjis)
         return;
+    if (s_nent == (int)(sizeof s_ent / sizeof s_ent[0])) {
+        fprintf(stderr, "[ZH] engine text table full: \"%s\" stays English\n", en);
+        return;
+    }
     uint32_t n = (uint32_t)strlen(t->sjis) + 1, va = xbox_HeapAlloc(n, 4);
     if (!va)
         return;

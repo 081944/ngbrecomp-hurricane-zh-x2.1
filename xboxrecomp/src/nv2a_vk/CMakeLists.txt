@@ -6,13 +6,14 @@ if(NOT EXISTS ${TP}/volk/volk.c)
     message(FATAL_ERROR "nv2a_vk: run third_party/fetch.sh first")
 endif()
 
-if(NOT TARGET PkgConfig::NV2A_GLIB)
+# GLib, or on Android (no GLib) the slice of it the NV2A code uses (shim/glib-lite)
+if(ANDROID)
+    set(NV2A_GLIB_LITE ON)
+    set(NV2A_GLIB)
+else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(NV2A_GLIB REQUIRED IMPORTED_TARGET glib-2.0)
-endif()
-find_package(Threads REQUIRED)
-if(ANDROID)
-    link_libraries(ngb_vulkan)
+    set(NV2A_GLIB PkgConfig::NV2A_GLIB)
 endif()
 find_package(SDL2 REQUIRED)
 # glslang's C interface. Its CMake package when there is one: a static
@@ -33,17 +34,6 @@ else()
 endif()
 
 set(X ${CMAKE_CURRENT_SOURCE_DIR}/xemu)
-# Git on Windows can check out the shim's directory symlink as a text file.
-# Materialize just its headers in the build tree without altering the checkout.
-if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/shim/hw/xbox/nv2a")
-    file(GLOB_RECURSE NV2A_SHIM_HEADERS CONFIGURE_DEPENDS RELATIVE "${X}"
-        "${X}/*.h" "${X}/*.inc")
-    foreach(header ${NV2A_SHIM_HEADERS})
-        configure_file("${X}/${header}"
-            "${CMAKE_CURRENT_BINARY_DIR}/shim/hw/xbox/nv2a/${header}" COPYONLY)
-    endforeach()
-    include_directories("${CMAKE_CURRENT_BINARY_DIR}/shim")
-endif()
 file(GLOB NV2A_VK_PGRAPH  ${X}/pgraph/*.c)
 file(GLOB NV2A_VK_GLSL    ${X}/pgraph/glsl/*.c)
 file(GLOB NV2A_VK_VK      ${X}/pgraph/vk/*.c)
@@ -59,6 +49,7 @@ add_library(xbox_nv2a_vk OBJECT
     shim/util/fast-hash.c
     shim/util/vma.cc
     host/nv2a_host.c
+    host/threadload.c
     host/nv2a_dirty.c
     host/present_sdl.c
     host/nv2a_runtime.c
@@ -68,7 +59,11 @@ add_library(xbox_nv2a_vk OBJECT
     ${TP}/nv2a_vsh_cpu/src/nv2a_vsh_disassembler.c
     ${TP}/nv2a_vsh_cpu/src/nv2a_vsh_emulator.c
     ${TP}/nv2a_vsh_cpu/src/nv2a_vsh_emulator_execution_state.c
+    $<$<BOOL:${NV2A_GLIB_LITE}>:${CMAKE_CURRENT_SOURCE_DIR}/shim/glib-lite/glib_lite.c>
 )
+if(NV2A_GLIB_LITE)
+    target_include_directories(xbox_nv2a_vk BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shim/glib-lite)
+endif()
 target_include_directories(xbox_nv2a_vk
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/host
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shim
@@ -88,12 +83,11 @@ target_compile_definitions(xbox_nv2a_vk PRIVATE
     XXH_INLINE_ALL _GNU_SOURCE)
 target_compile_options(xbox_nv2a_vk PRIVATE
     $<$<COMPILE_LANGUAGE:C>:-std=gnu11>
-    -O2 -fno-strict-aliasing -Wno-unused-parameter -Wno-sign-compare
+    ${XBOXRECOMP_OPT_LEVEL} -fno-strict-aliasing -Wno-unused-parameter -Wno-sign-compare
     -Wno-missing-field-initializers -Wno-unused-function)
 target_link_libraries(xbox_nv2a_vk PUBLIC
     xbox_kernel xbox_video platform
-    PkgConfig::NV2A_GLIB SDL2::SDL2
+    ${NV2A_GLIB} SDL2::SDL2
     ${NV2A_GLSLANG}
-    $<$<PLATFORM_ID:Windows>:winpthread>
-    $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_DL_LIBS} m Threads::Threads>
+    $<IF:$<PLATFORM_ID:Windows>,winpthread,${CMAKE_DL_LIBS} m $<$<NOT:$<PLATFORM_ID:Android>>:pthread>>
     $<$<PLATFORM_ID:Windows>:dxgi dxguid>)   # dxgi: the display's vertical blank (nv2a_host.c)   # libstdc++: the C++ link brings it (statically under -static-libstdc++)

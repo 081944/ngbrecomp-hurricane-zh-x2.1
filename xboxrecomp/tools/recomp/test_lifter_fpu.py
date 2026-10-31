@@ -104,10 +104,10 @@ class FpuLifterTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         runtime_types = (
             root / "templates" / "runtime" / "recomp_types.h"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         main = (
             root / "templates" / "new-game" / "src" / "main.c"
-        ).read_text()
+        ).read_text(encoding="utf-8")
 
         self.assertIn("extern RECOMP_TLS double g_fp_stack[8];", runtime_types)
         self.assertIn("extern RECOMP_TLS int g_fp_top;", runtime_types)

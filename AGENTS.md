@@ -100,7 +100,7 @@ Driving and watching a headless run:
 
 - Match the surrounding code: comments say why, in plain sentences; names and idioms as nearby.
 - A behaviour change gets checked in a headless run — measured (positions, timings, logs), not
-  assumed — at the aspect ratios it touches (4:3, 16:9, 16:10, 21:9).
+  assumed — at the aspect ratios it touches (4:3, 16:9, 16:10, 21:9, 32:9).
 - Commits are small and describe the change; no build output, captures or game data in them.
 - Shell scripts that loop over word lists should run under bash (`zsh` does not split `$var`), and
   a `pgrep -f` pattern matches its own command line.

@@ -13,7 +13,9 @@ its own license.
 | TGP482's [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) DirectSound code | followed by `src/audio/dsound_hle.cpp` | MIT — see `src/audio/NOTICE` |
 | EB Garamond | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-EBGaramond.txt`) |
 | Liberation Serif | `assets/fonts` | SIL Open Font License 1.1 (`assets/fonts/OFL-Liberation.txt`) |
-| Xelu's Free Controller & Key Prompts | `assets/prompts/keys` | CC0 (`assets/prompts/License-Xelu.txt`) |
+| Xelu's Free Controller & Key Prompts | `assets/prompts/keys`, `assets/prompts/ps`, `assets/prompts/xbox` | CC0 (`assets/prompts/License-Xelu.txt`) |
+| Kenney's Mobile Controls (the touch controls' sticks and d-pad) | `assets/touch` | CC0 (`assets/touch/License-Kenney.txt`) |
+| SDL2's Android activity (Java) | compiled from SDL's source by `packaging/android/build.sh` | zlib |
 
 ## The runtime: xboxrecomp
 
@@ -34,11 +36,14 @@ runs on, in `xboxrecomp/` with this port's changes) is MIT licensed (`xboxrecomp
 
 | Library | License | Package |
 |---|---|---|
-| SDL2 | zlib | both |
-| GLib, libintl, libiconv | LGPL-2.1-or-later | both (Windows: libintl, libiconv) |
-| PCRE2 | BSD-3-Clause | both |
-| glslang | BSD-3-Clause and others (see its LICENSE) | both |
-| SPIRV-Tools | Apache-2.0 | both |
+| SDL2 | zlib | all |
+| GLib, libintl, libiconv | LGPL-2.1-or-later | Linux, Windows (Windows: libintl, libiconv; Android uses its own small stand-in, `xboxrecomp/src/nv2a_vk/shim/glib-lite`) |
+| PCRE2 | BSD-3-Clause | Linux, Windows |
+| glslang | BSD-3-Clause and others (see its LICENSE) | all |
+| SPIRV-Tools | Apache-2.0 | Linux, Windows |
+| LLVM libc++ (the NDK's, linked in) | Apache-2.0 with LLVM exception | Android |
+| Mesa's Turnip (Vulkan driver for Adreno, built from Mesa's release) | MIT | Android |
+| libadrenotools | BSD-2-Clause | Android |
 | libepoxy | MIT | Linux |
 | Qt 6 (the setup window) | LGPL-3.0 | Linux |
 | LLVM libc++, libunwind | Apache-2.0 with LLVM exception | Windows |

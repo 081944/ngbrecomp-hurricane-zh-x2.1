@@ -1,5 +1,5 @@
 /*
- * hud.c -- the HUD on or off (Display & Audio > HUD, #80).
+ * hud.c -- the HUD on or off (Display > HUD, #80).
  *
  * sub_001FA210 is the game's in-play HUD, each frame: its first calls (sub_001FA070 to sub_00203A50) run
  * whatever the screen, then -- in play, the HUD not hidden by the game (0xDB9C6E 0xFFFF) -- the health and

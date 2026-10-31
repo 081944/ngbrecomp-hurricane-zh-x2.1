@@ -704,7 +704,13 @@ def test_resync_recomputes_register_jump_edges():
 
     _, blocks = subject.decode_function(BASE, BASE + len(raw))
 
-    assert calls == [set(), {leader}]
+    # The first decode runs without roots; from then on every leader found so
+    # far is one (decoded already or not: a root's branches are followed, see
+    # disassemble_function), so the leader is in every later call and the
+    # continuation it reveals in the last.
+    assert calls[0] == set()
+    assert len(calls) > 1 and all(leader in roots for roots in calls[1:])
+    assert continuation in calls[-1]
     case_block = next(block for block in blocks if block.start == leader)
     assert continuation in case_block.successors
     assert continuation in subject.lifter.imm_code_refs

@@ -206,6 +206,9 @@ static int program_for(const char *path, char *out, size_t n)
         prog = "NinjaTomoe";
     else
         return 0;
+#ifdef __ANDROID__
+    return 0;   /* (no programs beside it to start: the arcade is not built for Android yet) */
+#endif
     long len = ngb_exe_path(out, n);
     if (len <= 0)
         return 0;

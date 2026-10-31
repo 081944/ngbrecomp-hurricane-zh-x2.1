@@ -22,9 +22,16 @@
 #include "nv2a_int.h"
 
 /* USER - PFIFO MMIO and DMA submission area */
+/* xboxrecomp: called as the title reads the push buffer's progress (DMA_GET, REF) -- a renderer holding the pusher
+ * back to what it has drawn (pfifo.c, nv2a_pfifo_gate) hands over what the title recorded since, or the title would
+ * wait on its own unsent calls */
+void (*nv2a_user_read_hook)(void);
+
 uint64_t user_read(void *opaque, hwaddr addr, unsigned int size)
 {
     NV2AState *d = (NV2AState *)opaque;
+    if (nv2a_user_read_hook)
+        nv2a_user_read_hook();
 
     unsigned int channel_id = addr >> 16;
     assert(channel_id < NV2A_NUM_CHANNELS);
@@ -93,11 +100,15 @@ void user_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
             case NV_USER_DMA_PUT:
                 d->pfifo.regs[NV_PFIFO_CACHE1_DMA_PUT] = val;
                 break;
-            case NV_USER_DMA_GET:
+            case NV_USER_DMA_GET:   /* xboxrecomp: with pgraph.lock, as the pusher's batch (pfifo.c) */
+                qemu_mutex_lock(&d->pgraph.lock);
                 d->pfifo.regs[NV_PFIFO_CACHE1_DMA_GET] = val;
+                qemu_mutex_unlock(&d->pgraph.lock);
                 break;
             case NV_USER_REF:
+                qemu_mutex_lock(&d->pgraph.lock);
                 d->pfifo.regs[NV_PFIFO_CACHE1_REF] = val;
+                qemu_mutex_unlock(&d->pgraph.lock);
                 break;
             default:
                 NV2A_DPRINTF(true, "Unsupported NV_USER write: channel=%u offset=0x%04x\n", channel_id, (unsigned)(addr & 0xFFFF));

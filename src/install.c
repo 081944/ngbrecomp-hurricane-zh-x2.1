@@ -398,15 +398,44 @@ static int extract_dir(Image *im, uint32_t sector, uint32_t size, const char *de
     return rc;
 }
 
+/* An open file handed over by its descriptor (Android's file picker: src/android_install.c), taken for a disc
+ * image: its name is not known */
+static int is_fd_image(const char *src)
+{
+    return !strncmp(src, "/proc/self/fd/", 14);
+}
+
+/* The image to read: a descriptor's file through the descriptor itself (opening its /proc path again checks the
+ * file's own permissions, which a cloud app's private copy refuses), and only a plain file (a stream cannot seek) */
+static FILE *open_image(const char *iso)
+{
+#if !defined(_WIN32)
+    if (is_fd_image(iso)) {
+        struct stat st;
+        int fd = atoi(iso + 14), copy = fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) ? dup(fd) : -1;
+        FILE *f = copy >= 0 ? fdopen(copy, "rb") : NULL;
+        if (!f && copy >= 0)
+            close(copy);
+        if (!f)
+            errno = EINVAL;
+        return f;
+    }
+#endif
+    return fopen(iso, "rb");
+}
+
 static int extract_iso(const char *iso, const char *dest)
 {
     Image im = { 0 };
     unsigned char desc[SECTOR];
     int rc = -1, found = 0;
 
-    im.f = fopen(iso, "rb");
+    im.f = open_image(iso);
     if (!im.f) {
-        fail("Cannot open %s: %s", iso, strerror(errno));
+        if (is_fd_image(iso))
+            fail("The chosen file cannot be read from where it is: copy it to the phone's storage first.");
+        else
+            fail("Cannot open %s: %s", iso, strerror(errno));
         return -1;
     }
     for (size_t i = 0; i < sizeof BASES / sizeof BASES[0]; i++) {
@@ -734,7 +763,7 @@ static int install_from(const char *src, const char *dest)
     int rc;
 
     if (!(dot && (!strcasecmp(dot, ".iso") || !strcasecmp(dot, ".xiso") ||
-                  !strcasecmp(dot, ".7z") || !strcasecmp(dot, ".zip"))))
+                  !strcasecmp(dot, ".7z") || !strcasecmp(dot, ".zip"))) && !is_fd_image(src))
         return install_image(src, dest);
     snprintf(part, sizeof part, "%s.partial", dest);
     remove_tree(part);
@@ -773,7 +802,7 @@ static int install_image(const char *src, const char *dest)
         fail("There is no default.xbe in %s.", dir);
         return -1;
     }
-    if (dot && (!strcasecmp(dot, ".iso") || !strcasecmp(dot, ".xiso")))
+    if ((dot && (!strcasecmp(dot, ".iso") || !strcasecmp(dot, ".xiso"))) || is_fd_image(src))
         return extract_iso(src, dest);
     if (dot && (!strcasecmp(dot, ".7z") || !strcasecmp(dot, ".zip"))) {
         char tmp[4200], iso[4400];
@@ -1206,7 +1235,48 @@ int ngb_find_game(const char *arg, const char *save_dir, const char *exe_dir,
         if (has_xbe(installed)) { snprintf(out, n, "%s", installed); goto check; }
         if (has_xbe(beside))    { snprintf(out, n, "%s", beside);    goto check; }
         if (remembered_game(save_dir, out, n)) goto check;
-#if !defined(_WIN32)
+#if defined(__ANDROID__)
+        {   /* the player's disc image chosen with the system's picker, installed with its progress shown (src/android_install.c);
+             * a failed install back to the choice (an unrelated image picked), not the end */
+            int ngb_android_pick_disc(char *out, size_t n);
+            int ngb_android_install(const char *src, const char *installed, char *out, size_t n);
+            int ngb_android_missing_card(const char *where);
+            char was[4200], line[4096];
+            location_file(save_dir, was, sizeof was);
+            FILE *lf = fopen(was, "r");
+            line[0] = 0;
+            if (lf) {
+                if (!fgets(line, sizeof line, lf))
+                    line[0] = 0;
+                fclose(lf);
+            }
+            line[strcspn(line, "\r\n")] = 0;
+            /* (a game on a card that is out: Android unmounts it, /storage/<card> goes) */
+            while (line[0] && !strncmp(line, "/storage/", 9) && strncmp(line, "/storage/emulated/", 18) &&
+                   !has_xbe(line)) {
+                int r = ngb_android_missing_card(line);
+                if (r < 0)
+                    return -1;
+                if (r == 0)
+                    break;
+                if (has_xbe(line)) {
+                    snprintf(out, n, "%s", line);
+                    goto check;
+                }
+            }
+            for (;;) {
+                if (!ngb_android_pick_disc(picked, sizeof picked))
+                    return -1;
+                int rc = ngb_android_install(picked, installed, out, n);
+                if (rc == 0)
+                    break;
+                if (rc == -2)
+                    return -1;   /* quit */
+            }
+            remember_game(save_dir, installed, out);
+            return 0;
+        }
+#elif !defined(_WIN32)
         switch (run_setup(exe_dir, installed, out, n)) {
         case 1:
             remember_game(save_dir, installed, out);   /* a folder picked: found there next time */

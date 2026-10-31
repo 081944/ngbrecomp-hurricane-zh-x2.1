@@ -18,7 +18,7 @@ enum {
     A_DPAD_UP, A_DPAD_DOWN, A_DPAD_LEFT, A_DPAD_RIGHT,
     A_QUICK_WEAPONS, A_QUICK_ITEMS, A_QUICK_LEFT, A_QUICK_RIGHT,
     A_QUICK_CONFIRM, A_QUICK_CANCEL,
-    A_HUD,                       /* Toggle HUD: Display & Audio > HUD (src/hud.c), nothing bound by default */
+    A_HUD,                       /* Toggle HUD: Display > HUD (src/hud.c), nothing bound by default */
     A_COUNT
 };
 
@@ -58,6 +58,11 @@ void ngb_bind_load(void);
 /* The input's name for the page ("Left Shift", "Mouse Left", "Y"), and a
  * short one for a keycap (1-3 characters; "" for a mouse button). */
 void ngb_bind_input_name(int input, char *out, int n);
+int ngb_pad_prompts_ps(void);            /* a PlayStation pad's buttons in the prompts (#113) */
+int ngb_prompts_keys(void);              /* the keyboard's keys in the prompts */
+int ngb_bind_prompts(void);              /* Button Prompts: 0 Auto, 1 Xbox, 2 PlayStation, 3 PC */
+void ngb_bind_step_prompts(int dir);
+const char *ngb_bind_prompts_name(int v);
 const char *ngb_bind_pad_combo(int a);   /* "X + A" for Wind Run, "Y + B" for Ninpo; else NULL */
 void ngb_bind_input_short(int input, char *out, int n);
 /* The keyboard or mouse input shown for the pad's button b (XBOX_BUTTON_*)

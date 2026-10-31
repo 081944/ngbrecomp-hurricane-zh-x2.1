@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(xboxrecomp VERSION 0.9.0 LANGUAGES C)
 
+# The level the libraries compile at: the game's (NGB_OPT_LEVEL) when it builds them, else -O2
+if(DEFINED NGB_OPT_LEVEL)
+    set(XBOXRECOMP_OPT_LEVEL ${NGB_OPT_LEVEL})
+else()
+    set(XBOXRECOMP_OPT_LEVEL -O2)
+endif()
+
 # Xbox Static Recompilation Runtime Library
 # Provides link-time libraries for statically recompiled Xbox games.
 # Pattern: extract emulator subsystems (xemu) into reusable static libraries.

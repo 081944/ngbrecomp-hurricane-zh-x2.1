@@ -9,9 +9,6 @@
 // NGB_D3D_DUMP=dir writes each presented frame (and NGB_D3D_DUMP_FROM=n, NGB_D3D_DUMP_COUNT=n
 // choose which) as dir/frame_NNNNN.ppm.
 #include "port.h"
-#ifdef __ANDROID__
-#include "android_vulkan.h"
-#endif
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
@@ -38,17 +35,25 @@
 #include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <time.h>
 
 #include "gpu/backend.h"
 #include "gpu/shaders.h"
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
+#include "gpu/headers.h"
 #include "kernel/kernel.h"
 #include "vk/spirv.h"
 #include "nv2a_vk_share.h"   // the NV2A renderer's device and presenter (NGB_RENDERER=d3d)
 extern "C" {
 #include "quick_select.h"
+extern "C" {
+bool nv2a_present_show_fps(void);   // xboxrecomp present_sdl.c: the frame counter on
+extern volatile int nv2a_fps_drawn_outside;   // (its own corner copy off once this draws it)
+int ngb_fps_picture(uint32_t* out, size_t max, int* w, int* h, unsigned* serial);   // src/fps_text.c
+extern volatile int ngb_fps_target_h;
+int ngb_fps_cap(int h, float* scale);
+}
+constexpr int kFpsWidth = 1024, kFpsHeight = 128;   // the counter's picture, at most (src/fps_text.c's)
 int ngb_pc_setting(int which);
 }
 
@@ -226,12 +231,16 @@ extern "C" int nv2a_dirty_stamp(const void* host, size_t len, uint64_t* stamp); 
 extern "C" float ngb_hud_shape(void);   // src/pc_menu.c: the menus' and HUD's narrowing
 extern "C" int ngb_2d_stretched(void);
 extern "C" [[noreturn]] void ngb_renderer_fatal(const char* detail);  // src/ingame_menu.c  // src/pc_menu.c: the game in its widescreen mode, its 2D as drawn
+extern "C" int ngb_2d_screen_flags(void);   // src/pc_menu.c: ngb_2d_screen_frame's parts, for gpu::Peek
 extern "C" int ngb_2d_screen_frame(int threed);   // src/pc_menu.c: a 2D screen (a menu, the title, a chapter
                                                 // card), knowing the 3D this frame has drawn so far
 // This frame's draws into display-sized targets, all and 3D (src/pc_menu.c: a frame of next to no 3D is a
 // 2D screen, which the game draws in its widescreen mode)
 extern "C" {
 int ngb_frame_draws = 0, ngb_frame_3d_draws = 0;
+// the last presented frame's verdict, for the title's thread when a render thread draws (the counts above are
+// then a frame the title has already moved past, part drawn): 1 a 2D screen
+int ngb_frame_done_2d = 0;
 }
 int g_step_frame = -1;
 // F7 (src/ingame_menu.c): record the next frames -- each a small picture, and every draw a line -- to
@@ -259,6 +268,9 @@ struct Target {
     bool drawn = false;
     bool ms_stale = false;     // img holds the picture, ms not yet: filled from img before the next pass
     Image fb;                  // a copy of img for a draw that reads the target it draws into (BindTexture)
+    uint32_t addr = 0;         // its guest memory (physical)
+    uint64_t stamp = 0;        // the CPU's writes to that memory when last drawn into (StampTarget)
+    bool stamped = false;
 };
 
 struct Tex {
@@ -338,7 +350,8 @@ public:
     void Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
                uint32_t stencil) override;
     void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) override;
-    void Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects, uint32_t dst_points) override;
+    void Copy(const Surface& src, const Surface& dst, uint32_t count, const uint8_t* src_rects,
+              const uint8_t* dst_points) override;
     void Present(const Surface& front) override;
     void Sync(uint32_t, uint32_t) override {}
     void SyncLate(uint32_t) override {}
@@ -346,8 +359,21 @@ public:
     void SetGamma(const uint8_t* ramp) override;
     void VisibilityBegin() override { vis_on_ = true; vis_test_++; }
     void VisibilityEnd(uint32_t report_va) override;
+    void CapturePeek(const State& s, Peek& p) override;
+    void CaptureQuick(QuickPeek& q) override;
+    void UsePeek(const Peek& p) override { pk_ = p; pk_given_ = true; }
+    void UseQuick(const QuickPeek& q) override { qk_ = q; }
 
 private:
+    // the game's side of the call being drawn (gpu::Peek) and of the frame (QuickPeek): taken here at the call, or
+    // given by a render thread's capture (pk_given_) -- the drawing reads these, never the game itself
+    Peek pk_;
+    QuickPeek qk_;
+    bool pk_given_ = false;
+    uint32_t towers_lo_ = 0, towers_hi_ = 0;   // the towers' chunk's data, up to the next loaded chunk's
+    uint32_t towers_frame_ = ~0u, peek_frames_ = 0;
+    // ngb_2d_screen_frame as of the call: a 2D screen, knowing the 3D drawn so far this frame
+    bool ScreenFrame(uint32_t threed) const { return (pk_.screen & 1) || ((pk_.screen & 2) && threed < 30); }
     // device: the NV2A renderer's, shared, when NGB_RENDERER=d3d (its presenter then shows our
     // frames in the game window); else one of our own, drawing unseen (mirror mode)
     bool CreateInstance();
@@ -372,10 +398,14 @@ private:
 
     Image display_[3];   // copies of the front buffer for the presenter, in turn
     Image quick_layer_;
+    Image fps_layer_;   // the frame counter (FpsCounter, quick_menu.inc)
+    std::vector<uint32_t> fps_pending_;   // its picture still to upload (a frame without one to show keeps it)
+    bool fps_lettered_ = false;
     Image quick_background_, quick_blur_, quick_full_;   // the quick menu's paused background: small, its blur's
                                                           // other half, and the frame blitted for it
     VkSampler quick_sampler_ = VK_NULL_HANDLE;
     void QuickMenu(Image& dst);
+    void FpsCounter(Image& dst);
     void QuickMenuBackground(Image& dst);
     // the title's gamma ramp (D3DDevice_SetGammaRamp: its Screen Adjustment -- gamma, brightness,
     // contrast), applied as the front buffer is copied for the presenter; identity: a plain copy
@@ -398,6 +428,7 @@ private:
     // at scale_ times their size, small depth-only ones (shadow maps) at shadow_ times
     int scale_ = 1, shadow_ = 1, aniso_level_ = 0, msaa_ = 1;
     bool anisotropy_ = false;
+    bool bc_ = true;   // the GPU reads DXT (textureCompressionBC); without it (Mali, Adreno) DXT is decoded to BGRA
     bool wide_lines_ = false;   // lines wider than a pixel (the sparks of a hit are 2.7 to 3, #51)
     float point_max_ = 1.0f;
     float view_yaw_ = 0, view_pitch_ = 0;   // NGB_D3D_VIEWLOG
@@ -449,12 +480,6 @@ private:
     static constexpr uint32_t kVisQueries = 512;
     struct VisQuery { uint32_t test; float div; };
     VkQueryPool vis_pool_[2] = {};
-    VkQueryPool time_pool_[2] = {};
-    uint32_t timestamp_bits_ = 0;
-    double timestamp_period_ = 0, gpu_partial_ms_ = 0, gpu_pending_ms_[2] = {};
-    uint64_t cpu_frame_ns_ = 0;
-    void TimeEnd();
-    double TimeResult(int slot);
     std::vector<VisQuery> vis_q_[2];
     std::vector<std::pair<uint32_t, uint32_t>> vis_end_[2];   // test, report slot
     std::unordered_map<uint32_t, double> vis_sum_;
@@ -463,6 +488,7 @@ private:
     void VisResults(int slot);
     VkInstance inst_ = VK_NULL_HANDLE;
     VkPhysicalDevice phys_ = VK_NULL_HANDLE;
+    uint32_t api_version_ = VK_API_VERSION_1_3;   // the device's (its own: 1.3; the NV2A renderer's: AdoptDevice)
     VkDevice dev_ = VK_NULL_HANDLE;
     VkQueue queue_ = VK_NULL_HANDLE;
     uint32_t qfam_ = 0;
@@ -522,6 +548,8 @@ private:
     Target* bound_ds_ = nullptr;
     bool rendering_ = false;
     void BeginRendering(Target* rt, Target* ds);
+    bool TargetStamp(const Target& t, uint64_t& stamp);
+    void StampTarget(Target& t) { t.stamped = TargetStamp(t, t.stamp); }
     void EndRendering();
     void FillMs(Target& t);    // MSAA image from the plain one (a picture kept across a setting change)
     VkSampler fill_sampler_ = VK_NULL_HANDLE;
@@ -555,9 +583,10 @@ private:
     std::atomic<uint32_t> pipes_since_save_{0};
     std::thread saver_;                      // the periodic save of pcache_, off the frame (CacheSavePipelinesSoon)
     std::atomic<bool> saving_{false};
-    // shaders and pipelines a draw needs and nothing has made yet: made on a thread of their own while the
-    // draw is left out (a frame or two), instead of the frame waiting for them (a hitch). NGB_D3D_SYNC_COMPILE=1
-    // makes them at once instead.
+    // shaders and pipelines a draw needs and nothing has made yet: made at once while the frame has spent less
+    // than compile_budget_us_ making them, then on a thread of their own while the draw is left out (a frame or
+    // two) -- a short wait instead of geometry missing (#94), and no long hitch when an area brings dozens.
+    // NGB_D3D_COMPILE_BUDGET_MS sets the budget (4; 0: always on the thread), NGB_D3D_SYNC_COMPILE=1 makes all at once.
     struct Job { bool pipeline; uint64_t key; std::string hlsl; bool vertex; PipeKey pk; };
     std::thread compiler_;
     std::mutex job_mu_;
@@ -568,6 +597,8 @@ private:
     std::unordered_map<PipeKey, bool, PipeHash> known_pipes_;   // the seed's and earlier sessions' (cache_mu_)
     bool async_ = true;      // the setting
     bool async_now_ = false; // for the draw being made (the backend's own passes make theirs at once)
+    uint64_t compile_budget_us_ = 4000;
+    bool Defer() const { return async_now_ && compile_us_ >= compile_budget_us_; }   // this one to the thread
     void Compiler();
     std::atomic<uint32_t> async_made_{0}, skipped_{0};
     std::thread prewarm_;
@@ -617,28 +648,11 @@ private:
         }                                                                           \
     } while (0)
 
-static bool InitializeVulkanLoader() {
-    if (volkGetInstanceVersion() != 0) return true;
-#ifdef __ANDROID__
-    auto proc = ngb_android_vulkan_proc();
-    if (!proc) return false;
-    volkInitializeCustom(proc);
-    return true;
-#else
-    return volkInitialize() == VK_SUCCESS;
-#endif
-}
-
 bool VulkanBackend::CreateInstance() {
-    if (!InitializeVulkanLoader()) return false;
+    if (volkGetInstanceVersion() == 0 && volkInitialize() != VK_SUCCESS) return false;
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "Ninja Gaiden Black (Direct3D renderer)";
     app.apiVersion = VK_API_VERSION_1_3;
-#ifdef __ANDROID__
-    // A newer custom driver may sit behind Android 11's 1.1 loader. The
-    // selected physical device must still provide the required 1.3 features.
-    app.apiVersion = std::min(app.apiVersion, volkGetInstanceVersion());
-#endif
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
 #ifdef __APPLE__
@@ -689,31 +703,25 @@ bool VulkanBackend::CreateDevice() {
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     f2.pNext = &f13;
     f2.features.samplerAnisotropy = VK_TRUE;
-    f2.features.fillModeNonSolid = VK_TRUE;
-    f2.features.textureCompressionBC = VK_TRUE;
     {
         VkPhysicalDeviceFeatures have;
         vkGetPhysicalDeviceFeatures(phys_, &have);
+        f2.features.fillModeNonSolid = have.fillModeNonSolid;
+        f2.features.textureCompressionBC = have.textureCompressionBC;
         f2.features.wideLines = have.wideLines;
         f2.features.largePoints = have.largePoints;
     }
-    std::vector<const char*> exts = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+    const char* exts[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 #ifdef __APPLE__
                           "VK_KHR_portability_subset",
 #endif
     };
-#ifdef __ANDROID__
-    if (volkGetInstanceVersion() < VK_API_VERSION_1_3) {
-        exts.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-        exts.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-    }
-#endif
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &f2;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = uint32_t(exts.size());
-    dci.ppEnabledExtensionNames = exts.data();
+    dci.enabledExtensionCount = sizeof(exts) / sizeof(exts[0]);
+    dci.ppEnabledExtensionNames = exts;
     VKCHECK(vkCreateDevice(phys_, &dci, nullptr, &dev_));
     volkLoadDeviceTable(&d_, dev_);
     d_.vkGetDeviceQueue(dev_, qfam_, 0, &queue_);
@@ -721,36 +729,33 @@ bool VulkanBackend::CreateDevice() {
 }
 
 bool VulkanBackend::AdoptDevice(const nv2a_vk_shared& sh) {
-    if (!InitializeVulkanLoader()) return false;
+    if (volkGetInstanceVersion() == 0 && volkInitialize() != VK_SUCCESS) return false;
     inst_ = sh.instance;
     phys_ = sh.physical_device;
     dev_ = sh.device;
+    api_version_ = sh.api_version ? sh.api_version : VK_API_VERSION_1_3;
     qfam_ = sh.queue_family;
     queue_ = sh.queue;
     if (!volkGetLoadedInstance()) volkLoadInstanceOnly(inst_);
     volkLoadDeviceTable(&d_, dev_);
+    // a driver short of 1.3 (Adreno 6xx's): the same functions from the extensions the NV2A renderer enabled
+    // (whatever it gives for the core names: they are not its to give below 1.3)
+    if (api_version_ < VK_API_VERSION_1_3) {
+        d_.vkCmdBeginRendering = d_.vkCmdBeginRenderingKHR;
+        d_.vkCmdEndRendering = d_.vkCmdEndRenderingKHR;
+        d_.vkCmdPipelineBarrier2 = d_.vkCmdPipelineBarrier2KHR;
+    }
     shared_ = true;
     return FinishDevice();
 }
 
 bool VulkanBackend::FinishDevice() {
-#ifdef __ANDROID__
-    if (!d_.vkCmdBeginRendering) d_.vkCmdBeginRendering = d_.vkCmdBeginRenderingKHR;
-    if (!d_.vkCmdEndRendering) d_.vkCmdEndRendering = d_.vkCmdEndRenderingKHR;
-    if (!d_.vkCmdPipelineBarrier2) d_.vkCmdPipelineBarrier2 = d_.vkCmdPipelineBarrier2KHR;
-    if (!d_.vkCmdBeginRendering || !d_.vkCmdEndRendering || !d_.vkCmdPipelineBarrier2) {
-        std::fprintf(stderr, "[D3D] Android loader provides neither core nor KHR rendering/sync entry points\n");
-        return false;
-    }
-#endif
     VmaAllocatorCreateInfo ai{};
     ai.physicalDevice = phys_;
     ai.device = dev_;
     ai.instance = inst_;
-    ai.vulkanApiVersion = VK_API_VERSION_1_3;
-#ifdef __ANDROID__
-    ai.vulkanApiVersion = std::min(ai.vulkanApiVersion, volkGetInstanceVersion());
-#endif
+    // the version the device was made for: an older driver's is below 1.3 (its 1.3 parts extensions: AdoptDevice)
+    ai.vulkanApiVersion = api_version_;
     VmaVulkanFunctions fns{};
     VKCHECK(vmaImportVulkanFunctionsFromVolk(&ai, &fns));
     ai.pVulkanFunctions = &fns;
@@ -771,6 +776,8 @@ bool VulkanBackend::FinishDevice() {
     VkPhysicalDeviceFeatures feat;
     vkGetPhysicalDeviceFeatures(phys_, &feat);   // both devices enable it when it is there
     anisotropy_ = feat.samplerAnisotropy == VK_TRUE;
+    bc_ = feat.textureCompressionBC == VK_TRUE;
+    if (!bc_) std::fprintf(stderr, "[D3D] no DXT on this GPU: decoded to BGRA as they are made\n");
     wide_lines_ = feat.wideLines == VK_TRUE;
     line_max_ = pr.limits.lineWidthRange[1];
     point_max_ = feat.largePoints == VK_TRUE ? pr.limits.pointSizeRange[1] : 1.0f;
@@ -798,8 +805,10 @@ void VulkanBackend::ReadQuality() {
             prewarm_ = std::thread([this, msaa] { WarmSamples(uint32_t(msaa)); });
         }
     }
-    if (const char* e = std::getenv("NGB_D3D_SCALE")) scale_ = std::clamp(std::atoi(e), 1, 10);   // debugging
-    if (const char* e = std::getenv("NGB_D3D_QUALITY_FLIP")) {   // testing: MSAA and scale changing every n s
+    static const char* scale_env = std::getenv("NGB_D3D_SCALE");
+    static const char* flip_env = std::getenv("NGB_D3D_QUALITY_FLIP");
+    if (const char* e = scale_env) scale_ = std::clamp(std::atoi(e), 1, 10);   // debugging
+    if (const char* e = flip_env) {   // testing: MSAA and scale changing every n s
         static uint32_t start = presents_;
         uint32_t n = uint32_t(std::max(1, std::atoi(e)) * 60), k = (presents_ - start) / n;
         if (k & 1) {
@@ -831,7 +840,8 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
             // drawing (unseen) for comparisons
             if (!std::getenv("NGB_D3D_KEEP_NV2A")) nv2a_vk_set_draws_off(true);
         } else {
-            ngb_renderer_fatal(st == 1 ? "The GPU's Vulkan driver has no Vulkan 1.3 dynamic rendering or push descriptors."
+            ngb_renderer_fatal(st == 1 ? "The GPU's Vulkan driver has no dynamic rendering, synchronization2 or push "
+                                         "descriptors (Vulkan 1.3's, or as extensions)."
                                        : "No Vulkan device could be used.");
         }
     }
@@ -900,20 +910,6 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
     qci.queryCount = kVisQueries;
     for (auto& p : vis_pool_)
         if (d_.vkCreateQueryPool(dev_, &qci, nullptr, &p) != VK_SUCCESS) p = VK_NULL_HANDLE;
-    uint32_t families = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(phys_, &families, nullptr);
-    std::vector<VkQueueFamilyProperties> qp(families);
-    vkGetPhysicalDeviceQueueFamilyProperties(phys_, &families, qp.data());
-    timestamp_bits_ = qp[qfam_].timestampValidBits;
-    VkPhysicalDeviceProperties properties;
-    vkGetPhysicalDeviceProperties(phys_, &properties);
-    timestamp_period_ = properties.limits.timestampPeriod;
-    if (timestamp_bits_) {
-        qci.queryType = VK_QUERY_TYPE_TIMESTAMP;
-        qci.queryCount = 2;
-        for (auto& p : time_pool_)
-            if (d_.vkCreateQueryPool(dev_, &qci, nullptr, &p) != VK_SUCCESS) p = VK_NULL_HANDLE;
-    }
     Begin();
     Barrier(null2d_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Barrier(nullcube_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -942,10 +938,10 @@ VulkanBackend::~VulkanBackend() {
         d_.vkDeviceWaitIdle(dev_);
     }
     if (dev_) {
-        for (auto p : time_pool_) if (p) d_.vkDestroyQueryPool(dev_, p, nullptr);
         for (auto& image:continuous_glow_) DestroyImage(image);
         for (auto& image:glow_soft_) DestroyImage(image);
         DestroyImage(quick_background_);
+        DestroyImage(fps_layer_);
         DestroyImage(quick_blur_);
         DestroyImage(quick_full_);
         if (glow_soft_sampler_) d_.vkDestroySampler(dev_,glow_soft_sampler_,nullptr);
@@ -958,25 +954,7 @@ void VulkanBackend::Begin() {
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     d_.vkBeginCommandBuffer(cmd_, &bi);
     recording_ = true;
-    if (time_pool_[slot_]) {
-        d_.vkCmdResetQueryPool(cmd_, time_pool_[slot_], 0, 2);
-        d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, time_pool_[slot_], 0);
-    }
     if (vis_pool_[slot_]) d_.vkCmdResetQueryPool(cmd_, vis_pool_[slot_], 0, kVisQueries);
-}
-
-void VulkanBackend::TimeEnd() {
-    if (time_pool_[slot_])
-        d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, time_pool_[slot_], 1);
-}
-
-double VulkanBackend::TimeResult(int slot) {
-    uint64_t ticks[2];
-    if (!time_pool_[slot] || d_.vkGetQueryPoolResults(dev_, time_pool_[slot], 0, 2,
-            sizeof ticks, ticks, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS)
-        return -1;
-    uint64_t mask = timestamp_bits_ == 64 ? UINT64_MAX : (uint64_t(1) << timestamp_bits_) - 1;
-    return ((ticks[1] - ticks[0]) & mask) * timestamp_period_ / 1e6;
 }
 
 // Everything recorded so far, done: the slot's commands submitted and waited for, and the other
@@ -984,7 +962,6 @@ double VulkanBackend::TimeResult(int slot) {
 void VulkanBackend::Submit() {
     if (!recording_) return;
     EndRendering();
-    TimeEnd();
     d_.vkEndCommandBuffer(cmd_);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
@@ -996,13 +973,9 @@ void VulkanBackend::Submit() {
         d_.vkWaitForFences(dev_, 1, &fences_[slot_ ^ 1], VK_TRUE, UINT64_MAX);
         submitted_[slot_ ^ 1] = false;
         VisResults(slot_ ^ 1);
-        double ms = TimeResult(slot_ ^ 1);
-        nv2a_frame_gpu_time(ms < 0 ? -1 : gpu_pending_ms_[slot_ ^ 1] + ms);
     }
     submitted_[slot_] = false;
     VisResults(slot_);
-    double ms = TimeResult(slot_);
-    if (ms >= 0) gpu_partial_ms_ += ms;
     d_.vkResetCommandBuffer(cmd_, 0);
     recording_ = false;
     ring_pos_ = 0;
@@ -1014,22 +987,6 @@ void VulkanBackend::Submit() {
 void VulkanBackend::EndFrame() {
     if (!recording_) return;
     EndRendering();
-    TimeEnd();
-    uint64_t cpu_ns;
-#ifdef _WIN32
-    FILETIME created, exited, kernel, user;
-    GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user);
-    cpu_ns = (((uint64_t(kernel.dwHighDateTime) << 32) | kernel.dwLowDateTime) +
-              ((uint64_t(user.dwHighDateTime) << 32) | user.dwLowDateTime)) * 100;
-#else
-    struct timespec cpu;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu);
-    cpu_ns = uint64_t(cpu.tv_sec) * 1000000000 + cpu.tv_nsec;
-#endif
-    if (cpu_frame_ns_) nv2a_frame_cpu_time((cpu_ns - cpu_frame_ns_) / 1e6);
-    cpu_frame_ns_ = cpu_ns;
-    gpu_pending_ms_[slot_] = gpu_partial_ms_;
-    gpu_partial_ms_ = 0;
     d_.vkEndCommandBuffer(cmd_);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
@@ -1045,8 +1002,6 @@ void VulkanBackend::EndFrame() {
         d_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
         submitted_[slot_] = false;
         VisResults(slot_);
-        double ms = TimeResult(slot_);
-        nv2a_frame_gpu_time(ms < 0 ? -1 : gpu_pending_ms_[slot_] + ms);
     }
     d_.vkResetCommandBuffer(cmd_, 0);
     ring_pos_ = 0;
@@ -1068,8 +1023,21 @@ void VulkanBackend::EndFrame() {
             uint64_t bytes = 0;
             for (const auto& t : textures_)
                 bytes += uint64_t(t.second.img.w) * t.second.img.h * 4 * (t.second.gen == 1 ? 4 : 3) / 3;
-            std::fprintf(stderr, "[TEXSTATS] frame %u: %zu textures, ~%llu MB, %zu evicted\n", frame_, textures_.size(),
-                         (unsigned long long)(bytes >> 20), gone);
+            uint64_t tbytes = 0;   // the render targets: kept by guest address (EnsureTarget)
+            for (const auto& t : targets_)
+                tbytes += uint64_t(t.second.img.w) * t.second.img.h * 4 * std::max<uint32_t>(t.second.samples, 1);
+            std::fprintf(stderr, "[TEXSTATS] frame %u: %zu textures, ~%llu MB, %zu evicted; %zu targets, ~%llu MB\n", frame_,
+                         textures_.size(), (unsigned long long)(bytes >> 20), gone, targets_.size(),
+                         (unsigned long long)(tbytes >> 20));
+            VmaBudget bud[VK_MAX_MEMORY_HEAPS];
+            vmaGetHeapBudgets(vma_, bud);
+            VmaTotalStatistics ts;
+            vmaCalculateStatistics(vma_, &ts);
+            std::fprintf(stderr, "[TEXSTATS] heap0 usage %llu MB budget %llu MB; vma blocks %u allocs %u, %llu MB in blocks %llu MB used\n",
+                         (unsigned long long)(bud[0].usage >> 20), (unsigned long long)(bud[0].budget >> 20),
+                         ts.total.statistics.blockCount, ts.total.statistics.allocationCount,
+                         (unsigned long long)(ts.total.statistics.blockBytes >> 20),
+                         (unsigned long long)(ts.total.statistics.allocationBytes >> 20));
         }
     }
     Begin();
@@ -1116,19 +1084,22 @@ float SectionSlope() {   // NGB_D3D_SECTION_SLOPE=f: console pixels' worth of de
     static const float f = std::getenv("NGB_D3D_SECTION_SLOPE") ? float(std::atof(std::getenv("NGB_D3D_SECTION_SLOPE"))) : 0.5f;
     return f;
 }
-// the loaded chunk whose data holds the guest address a (its data address), or 0
-uint32_t ChunkDataOf(uint32_t a) {
-    uint32_t best = 0;
+// the drawbridge towers' chunk as loaded ("KMD", its size 0x4FF470 at +0xC), as a range: its data to the next loaded
+// chunk's (or the end of memory), 0..0 when not loaded -- a draw's vertex buffer header in it (the loaded chunk whose
+// data holds it) for every draw, from one read of the table a frame
+void TowersRange(uint32_t& lo, uint32_t& hi) {
+    lo = hi = 0;
     for (uint32_t i = 0; i < kChunkSlots; i++) {
         uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
-        if (kernel::R32(e + 4) == 1 && base <= a && base > best) best = base;
+        if (kernel::R32(e + 4) == 1 && base && kernel::R32(base) == 0x00444D4B && kernel::R32(base + 0xC) == 0x004FF470)
+            lo = base;
     }
-    return best;
-}
-// whether the guest address a is in the drawbridge towers' chunk
-bool InTowersChunk(uint32_t a) {
-    uint32_t base = ChunkDataOf(a);
-    return base && kernel::R32(base) == 0x00444D4B && kernel::R32(base + 0xC) == 0x004FF470;   // "KMD", its size
+    if (!lo) return;
+    hi = 0xFFFFFFFFu;
+    for (uint32_t i = 0; i < kChunkSlots; i++) {
+        uint32_t e = kChunkTable - 4 + i * kChunkSlot, base = kernel::R32(e);
+        if (kernel::R32(e + 4) == 1 && base > lo && base < hi) hi = base;
+    }
 }
 // the chunk slot of the map piece being drawn, or ~0u
 uint32_t DrawChunkSlot() {
@@ -1165,8 +1136,15 @@ void VulkanBackend::QuadSnap(const State& s, const Assembled& a, uint32_t count,
         x0 = std::min(x0, xy[v][0]); x1 = std::max(x1, xy[v][0]);
         y0 = std::min(y0, xy[v][1]); y1 = std::max(y1, xy[v][1]);
     }
-    for (int v = 0; v < 4; v++)   // axis-aligned: every corner on the box
-        if (!((xy[v][0] == x0 || xy[v][0] == x1) && (xy[v][1] == y0 || xy[v][1] == y1))) return;
+    // axis-aligned: every corner on the box, within a hundredth of a pixel (the pause menu's dagger has a corner at
+    // 181.4999 beside 181.5, and its body was left out, #83); each corner taken as the box's
+    constexpr float kEps = 0.01f;
+    auto on = [](float a, float b) { return std::abs(a - b) <= kEps; };
+    for (int v = 0; v < 4; v++) {
+        if (!((on(xy[v][0], x0) || on(xy[v][0], x1)) && (on(xy[v][1], y0) || on(xy[v][1], y1)))) return;
+        xy[v][0] = on(xy[v][0], x0) ? x0 : x1;
+        xy[v][1] = on(xy[v][1], y0) ? y0 : y1;
+    }
     if (x1 - x0 < 1.0f || y1 - y0 < 1.0f) return;
     // the corners at (x0,y0), (x1,y0), (x0,y1)
     int c00 = -1, c10 = -1, c01 = -1;
@@ -1352,6 +1330,7 @@ Target* VulkanBackend::MakeTarget(const Surface&, bool depth, uint64_t key, uint
     t.gw = w;
     t.gh = h;
     t.samples = samples;
+    t.addr = uint32_t(key >> 1);
     VkImageUsageFlags u = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                           (depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
     if (!CreateImage(t.img, depth ? ds_format_ : kColorFormat, iw, ih, 1, 1, depth, false, u)) return nullptr;
@@ -1446,12 +1425,14 @@ void VulkanBackend::VisResults(int slot) {
         auto it = vis_sum_.find(e.first);
         uint32_t count = it == vis_sum_.end() ? 0 : uint32_t(std::lround(it->second));
         if (it != vis_sum_.end()) vis_sum_.erase(it);
+        // the title's thread reads the slot meanwhile (with the render thread, frames later than it ended the
+        // test): the count and the end word first, the stamp that says the report is in last, in one store
         uint8_t* p = static_cast<uint8_t*>(HostPtr(e.second));
         uint64_t stamp = 0x0011223344556677ull;
         uint32_t done = 0;
-        std::memcpy(p, &stamp, 8);
         std::memcpy(p + 8, &count, 4);
         std::memcpy(p + 12, &done, 4);
+        __atomic_store_n(reinterpret_cast<uint64_t*>(p), stamp, __ATOMIC_RELEASE);
         static const bool log = std::getenv("NGB_VIS_LOG") != nullptr;
         if (log) std::fprintf(stderr, "[VIS] test %u: %u pixels -> %08X\n", e.first, count, e.second);
     }
@@ -1704,6 +1685,14 @@ void VulkanBackend::EndRendering() {
     rendering_ = false;
 }
 
+// The CPU's writes to the start of a target's memory, counted (nv2a_dirty_stamp): the GPU draws only into the
+// images here, never into guest memory, so a change since the last pass into it is the game putting something
+// else there -- a texture loaded where a target was, and that target left behind is stale (#81)
+bool VulkanBackend::TargetStamp(const Target& t, uint64_t& stamp) {
+    size_t len = std::min<size_t>(size_t(t.gw) * t.gh * 2, 64 << 10);
+    return len && nv2a_dirty_stamp(HostPtr(t.addr | 0x80000000u), len, &stamp) != 0;
+}
+
 void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     // a colour and a depth target of different sizes cannot share a pass (one scaled, one not):
     // the depth goes without, as the title's picture is in the colour
@@ -1753,6 +1742,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
             ca.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
         rt->drawn = true;
+        StampTarget(*rt);
     }
     if (ds) {
         da.imageView = ds->img.view;
@@ -1767,6 +1757,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
             da.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         }
         ds->drawn = true;
+        StampTarget(*ds);
     }
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     const Image& any = rt ? rt->img : ds->img;
@@ -1782,6 +1773,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
 
 void VulkanBackend::Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color,
                           float z, uint32_t stencil) {
+    if (!pk_given_) CapturePeek(s, pk_);
     if (ContinuousGlowEnabled() && (flags & kClearTarget)) InvalidateContinuousGlow(s.rt.data);
     Target* rt = (flags & kClearTarget) ? EnsureTarget(s.rt, false) : nullptr;
     Target* ds = (flags & (kClearZ | kClearStencil)) ? EnsureTarget(s.zs, true) : nullptr;
@@ -1848,7 +1840,27 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     // A bump map (V8U8: nothing renders into that) or a mip chain is never a target: the game has put a
     // texture where it once drew, and the target left behind is not it (#16: the pond's ripple maps,
     // read as the target that memory had held, a picture of something else).
-    bool never_target = d.format == 0x28 || d.format == 0x17 || d.levels > 1;
+    // DXT and P8 are never drawn into either (#81: DXT backdrops read as the target once there, black).
+    bool never_target = d.format == 0x28 || d.format == 0x17 || d.levels > 1 || fi.compressed || d.format == 0x0B;
+    // And a target whose memory the CPU has written since it was last drawn into holds a texture now (#81):
+    // the target goes, and the texture is read from memory.
+    static const bool keep_stale = std::getenv("NGB_D3D_KEEP_STALE_TARGETS") != nullptr;
+    if (tit != targets_.end() && !keep_stale && tit->second.stamped && &tit->second != draw_rt_ &&
+        &tit->second != bound_rt_ && &tit->second != bound_ds_) {
+        uint64_t now;
+        if (TargetStamp(tit->second, now) && now != tit->second.stamp) {
+            Target& t = tit->second;
+            static int told;
+            if (told < 32 && ++told)
+                std::fprintf(stderr, "[D3D] target @%08X %ux%u: memory rewritten since drawn, read as texture fmt %X %ux%u\n",
+                             t.addr, t.gw, t.gh, d.format, d.width, d.height);
+            Retire(t.img);
+            if (t.ms.image) Retire(t.ms);
+            if (t.fb.image) Retire(t.fb);
+            targets_.erase(tit);
+            tit = targets_.end();
+        }
+    }
     if (tit != targets_.end() && !d.cube && d.depth == 1 && never_target) {
         static std::set<uint32_t> told;
         if (told.size() < 32 && told.insert(d.data).second)
@@ -1942,7 +1954,7 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     const uint32_t* palette = nullptr;
     if (d.format == 0x0B && s.palettes[size_t(stage)]) {
         uint32_t pal = s.palettes[size_t(stage)];
-        palette = static_cast<const uint32_t*>(HostPtr(mem::ResourceData(pal)));
+        palette = static_cast<const uint32_t*>(HostPtr(ResourceDataOf(pal)));
         sig = Hash(palette, 1024, sig);
     }
     uint64_t key = uint64_t(d.data) << 8 | d.format;
@@ -1974,10 +1986,13 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
     if (tx.img.image) Retire(tx.img);   // made again: the old one goes when no frame in flight uses it
     uint32_t faces = d.cube ? 6 : 1;
     VkFormat fmt = TextureFormat(fi.host);
+    bool decode_bc = bc && !bc_;
+    if (decode_bc) fmt = kColorFormat;
     uint32_t levels = d.levels;
     std::vector<uint8_t> top;
     tx.gen = 0;
-    if (std::getenv("NGB_D3D_MIPLOG")) {   // debugging: which textures have one level, and their format
+    static const bool miplog = std::getenv("NGB_D3D_MIPLOG") != nullptr;
+    if (miplog) {   // debugging: which textures have one level, and their format
         static int n;
         if (d.levels == 1 && !d.cube && n < 300) {
             n++;
@@ -2032,7 +2047,14 @@ VkImageView VulkanBackend::BindTexture(const State& s, int stage, TexInfo& info,
         for (uint32_t l = 0; l < d.levels; l++) {
             uint32_t pitch = 0;
             if (tx.gen == 1) out = top;   // the top level as decoded above (BGRA)
-            else DecodeLevel(d, l, f, guest, palette, out, pitch);
+            else {
+                DecodeLevel(d, l, f, guest, palette, out, pitch);
+                if (decode_bc && !out.empty()) {
+                    std::vector<uint8_t> raw;
+                    raw.swap(out);
+                    DecodeBC(fi.host, raw.data(), std::max(d.width >> l, 1u), std::max(d.height >> l, 1u), out);
+                }
+            }
             if (out.empty()) continue;
             if (bump_src && l == 0 && f == 0 && bumpcheck_) tx.check = out;
             if (bump_src && f == 0 && (l == 0 || std::getenv("NGB_D3D_BUMPLOG"))) {   // a bump map's first upload: its values, in the log (#16: they differ by machine)
@@ -2210,7 +2232,7 @@ VkShaderModule VulkanBackend::Module(uint64_t key, const std::function<std::stri
     // Left to the compiler thread only when it is new: a module whose SPIR-V an earlier session kept is
     // made at once (no glslang, just vkCreateShaderModule). Deferred, the draw was left out until the
     // prewarm thread got to it -- walls and effects flickering for a while after every launch (#21).
-    if (async_now_ && !SpirvKnown(hlsl, vertex)) {
+    if (Defer() && !SpirvKnown(hlsl, vertex)) {
         std::lock_guard<std::mutex> g(job_mu_);
         if (!pending_mods_.count(key) && std::getenv("NGB_D3D_HITCHLOG")) {   // NGB_D3D_HITCHLOG: what is left to the compiler thread
             static int n;
@@ -2306,8 +2328,9 @@ VkPipeline VulkanBackend::Pipeline(const PipeKey& k) {
         known = known_pipes_.count(k) != 0;
     }
     // The same for a pipeline: one the seed or an earlier session made is made at once (the driver's
-    // cache has it); only a new one waits for the compiler thread, its draw left out meanwhile.
-    if (async_now_ && !known) {
+    // cache has it); a new one too while the frame's budget lasts, past it the compiler thread's, its draw
+    // left out meanwhile.
+    if (Defer() && !known) {
         std::lock_guard<std::mutex> g(job_mu_);
         if (!pending_pipes_.count(k) && std::getenv("NGB_D3D_HITCHLOG")) {   // NGB_D3D_HITCHLOG: what is left to the compiler thread
             static int n;
@@ -2490,7 +2513,49 @@ void Transpose(const float* m, float* o) {
 
 #include "spark_aspect.h"
 
+void VulkanBackend::CapturePeek(const State& s, Peek& p) {
+    if (towers_frame_ != peek_frames_) {   // the chunk table once a frame (it changes as an area loads)
+        towers_frame_ = peek_frames_;
+        TowersRange(towers_lo_, towers_hi_);
+    }
+    p.draw_node = g_draw_node;
+    p.chunk_slot = int32_t(DrawChunkSlot());
+    uint32_t vb = s.streams[0].vb;
+    p.towers = vb && vb >= towers_lo_ && vb < towers_hi_;
+    p.stretched = uint8_t(ngb_2d_stretched());
+    p.screen = uint8_t(ngb_2d_screen_flags());
+    p.hud_shape = ngb_hud_shape();
+}
+
+void VulkanBackend::CaptureQuick(QuickPeek& q) {
+    peek_frames_++;
+    q.fps = nv2a_present_show_fps();
+    q.fps_px.clear();
+    if (q.fps) {
+        static unsigned serial;   // (the title's thread: one recording at a time)
+        static std::vector<uint32_t> px(size_t(kFpsWidth) * kFpsHeight);
+        int w, h;
+        if (ngb_fps_picture(px.data(), px.size(), &w, &h, &serial)) {   // into the corner of a clear picture
+            q.fps_px.assign(px.size(), 0);
+            q.fps_lettered = w > 0;
+            for (int y = 0; y < h && y < kFpsHeight; y++)
+                std::memcpy(&q.fps_px[size_t(y) * kFpsWidth], &px[size_t(y) * w], sizeof(uint32_t) * std::min(w, kFpsWidth));
+        }
+    }
+    q.percent = ngb_pc_setting(20);
+    q.frozen = 0;
+    q.layer.clear();
+    if (!q.percent) return;
+    q.layer.resize(size_t(NGB_QUICK_WIDTH) * NGB_QUICK_HEIGHT);
+    if (!ngb_quick_layer(q.layer.data())) {   // (its input steps here, once a frame)
+        q.layer.clear();
+        return;
+    }
+    q.frozen = ngb_quick_frozen();
+}
+
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
+    if (!pk_given_) CapturePeek(s, pk_);
     st_.draws++;
     if (!Assemble(s, prim, start, count, indices, asm_)) { st_.noasm++; return; }
     ClassifyGlowTarget(s,asm_,count);
@@ -2508,7 +2573,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         SparkEndpoints(s,prim,count,asm_,spark_ends)) {
         // Match the original hardware line-width clamp at this actual target scale.
         float scale=float(rt->img.w)/float(rt->gw);
-        float width=wide_lines_?std::clamp(Bits(s.rs[kRsLineWidth])*scale,1.0f,line_max_)/scale:1.0f/scale;
+        float width=wide_lines_?std::clamp(Bits(s.rs[kRsLineWidth])*scale*SparkWidth(),1.0f,line_max_)/scale:1.0f/scale;
         spark_quad=ExpandSpark(s,spark_ends,float(SparkAspect()/(16.0/9.0)),width,spark_vertices,spark_assembled);
     }
     Assembled& a=spark_quad?spark_assembled:asm_;
@@ -2600,7 +2665,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     for (int i = 0; i < 4 && quad; i++)   // a screen quad's linearly filtered textures (QuadSnap's alpha weighting)
         if (info[i].kind == kTex2D && !info[i].shadow && (s.tss[size_t(i)][kTssMagFilter] >= 2 || aniso_level_ > 0))
             info[i].flags |= kTexLinear;
-    if ((info[0].flags & kTexSigned) && std::getenv("NGB_D3D_BUMPLOG")) {   // the water's stage 0 sampling (#16)
+    static const bool bumplog = std::getenv("NGB_D3D_BUMPLOG") != nullptr;
+    if ((info[0].flags & kTexSigned) && bumplog) {   // the water's stage 0 sampling (#16)
         static int n;
         if (n++ < 6) {
             const auto& t = s.tss[0];
@@ -2749,7 +2815,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (SectionPull() > 0 && a.topology == Topology::Triangles && k.zen && k.has_ds) {   // a pull of 0 turns it off
             // by the vertex buffer (its header in the towers' chunk), not the texture: every pass over the same mesh -- the
             // depth pre-pass, untextured, and Ryu's shadow laid over it -- then moves with it, or the shadow breaks up
-            if (s.streams[0].vb && InTowersChunk(s.streams[0].vb)) {
+            if (pk_.towers) {
                 k.has_ds |= kDsDynamicBias;   // the pull set at the draw: any setting without a pipeline of its own
                 {
                     // mostly by the surface's depth slope: the ties of two meshes in one plane come from rounding in
@@ -2764,6 +2830,20 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     section_pulled_++;
                 }
             }
+        }
+        // Ryu's shadow laid over what is already drawn (a pass sampling a shadow map, depth tested, not written): the
+        // same surface again by another vertex path, so its depth ties with the first pass's and the ties grow with
+        // the depth slope in pixels -- from 4x up the shadow on a wall broke up and flickered as he hung from a
+        // ledge (#106). Pulled as the towers' pieces are, by half a console pixel's worth of slope.
+        static const bool shadow_pull = [] { const char* e = std::getenv("NGB_D3D_SHADOW_PULL"); return !e || *e != '0'; }();
+        bool receiver = false;
+        for (int i = 0; i < 4; i++) receiver |= from_target[i] && info[i].shadow != 0;
+        if (shadow_pull && receiver && !(k.has_ds & kDsDynamicBias) && a.topology == Topology::Triangles && k.zen &&
+            !k.zwrite && k.has_ds) {
+            k.has_ds |= kDsDynamicBias;
+            float scale = rt ? float(rt->img.w) / float(std::max<uint32_t>(rt->gw, 1)) : 1.0f;
+            pull_slope = -SectionSlope() * std::max(scale, 1.0f);
+            pull_steps = -SectionPull();
         }
     }
     // the console culls the CULLMODE winding (D3DCULL_CW 0x900, CCW 0x901); FRONTFACE says which
@@ -2877,7 +2957,13 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         if (s.textures[size_t(i)] && Describe(s.textures[size_t(i)], d)) {
             c.texsize[i][0] = float(d.width);
             c.texsize[i][1] = float(d.height);
-            if (from_target[i]) {
+            // A depth target read as a shadow map: half a texel up and left. A colour target is read as drawn: the
+            // game's copies of it (the pause menu's picture of the game behind it, 720x480 to 512x512 and back)
+            // are drawn from -0.5 and land texel on pixel; half a texel more at each step moved the picture a
+            // console pixel right and down as a menu opened (#99).
+            static const bool rt_half = std::getenv("NGB_D3D_RT_HALF_TEXEL") != nullptr;   // the old way, to compare
+            static const bool sh_half = [] { const char* e = std::getenv("NGB_D3D_SHADOW_HALF_TEXEL"); return !e || *e != '0'; }();
+            if (from_target[i] && ((info[i].shadow && sh_half) || rt_half)) {
                 c.texsize[i][2] = -0.5f / float(d.width);
                 c.texsize[i][3] = -0.5f / float(d.height);
             }
@@ -2933,7 +3019,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         }
     }
     if (a.pretransformed && rt && rt->gw >= 640) {
-        float k = ngb_hud_shape();
+        float k = pk_.hud_shape;
         const VertexElement& pe = a.elements[0];
         if ((a.regs & 1) && pe.format == 2 && pe.buffer < a.buffer_count && a.buffers[pe.buffer].src) {
             const VertexBuffer& vb = a.buffers[pe.buffer];
@@ -3023,7 +3109,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     }
                 }
             }
-            if (ngb_2d_stretched()) {
+            if (pk_.stretched) {
                 // The game's 2D in its widescreen mode, the console's 16:9 look, kept 16:9: on a wider screen
                 // (21:9) narrowed to the middle 16:9 (kx), on a narrower one (16:10) shortened to it (ky);
                 // a 2D screen (menus, the title, chapter cards) whole, clipped there; in play the HUD's
@@ -3033,12 +3119,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 // in play, a screen effect -- the water's surface seen from under it, a flash, a vignette, a
                 // distortion reading the frame (a render target) -- fills the screen as drawn: anything
                 // covering most of the screen, or reading a render target, is the 3D's, not the HUD's
-                if (!ngb_2d_screen_frame(int(threed_)) && (rt_tex || (x1 - x0 >= w * 0.85f && y1 - y0 >= h * 0.75f))) spans = true;
+                if (!ScreenFrame(threed_) && (rt_tex || (x1 - x0 >= w * 0.85f && y1 - y0 >= h * 0.75f))) spans = true;
                 static int centred = -1;
                 if (centred < 0) centred = std::getenv("NGB_HUD_CENTER") != nullptr;
                 if (n && ky < 0.999f && !paused && !spans) {
                     float ax = w / 2, ay = h / 2;
-                    if (!ngb_2d_screen_frame(int(threed_)) && !centred) {
+                    if (!ScreenFrame(threed_) && !centred) {
                         HudPlace(x0, x1, y0, y1, w, h, ax, ay);
                         if (x1 - x0 < w * 0.89f && y1 - y0 < h * 0.9f && hud_boxes_.size() < 2048)
                             hud_boxes_.push_back({x0, x1, y0, y1, st_.drawn});
@@ -3056,7 +3142,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     c.ext[1] = w / 2;
                     // In play the HUD's elements to the screen's sides (HudPlace). NGB_HUD_CENTER=1: all about
                     // the middle.
-                    if (!centred && !ngb_2d_screen_frame(int(threed_))) {
+                    if (!centred && !ScreenFrame(threed_)) {
                         float ax = w / 2, ay = h / 2;
                         HudPlace(x0, x1, y0, y1, w, h, ax, ay);
                         c.ext[1] = ax;
@@ -3069,7 +3155,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                     }
                 }
             } else if (n && k < 0.999f && !paused &&
-                       (ngb_2d_screen_frame(int(threed_)) || ((hud_menu_ || hud_cover_ >= 0.5f) && threed_ < 30))) {
+                       (ScreenFrame(threed_) || ((hud_menu_ || hud_cover_ >= 0.5f) && threed_ < 30))) {
                 // A 2D screen in the game's 4:3 mode (Menus 4:3; or the first frame of one, before the game
                 // switches): the console's 4:3 picture, all of it narrowed alike about the middle and clipped
                 // there, black beyond (its pieces -- tiles, scrolling layers reaching off the screen -- only
@@ -3133,9 +3219,9 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                          SimpleState(s, kMZFunc));
             for (int k2 = 0; k2 < g_draw_stack_n; k2++) std::fprintf(vf, " %08X", g_draw_stack[k2]);
             std::fprintf(vf, "\n");
-            if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000) {
-                std::fprintf(vf, "node %08X", g_draw_node);
-                for (uint32_t o = 0; o < 0x60; o += 4) std::fprintf(vf, " %08X", kernel::R32(g_draw_node + o));
+            if (pk_.draw_node >= 0x10000 && pk_.draw_node < 0x4000000) {
+                std::fprintf(vf, "node %08X", pk_.draw_node);
+                for (uint32_t o = 0; o < 0x60; o += 4) std::fprintf(vf, " %08X", kernel::R32(pk_.draw_node + o));
                 std::fprintf(vf, "\n");
             }
             for (int m : {256, 2, 3}) {
@@ -3227,24 +3313,24 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                 id_file_frame_ = presents_ + 1;
             }
             if (id_file_) {
-                std::fprintf(id_file_, "%u piece %08X chunk %d tex %08X n %u", n, g_draw_node, int(DrawChunkSlot()),
+                std::fprintf(id_file_, "%u piece %08X chunk %d tex %08X n %u", n, pk_.draw_node, pk_.chunk_slot,
                              s.textures[0], count);
-                if (g_draw_node >= 0x10000 && g_draw_node < 0x4000000)
-                    for (uint32_t o = 0; o < 0x20; o += 4) std::fprintf(id_file_, " %08X", kernel::R32(g_draw_node + o));
+                if (pk_.draw_node >= 0x10000 && pk_.draw_node < 0x4000000)
+                    for (uint32_t o = 0; o < 0x20; o += 4) std::fprintf(id_file_, " %08X", kernel::R32(pk_.draw_node + o));
                 std::fprintf(id_file_, "\n");
             }
         }
     } else if (IdView() && id_opaque) {
         // NGB_D3D_IDVIEW: one of 24 hues by the map piece and texture (or the draw's vertex buffer), the same every
         // frame; the legend, each colour's draws, goes to the log every 5 s
-        uint32_t piece = g_draw_node, tex = s.textures[0];
+        uint32_t piece = pk_.draw_node, tex = s.textures[0];
         uint32_t key = piece ? piece * 2654435761u ^ tex * 40503u : uint32_t(s.streams[0].vb) * 2654435761u ^ tex;
         uint32_t idx = (key >> 7) % 24;
         c.qsnap[2] = float(idx + 1);
         static std::map<uint32_t, std::string> legend;
         static uint32_t last = 0;
         char line[160];
-        std::snprintf(line, sizeof line, "piece %08X chunk %d tex %08X n %u", piece, int(DrawChunkSlot()), tex, count);
+        std::snprintf(line, sizeof line, "piece %08X chunk %d tex %08X n %u", piece, pk_.chunk_slot, tex, count);
         std::string& e = legend[idx];
         if (e.find(line) == std::string::npos && e.size() < 600) e += std::string(e.empty() ? "" : "; ") + line;
         if (presents_ - last >= 300) {
@@ -3356,8 +3442,10 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     d_.vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, SimpleState(s, kMStencilRef) & 0xFF);
     if (k.has_ds & kDsDynamicBias)
         d_.vkCmdSetDepthBias(cmd_, float(k.zbias + pull_steps), 0.0f, k.zslope + pull_slope);
-    if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale
-        d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx, 1.0f, line_max_) : 1.0f);
+    if (Lines(k))   // D3DRS_LINEWIDTH, in the game's pixels: at the target's scale (the streaks' NGB_SPARK_WIDTH)
+        d_.vkCmdSetLineWidth(cmd_, wide_lines_ ? std::clamp(Bits(s.rs[kRsLineWidth]) * sx *
+                                                            (Bits(s.rs[kRsLineWidth]) > 1.0f ? SparkWidth() : 1.0f),
+                                                            1.0f, line_max_) : 1.0f);
 
     VkBuffer bufs[16];
     for (uint32_t b = 0; b < a.buffer_count; b++) bufs[b] = ring_;
@@ -3394,7 +3482,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                      "rt %08X %ux%u tex0 %08X @%08X %X %ux%u%s tex1 %08X %X tss0 %u %u %u %u|%u %u %u tss1 %u %u %u|%u "
                      "tf %08X modes %08X vs %08X ext %.2f fog %u mode %u col %08X %g..%g d0 %08X signed %u%u%u%u uv %s "
                      "shaders %016llx %016llx light %X spec %g %g %g pow %g csign %X %X %X %X lw %08X "
-                     "pt %u %u %g %g %g %u %g %g %g regs %X\n",
+                     "pt %u %u %g %g %g %u %g %g %g regs %X stk %08X %08X %08X %08X\n",
                      presents_, st_.drawn, prim, count, a.pretransformed, prog, s.ps ? s.ps->handle : 0, k.blend, k.src,
                      k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten, s.rt.data, rt ? rt->gw : 0, rt ? rt->gh : 0,
                      s.textures[0], h0 ? t0d.data : 0, h0 ? t0d.format : 0, h0 ? t0d.width : 0, h0 ? t0d.height : 0,
@@ -3438,7 +3526,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
                      // vertex's attributes (bit 9: texture coordinates 0; #51)
                      s.rs[kRsPointSpriteEnable], s.rs[kRsPointScaleEnable], Bits(s.rs[kRsPointSize]),
                      Bits(s.rs[kRsPointSizeMin]), Bits(s.rs[kRsPointSizeMax]), prim == 1 ? 1u : 0u,
-                     Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), a.regs);
+                     Bits(s.rs[kRsPointScaleA]), Bits(s.rs[kRsPointScaleB]), Bits(s.rs[kRsPointScaleC]), a.regs, g_draw_stack_n>0?g_draw_stack[0]:0, g_draw_stack_n>1?g_draw_stack[1]:0, g_draw_stack_n>2?g_draw_stack[2]:0, g_draw_stack_n>3?g_draw_stack[3]:0);
     }
     if (int(presents_) == g_step_frame)
         std::fprintf(stderr, "[STEP] %u prim %u count %u pre %d prog %d ps %08X blend %u %X %X op %X wmask %X zen %u "
@@ -3453,7 +3541,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
             char name[64];
             std::snprintf(name, sizeof(name), "step_%05u_%04u_tex0", presents_, st_.drawn);
             const uint32_t* pal = d0.format == 0x0B && s.palettes[0]
-                ? static_cast<const uint32_t*>(HostPtr(mem::ResourceData(s.palettes[0]))) : nullptr;
+                ? static_cast<const uint32_t*>(HostPtr(ResourceDataOf(s.palettes[0]))) : nullptr;
             DumpTexture(d0, Format(d0.format), static_cast<const uint8_t*>(HostPtr(d0.data)), pal, dump_dir_.c_str(), name);
         }
         std::fprintf(stderr, "       rt format %08X zs format %08X tfactor %08X\n", s.rt.format, s.zs.format, s.rs[kRsTextureFactor]);
@@ -3513,7 +3601,8 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     }
 }
 
-void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects, uint32_t dst_points) {
+void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count, const uint8_t* src_rects,
+                         const uint8_t* dst_points) {
     if (ContinuousGlowEnabled()) InvalidateContinuousGlow(dst.data);
     Target* a = EnsureTarget(src, false);
     Target* b = EnsureTarget(dst, false);
@@ -3535,10 +3624,12 @@ void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count,
     };
     if (count && src_rects) {
         for (uint32_t i = 0; i < count; i++) {
-            int x0 = int(kernel::R32(src_rects + i * 16)), y0 = int(kernel::R32(src_rects + i * 16 + 4));
-            int x1 = int(kernel::R32(src_rects + i * 16 + 8)), y1 = int(kernel::R32(src_rects + i * 16 + 12));
-            int dx = dst_points ? int(kernel::R32(dst_points + i * 8)) : x0;
-            int dy = dst_points ? int(kernel::R32(dst_points + i * 8 + 4)) : y0;
+            int32_t r[4], p[2];
+            std::memcpy(r, src_rects + i * 16, 16);
+            if (dst_points) std::memcpy(p, dst_points + i * 8, 8);
+            int x0 = r[0], y0 = r[1], x1 = r[2], y1 = r[3];
+            int dx = dst_points ? p[0] : x0;
+            int dy = dst_points ? p[1] : y0;
             add(x0, y0, x1, y1, dx, dy);
         }
     } else {
@@ -3838,10 +3929,16 @@ void VulkanBackend::TraceFrame(Target& t) {
 }
 
 void VulkanBackend::Present(const Surface& front) {
+    if (!pk_given_) {
+        static const State none;
+        CapturePeek(none, pk_);
+        CaptureQuick(qk_);
+    }
     presents_++;
     id_count_ = 0;
     if (id_file_) std::fflush(id_file_);
-    if (SectionPull() > 0 && std::getenv("NGB_D3D_SECTION_LOG") && presents_ % 120 == 0)
+    static const bool section_log = std::getenv("NGB_D3D_SECTION_LOG") != nullptr;
+    if (SectionPull() > 0 && section_log && presents_ % 120 == 0)
         std::fprintf(stderr, "[SECTION] %u draws pulled\n", section_pulled_);
     section_pulled_ = 0;
     {   // NGB_TRACE_FILE=<file>: its appearing starts a recording too (headless tests)
@@ -3930,11 +4027,11 @@ void VulkanBackend::Present(const Surface& front) {
             static int mode_log = std::getenv("NGB_MODE_LOG") ? std::atoi(std::getenv("NGB_MODE_LOG")) : 0;
             if (mode_log && (mode_log > 1 || presents_ % 30 == 0))
                 std::fprintf(stderr, "[MODE] %u stretched %d screen %d 3d %u (off-screen %u) draws %d paused %d cover %.2f\n",
-                             presents_, ngb_2d_stretched(), ngb_2d_screen_frame(int(threed_)), threed_, offscreen3d_,
+                             presents_, pk_.stretched, ScreenFrame(threed_), threed_, offscreen3d_,
                              ngb_frame_draws, paused_now_, paused_cover_);
             float bars = 0, bars_y = 0;
-            if (ngb_2d_stretched() && ngb_2d_screen_frame(int(threed_)) && t->gw >= 640) {   // (not in play: 3D the screen's shape)
-                float km = ngb_hud_shape() * 4.0f / 3.0f, ky = 0.75f / ngb_hud_shape();
+            if (pk_.stretched && ScreenFrame(threed_) && t->gw >= 640) {   // (not in play: 3D the screen's shape)
+                float km = pk_.hud_shape * 4.0f / 3.0f, ky = 0.75f / pk_.hud_shape;
                 if (km < 0.999f) bars = (1 - km) / 2;
                 if (ky < 0.999f) bars_y = (1 - ky) / 2;
                 // a menu drawn over the paused game (the save statue's) shows the game around it; the menus with
@@ -3970,6 +4067,11 @@ void VulkanBackend::Present(const Surface& front) {
         }
     }
     if (show) QuickMenu(*show);
+    if (!qk_.fps_px.empty()) {
+        fps_pending_.swap(qk_.fps_px);
+        fps_lettered_ = qk_.fps_lettered;
+    }
+    if (show) FpsCounter(*show);
     hud_menu_ = hud_cover_ >= 0.5f && threed_ < 30;
     for (int g = 0; g < 4; g++) {
         gauge_prev_[g][0] = g < gauges_now_ ? gauge_x_[g][0] : 1e30f;
@@ -3984,6 +4086,7 @@ void VulkanBackend::Present(const Surface& front) {
     pic_tex_ = 0;
     pic_x1_ = -1;
     offscreen3d_ = 0;
+    __atomic_store_n(&ngb_frame_done_2d, ngb_frame_draws > 0 && ngb_frame_3d_draws < 30, __ATOMIC_RELAXED);
     ngb_frame_draws = ngb_frame_3d_draws = 0;
     hud_cover_ = 0;
     if (trace_) {
@@ -4160,6 +4263,7 @@ void VulkanBackend::CacheOpen() {
     if (const char* sr = std::getenv("NGB_D3D_SEED_RECORD")) seed_out_ = OpenAppend(sr);
     if (!std::getenv("NGB_D3D_NO_PREWARM")) prewarm_ = std::thread([this] { Prewarm(); });
     async_ = !std::getenv("NGB_D3D_SYNC_COMPILE");
+    if (const char* b = std::getenv("NGB_D3D_COMPILE_BUDGET_MS")) compile_budget_us_ = uint64_t(std::max(0.0, std::atof(b)) * 1000);
     if (async_) compiler_ = std::thread([this] { Compiler(); });
 }
 
