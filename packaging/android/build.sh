@@ -178,7 +178,12 @@ with zipfile.ZipFile(sys.argv[1], 'a', zipfile.ZIP_DEFLATED) as z:
             z.write(path, os.path.relpath(path, sys.argv[2]))
 PY
 "$tools/zipalign" -f -p 16 "$apk/base.apk" "$apk/aligned.apk"
-key=$deps/debug.keystore
+# The key this branch publishes with, kept in the tree so any machine (and any rebuild after a
+# wiped build/) signs an APK that upgrades over the one already installed. It is a shared test
+# key, not a secret -- see docs/ANDROID.md. Without it a scratch checkout still builds, but with a
+# key generated on the spot that no published APK will accept.
+key=$here/keystore/ngb-release.jks
+[ -f "$key" ] || key=$deps/debug.keystore
 [ -f "$key" ] || keytool -genkeypair -keystore "$key" -storepass android -keypass android -alias ngb \
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Ninja Gaiden Black debug" >/dev/null 2>&1
 "$apksigner" sign --ks "$key" --ks-pass pass:android --ks-key-alias ngb \

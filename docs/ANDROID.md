@@ -47,6 +47,15 @@ upgrade over local debug builds and anyone checking out the branch has to be abl
 rebuild it. It is a shared test key, not a secret — do not treat an APK as trusted
 because of it.
 
+The Gradle project above is the 0.2.0 app (`org.ngb.port`) and uses that key. The
+releases built by `packaging/android/build.sh` are a different application
+(`io.github.gamboozino.ngbrecomp`), signed with `packaging/android/keystore/ngb-release.jks`
+(alias `ngb`, password `android`, as above) — committed for the same reason: an APK built from
+any checkout has to upgrade over the one already installed, including after `build/` is
+wiped. Its certificate SHA-256 is `23:C2:2B:9A:…:63:A3:57`; if a build ever reports a
+different one, it is signing with a key generated on the spot and will not install over
+the published APK.
+
 ## Implementation progress
 
 The target is the user's Thor Android handheld; its exact OS and Vulkan driver
