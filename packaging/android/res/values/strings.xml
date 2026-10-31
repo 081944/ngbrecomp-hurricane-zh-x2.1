@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- What the launcher shows under the icon -->
+    <string name="app_name">忍者龙剑传黑之章</string>
+</resources>

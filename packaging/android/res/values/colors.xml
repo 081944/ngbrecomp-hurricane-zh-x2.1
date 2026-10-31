@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_bg">#121212</color>
+    <!-- The background the 0.2.0 icon was drawn on (that package's ic_launcher_background) -->
+    <color name="ic_launcher_bg">#FFFFFFFF</color>
 </resources>

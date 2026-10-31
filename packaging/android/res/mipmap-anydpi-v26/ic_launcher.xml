@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The AppImage's icon (packaging/appimage/ngb.png) as Android shapes it: the shuriken within the safe zone
-     over its own dark background -->
+<!-- The 0.2.0 package's icon, carried over unchanged: its foreground art over the white it was drawn on.
+     The pngs came from that APK's res/, at their original sizes for every density. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_bg" />
-    <foreground android:drawable="@mipmap/ic_launcher_fg" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>
