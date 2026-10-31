@@ -61,13 +61,14 @@ recompiled; its main-menu entry is not shown.
    extracted files. A disc image is installed once (about 6 GB) into `%LOCALAPPDATA%\ngb-hurricane-zh-x2.1`,
    or next to the program in portable mode (tick the box, or put a `portable.txt` beside the exe).
 
-Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers. Keys: F1 settings over the game,
+Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers (or older drivers that have its
+dynamic rendering and synchronization2 as extensions). Keys: F1 settings over the game,
 F10 frame-rate counter, F11 or Alt+Enter fullscreen. Saves are separate from Xbox / xemu saves. Its folders (`ngb-hurricane-zh-x2.1` under `%LOCALAPPDATA%` and `%APPDATA%`) are its own, so it can sit beside ngbrecomp's retail install.
 
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.45`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.46`.
 
 ## Changes from ngbrecomp
 

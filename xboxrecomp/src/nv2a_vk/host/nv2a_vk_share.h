@@ -19,9 +19,12 @@ typedef struct nv2a_vk_shared {
     VkDevice device;
     uint32_t queue_family;
     VkQueue queue;
-    /* Vulkan 1.3 with dynamic rendering and synchronization2 on, and
-     * VK_KHR_push_descriptor: what the Direct3D renderer needs. */
+    /* Vulkan 1.3's dynamic rendering and synchronization2 on (core, or their
+     * extensions on an older driver: the core names' functions are then the
+     * extensions'), and VK_KHR_push_descriptor: what the Direct3D renderer
+     * needs. */
     bool features13;
+    uint32_t api_version;   /* the version the device was made for (VMA's) */
 } nv2a_vk_shared;
 
 /* 1 and filled in once the device exists, 0 before, -1 when there is none

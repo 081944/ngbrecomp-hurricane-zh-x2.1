@@ -126,8 +126,9 @@ static void cheat_wrote(void)
  * bombs; arrows, explosive arrows, spears), +0x18 its category (7 the bow's ammunition: the APFSDS
  * Cores have 0 at +0x0C, #103), +0x0D its class (5 an item), +0x1D its effect (0x12
  * health, 0x13 ninpo, 0x16 the Jewel of the Demon Seal (a Ninpo upgraded, #52), 0x22 the Talisman of
- * Rebirth; not the jewels that raise the limits for good -- 0x14 Life of the Gods, 0x17 Lives of the
- * Thousand Gods (health), 0x15 Spirit of the Devils (Ki): Infinite Health and Ninpo are the cheats for those). */
+ * Rebirth, and the jewels that raise the limits for good -- 0x14 Life of the Gods, 0x17 Lives of the
+ * Thousand Gods (health), 0x15 Spirit of the Devils (Ki): the game itself stops their use at its highest
+ * limits (#52; left out until 0.9.46). */
 static uint32_t item_record(uint16_t item)
 {
     uint32_t base = MEM32(0xDB98E4), count = MEM32(0xDB5E24);
@@ -146,7 +147,7 @@ static int item_kept(uint16_t item)
     if (s_cheat[5] && (ammo == 1 || ammo == 3 || MEM16(r + 0x18) == 7))
         return 1;
     return s_cheat[4] && cls == 5 &&
-           (effect == 0x12 || effect == 0x13 || effect == 0x16 || effect == 0x22);
+           (effect == 0x12 || effect == 0x13 || (effect >= 0x14 && effect <= 0x17) || effect == 0x22);
 }
 
 static void item_count_change(void);

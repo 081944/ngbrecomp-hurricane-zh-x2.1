@@ -231,7 +231,8 @@ static const struct { uint32_t id; const char *text; } s_text[] = {
     { D_UNLOCKS,  "Difficulties, costumes and the main menu's extras, without earning them. Saved." },
     { T_INFITEMS, "Infinite Items" },
     { T_INFAMMO,  "Infinite Projectiles" },
-    { D_INFITEMS, "Healing items, the Talisman of Rebirth and the Jewel of the Demon Seal are not used up.\nFor this session only." },
+    { D_INFITEMS, "Healing items, the Talisman of Rebirth and the jewels (Demon Seal, Life of the Gods, Spirit of the Devils...)\n"
+                  "are not used up. For this session only." },   /* (as the pause page's, upstream 0.9.46) */
     { D_INFAMMO,  "Shuriken, smoke bombs, arrows and spears are not used up. For this session only." },
     { T_QUICKSCALE0 + 0, "150%" }, { T_QUICKSCALE0 + 1, "125%" },
     { T_QUICKSCALE0 + 2, "100%" }, { T_QUICKSCALE0 + 3, "75%" },

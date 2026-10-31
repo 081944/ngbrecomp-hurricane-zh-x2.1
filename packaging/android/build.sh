@@ -3,7 +3,8 @@
 #
 #   packaging/android/build.sh [out-dir]      (default build/android-release)
 #
-# Builds SDL2 and glslang with the NDK into build/android-deps (or NGB_ANDROID_DEPS) once, then the game as
+# Builds SDL2, glslang, libadrenotools and Turnip (Mesa's Vulkan driver for Adreno GPUs, from Mesa's source:
+# src/android_gpu.c) with the NDK into build/android-deps (or NGB_ANDROID_DEPS) once, then the game as
 # libmain.so, the library SDL's Java activity loads, and packs both with that activity into
 # <out-dir>/NinjaGaidenBlack-android-arm64.apk, signed with a debug key (build/android-deps/debug.keystore).
 # Like the other packages it holds no game data: the game files go into the app's folder on the phone
@@ -11,7 +12,8 @@
 # shim/glib-lite.
 #
 # Needs: the Android SDK (ANDROID_HOME, default ~/Android/Sdk) with an NDK, build-tools and a platform, a JDK,
-# cmake, ninja, curl, python3. The recompiled code must already be generated (tools/pipeline.sh).
+# cmake, ninja, curl, git, python3 (with venv: Mesa's build tools go into one there), bison, flex. The
+# recompiled code must already be generated (tools/pipeline.sh).
 set -euo pipefail
 trap 'echo "Failed: see the logs in ${out:-build/android-release} and ${deps:-build/android-deps}." >&2' ERR
 
@@ -27,6 +29,8 @@ abi=arm64-v8a
 api=29   # thread-local guest registers need the ELF TLS that Android 10 brought
 sdl=2.32.10
 glslang=16.0.0
+mesa=26.2.6
+adrenotools=8fae8ce   # (github.com/bylaws/libadrenotools)
 
 [ -f "$ndk/build/cmake/android.toolchain.cmake" ] || { echo "No Android NDK: set ANDROID_NDK_HOME." >&2; exit 1; }
 [ -x "$tools/aapt2" ] && [ -f "$platform/android.jar" ] ||
@@ -64,6 +68,63 @@ if [ ! -f "$prefix/lib/libglslang.a" ] ||
     cmake --build "$deps/build-glslang-$abi" --target install >>"$deps/build-glslang-$abi.log"
 fi
 
+# libadrenotools: the system's Vulkan loader made to load another driver for this app (again when a run stopped
+# partway, or the pin moved: the stamp is written last)
+if [ "$(cat "$prefix/adrenotools.stamp" 2>/dev/null)" != "$adrenotools" ] || [ ! -f "$prefix/lib/liblinkernsbypass.a" ]; then
+    [ -d "$deps/src/libadrenotools" ] || git clone -q --recursive https://github.com/bylaws/libadrenotools.git \
+        "$deps/src/libadrenotools"
+    git -C "$deps/src/libadrenotools" checkout -q $adrenotools && git -C "$deps/src/libadrenotools" submodule update -q
+    android_cmake "$deps/src/libadrenotools" "$deps/build-adrenotools-$abi" -DCMAKE_INSTALL_PREFIX="$prefix" \
+        -DGEN_INSTALL_TARGET=ON >"$deps/build-adrenotools.log"
+    cmake --build "$deps/build-adrenotools-$abi" --target install >>"$deps/build-adrenotools.log"
+    cp "$deps/build-adrenotools-$abi/lib/linkernsbypass/liblinkernsbypass.a" "$prefix/lib/"
+    echo "$adrenotools" > "$prefix/adrenotools.stamp"
+fi
+# Turnip: Mesa's Vulkan driver for Adreno, built from Mesa's release (a build folder of its own for each version;
+# a run that stopped partway picks up where it was)
+tb=$deps/build-turnip-$mesa
+turnip=$tb/src/freedreno/vulkan/libvulkan_freedreno.so
+if [ ! -f "$turnip" ]; then
+    if [ ! -f "$deps/src/mesa-$mesa/meson.build" ]; then   # (unpacked whole, then put in place)
+        curl -fL -o "$deps/mesa-$mesa.tar.xz" "https://archive.mesa3d.org/mesa-$mesa.tar.xz"
+        rm -rf "${deps:?}/src/mesa-$mesa.part" "${deps:?}/src/mesa-$mesa"
+        mkdir -p "$deps/src/mesa-$mesa.part"
+        tar -xJf "$deps/mesa-$mesa.tar.xz" -C "$deps/src/mesa-$mesa.part"
+        mv "$deps/src/mesa-$mesa.part/mesa-$mesa" "$deps/src/mesa-$mesa"
+        rm -rf "${deps:?}/src/mesa-$mesa.part" "$deps/mesa-$mesa.tar.xz"
+    fi
+    [ -x "$deps/venv/bin/meson" ] || { python3 -m venv "$deps/venv" &&
+        "$deps/venv/bin/pip" install -q meson==1.12.1 Mako==1.4.3 PyYAML==6.0.3 packaging==26.3; }
+    bin=$(echo "$ndk"/toolchains/llvm/prebuilt/*/bin)
+    cat > "$deps/android-$abi.cross" <<CROSS
+[binaries]
+ar = '$bin/llvm-ar'
+c = ['$bin/aarch64-linux-android$api-clang']
+cpp = ['$bin/aarch64-linux-android$api-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
+c_ld = 'lld'
+cpp_ld = 'lld'
+strip = '$bin/llvm-strip'
+pkg-config = ['/usr/bin/false']
+
+[built-in options]
+c_link_args = ['-Wl,-z,max-page-size=16384']
+cpp_link_args = ['-Wl,-z,max-page-size=16384', '-static-libstdc++']
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'armv8'
+endian = 'little'
+CROSS
+    [ -f "$tb/build.ninja" ] || (cd "$deps/src/mesa-$mesa" && PATH="$deps/venv/bin:$PATH" meson setup "$tb" \
+        --cross-file "$deps/android-$abi.cross" -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=$api \
+        -Dandroid-stub=true -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl \
+        -Dandroid-libbacktrace=disabled -Degl=disabled -Dgles1=disabled -Dgles2=disabled -Dopengl=false -Dglx=disabled \
+        -Dllvm=disabled -Dxmlconfig=disabled -Dvalgrind=disabled -Dzstd=disabled -Db_lto=false \
+        -Dcpp_args=-Wno-c++11-narrowing) >"$deps/build-turnip.log"
+    PATH="$deps/venv/bin:$PATH" ninja -C "$tb" >>"$deps/build-turnip.log"
+fi
+
 # The game
 android_cmake "$repo" "$out/build" -DCMAKE_FIND_ROOT_PATH="$prefix" -DCMAKE_PREFIX_PATH="$prefix" \
     -DXBOXRECOMP_DIR="$(cd "${XBOXRECOMP_DIR:-$repo/xboxrecomp}" && pwd)" >"$out/configure.log"
@@ -79,12 +140,30 @@ javac -source 8 -target 8 -nowarn -Xlint:none -cp "$platform/android.jar" -d "$a
 "$tools/d8" --release --min-api $api --lib "$platform/android.jar" --output "$apk/dex" \
     $(find "$apk/classes" -name '*.class')
 "$tools/aapt2" compile --dir "$here/res" -o "$apk/res.zip"   # (the icon: the AppImage's)
+# the licences, in the APK's assets/licenses (as the other packages carry them)
+lic=$apk/assets/licenses
+mkdir -p "$lic"
+toolkit=$(cd "${XBOXRECOMP_DIR:-$repo/xboxrecomp}" && pwd)
+cp "$repo/LICENSE" "$repo/THIRD_PARTY.md" "$repo"/assets/fonts/OFL-*.txt "$repo/assets/prompts/License-Xelu.txt" \
+   "$repo/assets/touch/License-Kenney.txt" "$lic/"
+cp "$repo/src/d3d/NOTICE" "$lic/NOTICE-renderer.txt"
+cp "$toolkit/LICENSE" "$lic/LICENSE-xboxrecomp.txt"
+cp "$toolkit/NOTICE" "$lic/NOTICE-xboxrecomp.txt"
+cp "$toolkit/LICENSES/LGPL-2.1.txt" "$lic/"
+cp "$deps/src/SDL/LICENSE.txt" "$lic/LICENSE-SDL2.txt"
+cp "$deps/src/glslang/LICENSE.txt" "$lic/LICENSE-glslang.txt"
+cp "$deps/src/libadrenotools/LICENSE" "$lic/LICENSE-libadrenotools.txt"
+cp "$deps/src/mesa-$mesa/docs/license.rst" "$lic/LICENSE-Mesa-Turnip.txt"
 "$tools/aapt2" link -o "$apk/base.apk" -I "$platform/android.jar" --manifest "$here/AndroidManifest.xml" \
-    "$apk/res.zip"
+    -A "$apk/assets" "$apk/res.zip"
 cp "$apk/dex/classes.dex" "$apk/root/"
 ndkbin=$(echo "$ndk"/toolchains/llvm/prebuilt/*/bin)
 "$ndkbin/llvm-strip" -o "$apk/root/lib/$abi/libmain.so" "$out/build/libmain.so"
 cp "$prefix/lib/libSDL2.so" "$apk/root/lib/$abi/"
+for lib in libhook_impl libmain_hook; do   # (libadrenotools' hooks: the two the driver loading uses)
+    cp "$prefix/lib/$lib.so" "$apk/root/lib/$abi/"
+done
+"$ndkbin/llvm-strip" -o "$apk/root/lib/$abi/libvulkan_freedreno.so" "$turnip"
 python3 - "$apk/base.apk" "$apk/root" <<'PY'
 import os, sys, zipfile
 with zipfile.ZipFile(sys.argv[1], 'a', zipfile.ZIP_DEFLATED) as z:

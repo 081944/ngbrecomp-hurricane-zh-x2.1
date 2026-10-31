@@ -103,9 +103,17 @@ from Linux x86-64:
   presenter over the whole window (`layer_draw`, a premultiplied picture blended by one draw), read into
   the keyboard's pad state while no controller is connected and taken through the pad's bindings. The
   prompts are the pad's until a key is pressed.
-- **The first start:** with storage access granted (`NgbActivity.java`), the disc image is found in
-  `NinjaGaidenBlack`, `Download` or the top of the storage and installed into the app's folder
-  (`src/android_install.c`, `src/install.c`); there is no unpacker, so `.7z`/`.zip` must be unpacked first.
+- **The first start:** the disc image is chosen with the system's file picker, which gives the app that
+  one file and needs no storage permission (`NgbActivity.java`: its path where readable, else an open
+  descriptor, read through it), and installed into the app's folder or, with an SD card in and chosen,
+  the app's folder on the card, remembered there (`src/android_install.c`, `src/install.c`); there is no
+  unpacker, so `.7z`/`.zip` must be unpacked first.
+- **The GPU driver:** below Vulkan 1.3 the renderers take dynamic rendering and synchronization2 from
+  their extensions (`instance.c`; `NV2A_VK_NO13=1` forces that path on the desktop, for testing). On an
+  Adreno whose own driver lacks them, Turnip (Mesa's Vulkan driver for Adreno, built from Mesa's
+  release by `packaging/android/build.sh`) is loaded for the app by libadrenotools (`src/android_gpu.c`,
+  through `nv2a_vk_custom_loader`; Graphics > GPU Driver, Auto by default; `NGB_GPU_DRIVER=system|turnip`);
+  the window's surface is then made through that loader (`present_sdl.c`).
 - **Defaults:** fullscreen, the Multithreaded Renderer on (60 fps against 42-58 without on a Pixel 9a).
   The arcade programs and Return to Main Menu's restart are not there yet (no programs to start beside
   the app).
@@ -393,8 +401,9 @@ The game is drawn by a renderer that implements its Direct3D calls on Vulkan (`s
 emulation still runs the GPU's command stream (the game's fences and vertical blanks come from
 it) but draws nothing; the renderer draws on the same Vulkan device and the same window, so the
 settings and the FPS counter work as before. Render resolution, texture filtering
-and shadow resolution apply to it. It needs Vulkan 1.3 (dynamic rendering, push descriptors);
-without them the game falls back to xemu's drawing.
+and shadow resolution apply to it. It needs Vulkan 1.3's dynamic rendering and synchronization2
+(or those as extensions of an older driver) and push descriptors; without them the game says what is missing
+and ends (#47).
 
 `NGB_RENDERER=xemu` draws with xemu's NV2A renderer instead, as before (on Steam:
 `NGB_RENDERER=xemu %command%`). `NGB_RENDERER=mirror` keeps xemu drawing and showing the game

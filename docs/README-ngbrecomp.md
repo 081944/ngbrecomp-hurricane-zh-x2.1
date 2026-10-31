@@ -50,14 +50,16 @@ kept); later starts are quicker.
    switch Steam to the Beta, or set the game's Launch Options in Steam to
    `APPIMAGE_EXTRACT_AND_RUN=1 %command%` (#11).
 
-Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers.
+Needs a 64-bit Linux with glibc 2.35 or newer and a GPU with Vulkan 1.3 drivers (or older drivers that
+have its dynamic rendering and synchronization2 as extensions).
 
 ### Windows
 
 1. Download `NinjaGaidenBlack-windows-x64.zip` and extract it anywhere.
 2. Run `NinjaGaidenBlack.exe` and choose your disc image as above.
 
-Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers.
+Needs Windows 10 or 11 (64-bit) and a GPU with Vulkan 1.3 drivers (or older drivers that have its dynamic
+rendering and synchronization2 as extensions).
 
 **Antivirus warnings:** the program isn't code-signed, and a new unsigned program is sometimes
 flagged by one antivirus's heuristics (McAfee quarantined it in #88; VirusTotal shows no other
@@ -76,17 +78,22 @@ Expect problems on other phones, and please report them (below).
 
 1. Download `NinjaGaidenBlack-android-arm64.apk` from the releases page and open it on the phone.
    Allow installing apps from your browser or file manager when Android asks.
-2. Copy your disc image (`.iso`, from the retail USA disc) to the phone, into `Download` or a folder
-   named `NinjaGaidenBlack`. A `.7z` or `.zip` has to be unpacked on a computer first: the phone has
-   no unpacker. A folder of the disc's extracted files (with `default.xbe`) also works.
-3. Start the game. The first time, it asks for "All files access" so it can read the image, then
-   finds it and installs the game into its own folder (about 6 GB, a minute or two). You can delete
-   the image afterwards.
+2. Copy your disc image (`.iso`, from the retail USA disc) to the phone or its SD card, anywhere. A `.7z`
+   or `.zip` has to be unpacked on a computer first: the phone has no unpacker.
+3. Start the game. The first time, it asks you to choose the image with Android's file picker, then
+   installs the game into its own folder (about 6 GB, a minute or two; with an SD card in, it asks
+   whether to put it on the phone or on the card). It needs no storage permission. You can delete the
+   image afterwards.
 
 Plays with the on-screen touch controls (an Xbox 360 pad), or with any controller the phone supports:
 the touch controls hide while one is connected. Needs Android 10 or newer (13 or newer for full speed:
-the game tells the system how long its frames take, which keeps the CPU clocks up), a GPU with
-Vulkan 1.3 (most phones from about 2021 on) and about 8 GB of memory.
+the game tells the system how long its frames take, which keeps the CPU clocks up), a GPU with Vulkan
+1.3, or an older Vulkan with its dynamic rendering, synchronization2 and push descriptors as extensions
+(on Adreno, Turnip has them).
+
+On Adreno GPUs (Snapdragon phones) whose own driver lacks what the game needs, it uses Turnip, Mesa's
+open driver for Adreno, built into the app (RECOMP SETTINGS → Graphics → GPU Driver: Auto, System or
+Turnip).
 
 Not there yet on Android: the arcade Ninja Gaiden, and "Return to Main Menu" from the pause menu (it
 closes the game instead).

@@ -239,6 +239,7 @@ set(NGB_MAIN_SOURCES
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_main.c>
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/touch_pad.c>
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_install.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_gpu.c>
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
     $<TARGET_OBJECTS:ngb_audio>
@@ -279,6 +280,12 @@ if(WIN32)
 elseif(ANDROID)
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME main)
     target_link_libraries(${PROJECT_NAME} PRIVATE android log m SDL2::SDL2)
+    # libadrenotools (Turnip loaded for this app: src/android_gpu.c), from packaging/android/build.sh
+    find_library(NGB_ADRENOTOOLS adrenotools REQUIRED)
+    find_library(NGB_LINKERNSBYPASS linkernsbypass REQUIRED)
+    find_path(NGB_ADRENOTOOLS_INCLUDE adrenotools/driver.h REQUIRED)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${NGB_ADRENOTOOLS_INCLUDE})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${NGB_ADRENOTOOLS} ${NGB_LINKERNSBYPASS})
 else()
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${NGB_EXE_NAME})
     # -rdynamic: the crash handler names the faulting sub_XXXXXXXX via dladdr.

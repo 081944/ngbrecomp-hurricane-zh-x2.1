@@ -143,6 +143,7 @@ int ngb_pc_setting(int which)
     case 30: return s_running.render_thread;
     case 33: return s_running.essence_charging;
     case 34: return s_running.skip_cutscenes;
+    case 35: return s_running.gpu_driver;
     case 25: return s_running.audio_output;
     default: return s_running.show_fps;
     }
@@ -181,6 +182,7 @@ void ngb_pc_set_setting(int which, int value)
     case 30: s_running.render_thread = !!value; break;   /* at the next start */
     case 33: s_running.essence_charging = !!value; break;
     case 34: s_running.skip_cutscenes = !!value; break;
+    case 35: s_running.gpu_driver = value < 0 ? 0 : value > 2 ? 2 : value; break;   /* at the next start */
     case 25:   /* the mixer's at the next start; the arcade's at its next */
         s_running.audio_output = value < 0 ? 0 : value > 2 ? 2 : value;
         ngb_audio_set_output(s_running.audio_output);
@@ -1780,14 +1782,25 @@ bool nv2a_overlay_frame(uint32_t *px, int w, int h, const uint32_t *backdrop)
 _Noreturn void ngb_renderer_fatal(const char *detail)
 {
     char msg[2048];   /* Hurricane: in Chinese too (UTF-8), before the English (user 2026-10-18) */
+#ifdef __ANDROID__
     snprintf(msg, sizeof msg,
-             "本程序需要支持 Vulkan 1.3（dynamic rendering 与 push descriptors）的显卡和驱动，"
+             "Ninja Gaiden Black needs a phone GPU whose Vulkan driver has dynamic rendering, "
+             "synchronization2 and push descriptors (Vulkan 1.3, or those as extensions), and this phone's "
+             "does not:\n\n%s\n\n"
+             "A system update sometimes brings a newer driver. Please report your phone's model and chip on "
+             "the project's GitHub page.", detail);
+#else
+    snprintf(msg, sizeof msg,
+             "本程序需要显卡驱动支持 Vulkan 1.3 的 dynamic rendering 与 synchronization2"
+             "（Vulkan 1.3 自带，或旧版驱动以扩展提供）以及 push descriptors，"
              "这台电脑不满足：\n\n%s\n\n"
              "请更新显卡驱动。大约 2016 年以前的显卡（例如 Nvidia GTX 600、700 系列）不受支持。\n\n"
-             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3 (dynamic rendering and push "
-             "descriptors), and this system does not offer it (see above). "
+             "Ninja Gaiden Black needs a GPU and driver with Vulkan 1.3's dynamic rendering and synchronization2 "
+             "(in Vulkan 1.3, or as extensions of an older one) and push descriptors, and this system does not "
+             "offer them (see above). "
              "Please update your graphics driver. GPUs from before about 2016 (for example Nvidia's "
              "GTX 600 and 700 series) are not supported.", detail);
+#endif
     fprintf(stderr, "[D3D] %s\n", msg);
     fflush(stderr);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ninja Gaiden Black", msg, NULL);

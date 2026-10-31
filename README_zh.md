@@ -51,13 +51,13 @@
    镜像只需安装一次（约 6 GB），默认装到 `%LOCALAPPDATA%\ngb-hurricane-zh-x2.1`；
    便携模式（勾选对话框里的选项，或在 exe 旁放一个 `portable.txt`）则全部放在程序旁边。
 
-需要 Windows 10 / 11（64 位）和支持 Vulkan 1.3 的显卡。按键：F1 游戏中的设置，F10 帧率显示，F11 或 Alt+Enter 全屏。
+需要 Windows 10 / 11（64 位）和支持 Vulkan 1.3 的显卡（或以扩展提供 dynamic rendering 与 synchronization2 的旧版驱动）。按键：F1 游戏中的设置，F10 帧率显示，F11 或 Alt+Enter 全屏。
 存档与 Xbox / xemu 的存档分开。数据文件夹（`%LOCALAPPDATA%`、`%APPDATA%` 下的 `ngb-hurricane-zh-x2.1`）独立，可与 ngbrecomp 原版共存。
 
 ## 版本号
 
 发布版本与所基于的 ngbrecomp 版本一致（`hurricane-v0.9.9` 即基于 ngbrecomp 0.9.9）；在同一版本上我们自己的更新加 `-1`、`-2`……
-窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.45`。
+窗口标题会显示版本：`Ninja Gaiden Black Hurricane_x2.1_v0.9.46`。
 
 ## 与 ngbrecomp 的区别
 

@@ -1,12 +1,12 @@
 /*
- * The first start on Android: the player's disc image found on the phone and installed (src/install.c,
- * ngb_find_game), as the desktop's file picker does. The app asks once for access to the shared storage
- * (NgbActivity.java), then looks in a NinjaGaidenBlack folder, in Download and at the top of the storage for an
- * Xbox disc image (.iso, .xiso) or a folder of its files (with default.xbe); with more than one, the player
- * chooses. An archive (.7z, .zip) has to be unpacked first: there is no unpacker on the phone. The install shows
- * its progress in the system's small notes (toasts).
+ * The first start on Android: the player's disc image chosen with the system's file picker and installed
+ * (src/install.c, ngb_find_game), as the desktop's file picker does. No storage permission is asked for: the
+ * picker gives the app the one file chosen (NgbActivity.java), by its path where the app can read it there, else
+ * as an open file (/proc/self/fd/N, read through the descriptor). Xbox disc images (.iso, .xiso) only: an archive
+ * (.7z, .zip) has to be unpacked first, there is no unpacker on the phone. With an SD card in, the game (about
+ * 6 GB) can go there instead of the phone's storage. The install shows its progress in the system's small notes
+ * (toasts).
  */
-#include <dirent.h>
 #include <errno.h>
 #include <jni.h>
 #include <stdio.h>
@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 #include <SDL.h>
@@ -21,7 +22,6 @@
 
 #include "install.h"
 
-#define MAX_FOUND 3
 
 /* NgbActivity's method by name (no arguments): its boolean, or for a void one 1 when it could be called */
 static int activity_call(const char *name, const char *sig)
@@ -50,6 +50,49 @@ static int activity_call(const char *name, const char *sig)
     return r;
 }
 
+/* NgbActivity's method returning a String (no arguments), into out: 1 when it gave one */
+static int activity_string(const char *name, char *out, size_t n)
+{
+    JNIEnv *env = SDL_AndroidGetJNIEnv();
+    jobject act = SDL_AndroidGetActivity();
+    int r = 0;
+    if (!env || !act)
+        return 0;
+    jclass cls = (*env)->GetObjectClass(env, act);
+    jmethodID m = (*env)->GetMethodID(env, cls, name, "()Ljava/lang/String;");
+    jstring s = m ? (jstring)(*env)->CallObjectMethod(env, act, m) : NULL;
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        s = NULL;
+    }
+    if (s) {
+        const char *c = (*env)->GetStringUTFChars(env, s, NULL);
+        if (c) {
+            snprintf(out, n, "%s", c);
+            r = out[0] != 0;
+            (*env)->ReleaseStringUTFChars(env, s, c);
+        }
+        (*env)->DeleteLocalRef(env, s);
+    }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, act);
+    return r;
+}
+
+/* The system's file picker: the file's path into out, 1; 0 when closed without one */
+static int pick_file(char *out, size_t n)
+{
+    if (!activity_call("pickDisc", "()V"))
+        return 0;
+    while (!activity_call("pickDone", "()Z")) {   /* (the app's events kept going: closed meanwhile, give up) */
+        SDL_PumpEvents();
+        if (SDL_QuitRequested())
+            return 0;
+        SDL_Delay(100);
+    }
+    return activity_string("pickedPath", out, n);
+}
+
 /* 0 continue, 1 the second button... (buttons in order, the first the default) */
 static int ask(const char *title, const char *text, const char **buttons, int n)
 {
@@ -66,103 +109,18 @@ static int ask(const char *title, const char *text, const char **buttons, int n)
     return hit;
 }
 
-static int storage_access(void)
-{
-    while (!activity_call("haveStorageAccess", "()Z")) {
-        static const char *b[] = { "Allow", "Quit" };
-        if (ask("Ninja Gaiden Black",
-                "The game's files are not on this phone yet. To install them from your own disc image, the app "
-                "needs to read it where you put it: allow \"All files access\" on the next screen, then come "
-                "back here.", b, 2) != 0)
-            return 0;
-        activity_call("askStorageAccess", "()V");
-        SDL_Delay(1500);   /* (the system's page opens over the game) */
-        static const char *c[] = { "Continue", "Quit" };
-        if (!activity_call("haveStorageAccess", "()Z") &&
-            ask("Ninja Gaiden Black", "Press Continue once access is allowed.", c, 2) != 0)
-            return 0;
-    }
-    return 1;
-}
-
-static int is_image(const char *name)
-{
-    const char *dot = strrchr(name, '.');
-    return dot && (!strcasecmp(dot, ".iso") || !strcasecmp(dot, ".xiso"));
-}
-
-static int has_xbe(const char *dir)
-{
-    char p[1100];
-    snprintf(p, sizeof p, "%s/default.xbe", dir);
-    return access(p, R_OK) == 0;
-}
-
-/* Images and game folders in dir (and its folders one deep, when deep) into found */
-static void look(const char *dir, int deep, char found[][1024], int *n)
-{
-    DIR *d = opendir(dir);
-    struct dirent *e;
-    if (!d)
-        return;
-    if (has_xbe(dir) && *n < MAX_FOUND)
-        snprintf(found[(*n)++], 1024, "%s", dir);
-    while (*n < MAX_FOUND && (e = readdir(d))) {
-        char p[1024];
-        struct stat st;
-        if (e->d_name[0] == '.')
-            continue;
-        snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
-        if (stat(p, &st) != 0)
-            continue;
-        if (S_ISREG(st.st_mode) && is_image(e->d_name) && st.st_size > (off_t)1 << 30)
-            snprintf(found[(*n)++], 1024, "%s", p);
-        else if (S_ISDIR(st.st_mode) && deep && has_xbe(p))
-            snprintf(found[(*n)++], 1024, "%s", p);
-    }
-    closedir(d);
-}
-
-/* The disc image or game folder to install from, into out: 1, or 0 when the player quit */
+/* The disc image to install from, into out: 1, or 0 when the player quit */
 int ngb_android_pick_disc(char *out, size_t n)
 {
-    if (!storage_access())
-        return 0;
-    const char *root = getenv("EXTERNAL_STORAGE");
-    if (!root || !*root)
-        root = "/storage/emulated/0";
     for (;;) {
-        char found[MAX_FOUND][1024], dir[1024];
-        int k = 0;
-        snprintf(dir, sizeof dir, "%s/NinjaGaidenBlack", root);
-        look(dir, 1, found, &k);
-        snprintf(dir, sizeof dir, "%s/Download", root);
-        look(dir, 1, found, &k);
-        look(root, 0, found, &k);
-        if (k == 1) {
-            snprintf(out, n, "%s", found[0]);
-            return 1;
-        }
-        if (k > 1) {
-            const char *b[MAX_FOUND + 1];
-            for (int i = 0; i < k; i++) {
-                const char *slash = strrchr(found[i], '/');
-                b[i] = slash ? slash + 1 : found[i];
-            }
-            b[k] = "Quit";
-            int hit = ask("Ninja Gaiden Black", "Install the game from which of these?", b, k + 1);
-            if (hit < 0 || hit >= k)
-                return 0;
-            snprintf(out, n, "%s", found[hit]);
-            return 1;
-        }
-        static const char *b[] = { "Look again", "Quit" };
+        static const char *b[] = { "Choose file...", "Quit" };
         if (ask("Ninja Gaiden Black",
-                "No disc image found. Copy your Ninja Gaiden Black disc image (.iso, from the retail USA disc) "
-                "into Download or into a NinjaGaidenBlack folder on the phone, then press Look again. A .7z or "
-                ".zip has to be unpacked first; a folder of the disc's files (with default.xbe) also works.",
-                b, 2) != 0)
+                "To install the game, choose your Ninja Gaiden Black disc image (.iso, from the retail USA disc). "
+                "A .7z or .zip has to be unpacked first. The game takes about 6 GB; the image can be deleted "
+                "afterwards.", b, 2) != 0)
             return 0;
+        if (pick_file(out, n))
+            return 1;
     }
 }
 
@@ -180,9 +138,43 @@ static void toast_progress(uint64_t done, uint64_t total, void *ud)
     }
 }
 
-/* ngb_install with its progress in toasts, and its failure said: 0 when installed */
+static double free_gb(const char *dir)
+{
+    struct statvfs v;
+    return statvfs(dir, &v) == 0 ? (double)v.f_bavail * v.f_frsize / 1e9 : 0;
+}
+
+/* ngb_install with its progress in toasts, and its failure said: 0 when installed, -1 when it failed, -2 when
+ * the player quit. With an SD card in, the player chooses where the game goes (the folder found there next
+ * start: install.c's remember_game). */
 int ngb_android_install(const char *src, const char *installed, char *out, size_t n)
 {
+    char sd[1024], sd_game[1100], phone_dir[1100];
+    struct stat st;
+    int folder = stat(src, &st) == 0 && S_ISDIR(st.st_mode);   /* (a game folder runs where it is) */
+    while (!folder && activity_string("sdCardFolder", sd, sizeof sd)) {
+        char phone[64], card[64];
+        snprintf(phone_dir, sizeof phone_dir, "%s", installed);
+        char *slash = strrchr(phone_dir, '/');
+        if (slash)
+            *slash = 0;
+        snprintf(phone, sizeof phone, "Phone (%.1f GB free)", free_gb(phone_dir));
+        snprintf(card, sizeof card, "SD card (%.1f GB free)", free_gb(sd));
+        const char *b[] = { phone, card, "Quit" };
+        int hit = ask("Ninja Gaiden Black", "Where should the game go? It takes about 6 GB.", b, 3);
+        if (hit < 0 || hit > 1)
+            return -2;
+        if (free_gb(hit ? sd : phone_dir) < 6.5) {
+            static const char *ok[] = { "Choose again" };
+            ask("Ninja Gaiden Black", "There is not enough free space there: the game needs about 6.5 GB.", ok, 1);
+            continue;
+        }
+        if (hit == 1) {
+            snprintf(sd_game, sizeof sd_game, "%s/game", sd);
+            installed = sd_game;
+        }
+        break;
+    }
     int last = -10;
     SDL_AndroidShowToast("Installing Ninja Gaiden Black: a few minutes", 1, -1, 0, 0);
     ngb_install_set_progress(toast_progress, &last);
@@ -195,5 +187,18 @@ int ngb_android_install(const char *src, const char *installed, char *out, size_
     } else {
         SDL_AndroidShowToast("Installed. You can delete the disc image now if you like.", 1, -1, 0, 0);
     }
+    if (!strncmp(src, "/proc/self/fd/", 14))   /* (the picker's descriptor, given to us) */
+        close(atoi(src + 14));
     return rc;
+}
+
+/* The game was installed on an SD card that is not in now (install.c): 1 look again, 0 install it again, -1 quit */
+int ngb_android_missing_card(const char *where)
+{
+    char msg[1400];
+    snprintf(msg, sizeof msg, "The game was installed on an SD card that is not in the phone now:\n%s\n\nPut the card "
+             "back and press Look again, or install the game again.", where);
+    static const char *b[] = { "Look again", "Install again", "Quit" };
+    int hit = ask("Ninja Gaiden Black", msg, b, 3);
+    return hit == 0 ? 1 : hit == 1 ? 0 : -1;
 }
