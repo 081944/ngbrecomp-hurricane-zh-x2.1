@@ -23,6 +23,16 @@ history: it describes the checkout before any of this existed.
   restarts the app through `AlarmManager` so the process reloads the new library.
 - Driver ZIPs land in the app's own `files/drivers/<id>/`; nothing is written to
   shared storage except the game folder, which the player imported on purpose.
+- Force feedback goes to the phone's own motor (`src/android_haptic.c`,
+  `NgbActivity.vibrate()`), not to the pad's: the game's XID rumble report
+  (`usb_gamepad_rumble`) reaches `xbox_InputSetState`, which on Android drives the
+  system `Vibrator` as well as any SDL controller. The pad's two motors become one,
+  taking the stronger of the two; a held speed is re-armed before its one-second burst
+  runs out, and a drop to zero cancels at once, so the title's own pulsing is kept.
+  It matters because SDL's Android backend leaves controller rumble unimplemented
+  (`ANDROID_JoystickRumble` returns `SDL_Unsupported`), so a Bluetooth pad's motors
+  stay still either way. The `<uses-permission android:name="android.permission.VIBRATE" />`
+  in `packaging/android/AndroidManifest.xml` is what lets it through.
 
 Not implemented on Android: the hand-over to the arcade programs (`NinjaTrilogy` /
 `NinjaTomoe`, `CMakeLists.txt` returns early for Android), the F1 settings overlay,

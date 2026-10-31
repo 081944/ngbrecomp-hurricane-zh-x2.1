@@ -709,22 +709,42 @@ int xbox_InputControllerPresent(void)
     return 0;
 }
 
+#ifdef __ANDROID__
+/* The phone's own motor in place of the pad's two (src/android_haptic.c): with the on-screen pad there is no
+ * SDL controller at all, and SDL's Android backend leaves a Bluetooth pad's rumble unimplemented, so both
+ * cases end here. Weak: every other build has no phone to vibrate. */
+__attribute__((weak)) void ngb_android_haptic(unsigned left, unsigned right)
+{
+    (void)left;
+    (void)right;
+}
+#endif
+
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
 {
+    int taken = 0;
+
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pVibration)
         return ERROR_DEVICE_NOT_CONNECTED;
 
-    if (!g_pad_lock)
-        return ERROR_DEVICE_NOT_CONNECTED;
-    SDL_LockMutex(g_pad_lock);
-    SDL_GameController *c = g_pads[dwPort];
-    /* SDL rumble needs a duration; refresh for ~1s on each call (the game
-     * polls vibration continuously). */
-    if (c)
-        SDL_GameControllerRumble(c, pVibration->wLeftMotorSpeed,
-                                 pVibration->wRightMotorSpeed, 1000);
-    SDL_UnlockMutex(g_pad_lock);
-    return c ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
+#ifdef __ANDROID__
+    ngb_android_haptic(pVibration->wLeftMotorSpeed, pVibration->wRightMotorSpeed);
+    taken = 1;
+#endif
+
+    if (g_pad_lock) {
+        SDL_LockMutex(g_pad_lock);
+        SDL_GameController *c = g_pads[dwPort];
+        /* SDL rumble needs a duration; refresh for ~1s on each call (the game
+         * polls vibration continuously). */
+        if (c) {
+            SDL_GameControllerRumble(c, pVibration->wLeftMotorSpeed,
+                                     pVibration->wRightMotorSpeed, 1000);
+            taken = 1;
+        }
+        SDL_UnlockMutex(g_pad_lock);
+    }
+    return taken ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
 }
 
 BOOL xbox_InputIsConnected(DWORD dwPort)

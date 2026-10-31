@@ -2,8 +2,12 @@ package io.github.gamboozino.ngbrecomp;
 
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.provider.DocumentsContract;
 
 import java.io.File;
@@ -249,5 +253,27 @@ public class NgbActivity extends SDLActivity {
                 Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState(dirs[i])))
                 return dirs[i].getPath();
         return null;
+    }
+
+    /* The phone's own motor, standing in for a pad's two (src/android_haptic.c): the game's force feedback as
+     * an amplitude of 1..255 held for durationMs, or 0 to stop. Nothing happens on a phone without one. */
+    public void vibrate(int amplitude, long durationMs) {
+        Vibrator v;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            VibratorManager manager = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
+            v = manager != null ? manager.getDefaultVibrator() : null;
+        } else {
+            v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        }
+        if (v == null || !v.hasVibrator())
+            return;
+        if (amplitude <= 0 || durationMs <= 0) {
+            v.cancel();
+            return;
+        }
+        int amp = Math.max(1, Math.min(255, amplitude));
+        if (!v.hasAmplitudeControl())
+            amp = VibrationEffect.DEFAULT_AMPLITUDE;
+        v.vibrate(VibrationEffect.createOneShot(durationMs, amp));
     }
 }

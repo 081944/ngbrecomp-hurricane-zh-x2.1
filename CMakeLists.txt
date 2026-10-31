@@ -240,6 +240,7 @@ set(NGB_MAIN_SOURCES
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/touch_pad.c>
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_install.c>
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_gpu.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_haptic.c>
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
     $<TARGET_OBJECTS:ngb_audio>
