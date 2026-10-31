@@ -1047,8 +1047,10 @@ static void draw_page(int focused, int cat, int row)
             if (nl && (size_t)(nl - h) < sizeof first) {
                 memcpy(first, h, (size_t)(nl - h));
                 first[nl - h] = 0;
-                page_text_fit(px, m, first, 445, SET_HELP_Y, 15, 0xFFFFFF, 2, 440);
-                page_text_fit(px, m, nl + 1, 445, SET_HELP_Y + 18, 15, 0xFFFFFF, 2, 440);
+                /* Hurricane: a line higher, so the second is where a help of one line is (below it the game's
+                 * Back prompt, which upstream's second line ran into); still clear of an eighth row (ROW_Y0 + 192) */
+                page_text_fit(px, m, first, 445, SET_HELP_Y - 18, 15, 0xFFFFFF, 2, 440);
+                page_text_fit(px, m, nl + 1, 445, SET_HELP_Y, 15, 0xFFFFFF, 2, 440);
             } else {
                 page_text_fit(px, m, h, 445, SET_HELP_Y, 15, 0xFFFFFF, 2, 440);
             }
