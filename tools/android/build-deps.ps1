@@ -1,12 +1,16 @@
 param(
     [ValidateSet('arm64-v8a', 'x86_64')][string]$Abi = 'arm64-v8a',
     [int]$Api = 30,
-    [string]$Ndk = $env:NDK_ROOT
+    [string]$Ndk = $env:NDK_ROOT,
+    [int]$Jobs = 0
 )
 # SDL2 and glslang only. GLib is still being integrated separately.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-if (-not $Ndk) { throw 'Set NDK_ROOT or pass -Ndk.' }
+$Ndk = Resolve-AndroidNdk $Ndk
+$cmake = Resolve-CMake
+$jobs = Get-BuildJobs $Jobs
 $toolchain = Join-Path $Ndk 'build/cmake/android.toolchain.cmake'
 if (-not (Test-Path -LiteralPath $toolchain)) { throw "NDK toolchain not found: $toolchain" }
 $base = Join-Path $root 'build/android-deps'
@@ -14,7 +18,12 @@ $prefix = Join-Path $base "$Abi/install"
 New-Item -ItemType Directory -Force (Join-Path $base 'src') | Out-Null
 
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    & $Program @Arguments
+    # Tools talk on stderr (CMake warnings, adb notices, git chatter) and with
+    # $ErrorActionPreference = 'Stop' PowerShell turns that into a terminating
+    # NativeCommandError. Judge by the exit code instead.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Program @Arguments } finally { $ErrorActionPreference = $previous }
     if ($LASTEXITCODE -ne 0) { throw "$Program failed with exit code $LASTEXITCODE" }
 }
 
@@ -35,17 +44,26 @@ function Ensure-Source([string]$Name, [string]$Url, [string]$Commit) {
 
 function Build-Library([string]$Name, [string]$Source, [string[]]$Options) {
     $build = Join-Path $base "$Abi/$Name"
-    Invoke-Checked cmake (@('-Wno-deprecated', '-S', $Source, '-B', $build,
+    Reset-StaleCMakeBuild $build $Source | Out-Null
+    # Relative __FILE__/debug paths: no checkout location ends up in the binary.
+    $pathFlags = Get-SourcePathFlags $Source
+    Invoke-Checked $cmake (@('-Wno-deprecated', '-S', $Source, '-B', $build,
         '-G', 'Ninja', "-DCMAKE_TOOLCHAIN_FILE=$toolchain", "-DANDROID_ABI=$Abi",
         "-DANDROID_PLATFORM=android-$Api", '-DCMAKE_BUILD_TYPE=Release',
-        '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', "-DCMAKE_INSTALL_PREFIX=$prefix") + $Options)
-    Invoke-Checked cmake @('--build', $build, '-j', '4')
-    Invoke-Checked cmake @('--install', $build)
+        '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', "-DCMAKE_INSTALL_PREFIX=$prefix",
+        "-DCMAKE_C_FLAGS=$pathFlags", "-DCMAKE_CXX_FLAGS=$pathFlags") + $Options)
+    Invoke-Checked $cmake @('--build', $build, '-j', "$jobs")
+    Invoke-Checked $cmake @('--install', $build)
 }
 
 $adreno = Ensure-Source 'libadrenotools' 'https://github.com/bylaws/libadrenotools.git' `
     '8fae8ce254dfc1344527e05301e43f37dea2df80'
-Invoke-Checked git @('-C', $adreno, 'submodule', 'update', '--init', '--recursive')
+# Only fetch the submodule when it is actually missing: 'git submodule' needs a
+# working git-sh-setup on PATH and fails on some Windows Git installations even
+# though the checkout is already complete.
+if (-not (Test-Path -LiteralPath (Join-Path $adreno 'lib/linkernsbypass/CMakeLists.txt'))) {
+    Invoke-Checked git @('-C', $adreno, 'submodule', 'update', '--init', '--recursive')
+}
 $sdl = Ensure-Source 'SDL' 'https://github.com/libsdl-org/SDL.git' `
     '98d1f3a45aae568ccd6ed5fec179330f47d4d356'
 Build-Library 'SDL' $sdl @('-DSDL_SHARED=ON', '-DSDL_STATIC=OFF', '-DSDL_TEST=OFF',
