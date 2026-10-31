@@ -436,6 +436,11 @@ typedef struct PGRAPHVkState {
     int num_queries_in_flight;
     bool new_query_needed;
     bool query_in_flight;
+    // The frame's GPU execution time for the FPS text (present_sdl.c): two
+    // timestamps at either end of the game's command buffer, a pair per submit
+    VkQueryPool ts_query_pool;
+    bool ts_timing;
+    float ts_period_ns;
     uint32_t zpass_pixel_count_result;
     QSIMPLEQ_HEAD(, QueryReport) report_queue; // FIXME: Statically allocate
 

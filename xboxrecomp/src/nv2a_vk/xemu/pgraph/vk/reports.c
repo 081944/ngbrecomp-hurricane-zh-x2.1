@@ -38,6 +38,32 @@ void pgraph_vk_init_reports(PGRAPHState *pg)
     };
     VK_CHECK(
         vkCreateQueryPool(r->device, &pool_create_info, NULL, &r->query_pool));
+
+    // The frame's GPU execution time (present_sdl.c's FPS text): the queue
+    // family must keep timestamps at all; where it does not, draw.c stands in
+    // with the fence wait, which reads mostly zero on a queue rarely stalled.
+    r->ts_query_pool = VK_NULL_HANDLE;
+    r->ts_timing = false;
+    r->ts_period_ns = 1.0f;
+    int queue_family = pgraph_vk_find_queue_families(r->physical_device).queue_family;
+    VkQueueFamilyProperties qf[16];
+    uint32_t nq = 16;
+    vkGetPhysicalDeviceQueueFamilyProperties(r->physical_device, &nq, qf);
+    if (queue_family >= 0 && (uint32_t)queue_family < nq &&
+        qf[queue_family].timestampValidBits > 0) {
+        r->ts_timing = true;
+        r->ts_period_ns = r->device_props.limits.timestampPeriod > 0
+                              ? r->device_props.limits.timestampPeriod
+                              : 1.0f;
+        VkQueryPoolCreateInfo ts_pool_create_info =
+            (VkQueryPoolCreateInfo){
+                .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                .queryCount = 2 * 16,   // (a pair per submit, sixteen in the air)
+            };
+        VK_CHECK(vkCreateQueryPool(r->device, &ts_pool_create_info, NULL,
+                                   &r->ts_query_pool));
+    }
 }
 
 void pgraph_vk_finalize_reports(PGRAPHState *pg)
@@ -51,6 +77,8 @@ void pgraph_vk_finalize_reports(PGRAPHState *pg)
     }
 
     vkDestroyQueryPool(r->device, r->query_pool, NULL);
+    if (r->ts_query_pool != VK_NULL_HANDLE)
+        vkDestroyQueryPool(r->device, r->ts_query_pool, NULL);
 }
 
 void pgraph_vk_clear_report_value(NV2AState *d)

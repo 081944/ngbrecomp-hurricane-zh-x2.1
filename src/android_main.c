@@ -181,6 +181,10 @@ int SDL_main(int argc, char **argv)
         pthread_detach(t);
     }
     fprintf(stderr, "[ANDROID] folders under %s%s\n", base ? base : "(none)", getenv("NV2A_FPS_LOG") ? " (env.txt read)" : "");
+    {   /* The player's driver zips (Documents/driver) unpacked for Graphics > Driver Package (src/android_gpu.c) */
+        extern void ngb_android_sync_drivers(void);
+        ngb_android_sync_drivers();
+    }
     /* Landscape either way up: SDL sets the activity's orientation from this when it makes the window (the
      * manifest's alone is overridden) */
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");

@@ -32,6 +32,19 @@ volatile int ngb_nv2a_logdraws;   /* ngb-recomp, see pgraph_vk_flush_draw */
 #include <xxhash.h>
 #include <math.h>
 
+/* Frame statistics, nanoseconds accumulated over the process: the host CPU's
+ * time recording and submitting the frame's work, and the GPU's time running
+ * it (submit-to-fence). Read by present_sdl.c's fps overlay. */
+volatile unsigned long long nv2a_stat_cpu_ns;
+volatile unsigned long long nv2a_stat_gpu_ns;
+
+static inline unsigned long long stat_now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long long)ts.tv_sec * 1000000000ull + (unsigned long long)ts.tv_nsec;
+}
+
 void pgraph_vk_draw_begin(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
@@ -1613,6 +1626,7 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
 
     if (r->in_command_buffer) {
         nv2a_profile_inc_counter(finish_reason_to_counter_enum[finish_reason]);
+        unsigned long long stat_t0 = stat_now_ns();
 
         if (r->in_render_pass) {
             end_render_pass(r);
@@ -1620,6 +1634,11 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
         if (r->query_in_flight) {
             end_query(r);
         }
+        if (r->ts_timing)
+            vkCmdWriteTimestamp(r->command_buffer,
+                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                r->ts_query_pool,
+                                2 * (r->submit_count & 15) + 1);
         VK_CHECK(vkEndCommandBuffer(r->command_buffer));
 
         VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg); // FIXME: Cleanup
@@ -1659,6 +1678,8 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
                                r->command_buffer_fence));
         nv2a_vk_queue_unlock();
         r->submit_count += 1;
+        unsigned long long stat_t1 = stat_now_ns();
+        __atomic_add_fetch(&nv2a_stat_cpu_ns, stat_t1 - stat_t0, __ATOMIC_RELAXED);
 
         bool check_budget = false;
 
@@ -1676,6 +1697,25 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
 
         VK_CHECK(vkWaitForFences(r->device, 1, &r->command_buffer_fence,
                                  VK_TRUE, UINT64_MAX));
+        {   // The GPU's own execution of the frame: the two timestamps either
+            // end of the command buffer. (The fence wait alone reads mostly
+            // zero: the GPU is usually done long before the wait starts.)
+            uint32_t slot = 2 * (r->submit_count & 15);
+            if (r->ts_timing) {
+                uint64_t ts[2] = { 0, 0 };
+                VkResult qres = vkGetQueryPoolResults(
+                    r->device, r->ts_query_pool, slot, 2, sizeof ts, ts,
+                    sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+                if (qres == VK_SUCCESS && ts[1] > ts[0])
+                    __atomic_add_fetch(&nv2a_stat_gpu_ns,
+                                       (unsigned long long)((ts[1] - ts[0]) *
+                                                            r->ts_period_ns),
+                                       __ATOMIC_RELAXED);
+            } else {
+                __atomic_add_fetch(&nv2a_stat_gpu_ns, stat_now_ns() - stat_t1,
+                                   __ATOMIC_RELAXED);
+            }
+        }
 
         r->descriptor_set_index = 0;
         r->in_command_buffer = false;
@@ -1703,6 +1743,9 @@ void pgraph_vk_begin_command_buffer(PGRAPHState *pg)
     };
     VK_CHECK(vkBeginCommandBuffer(r->command_buffer,
                                   &command_buffer_begin_info));
+    if (r->ts_timing)   /* (present_sdl.c's FPS text: the GPU's time on this frame) */
+        vkCmdWriteTimestamp(r->command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                            r->ts_query_pool, 2 * (r->submit_count & 15));
     r->command_buffer_start_time = pg->draw_time;
     r->in_command_buffer = true;
 }

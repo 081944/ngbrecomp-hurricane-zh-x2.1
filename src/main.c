@@ -770,6 +770,13 @@ static void bringup_defaults(void)
     /* With the GPU model, vblank comes from its CRTC. */
     if (!s_use_gpu)
         set_default("RECOMP_VBLANK", "1");
+    /* How the Direct3D renderer's picture reaches the screen. Measured here (Android, 8 cores, Ninja Gaiden Black,
+     * the cave by the waterfall): presented the moment it lands, presents come out 9.2-31.1 ms apart (two can fall
+     * in one refresh); held for the tick they are even, jitter 0.8 ms -- but the picture at the present is 7.1 ms
+     * old instead of 0.2, and turning the camera feels a frame late. "auto" is the moment it lands, at most once a
+     * refresh: the hand-over's latency with the tick's spacing. NV2A_PACE=tick holds it for the tick,
+     * NV2A_PACE=now presents every hand-over. */
+    set_default("NV2A_PACE", "auto");
     /* DirectSound on the host mixer (src/audio, the default) never touches the sound chip: its registers stay
      * plain memory, as other code reads them (an interrupt routine polls one). */
     if (!dsound_host_mixer()) {

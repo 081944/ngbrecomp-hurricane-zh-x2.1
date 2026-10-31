@@ -600,6 +600,14 @@ __attribute__((weak)) void xbox_pad_remap(XBOX_INPUT_STATE *st)
     (void)st;
 }
 
+/* The title may exchange the pad's physical buttons (LB<->LT, RB<->RT) before
+ * anything reads them; weak: by default as they are. Not applied to raw reads
+ * (the bindings' capture shows the physical buttons). */
+__attribute__((weak)) void ngb_pad_button_swap(XBOX_INPUT_STATE *st)
+{
+    (void)st;
+}
+
 static DWORD input_get_state(DWORD dwPort, XBOX_INPUT_STATE *pState, int raw)
 {
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pState)
@@ -670,6 +678,7 @@ static DWORD input_get_state(DWORD dwPort, XBOX_INPUT_STATE *pState, int raw)
     pState->Gamepad.sThumbRY =
         (SHORT)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
     SDL_UnlockMutex(g_pad_lock);
+    if (!raw) ngb_pad_button_swap(pState);   /* the title's shoulder/trigger swap, if any */
     if (!raw) xbox_pad_remap(pState);   /* the title's button bindings, if it has any */
 
     /* RECOMP_KEYBOARD=1: the keyboard drives port 0 alongside the pad. */

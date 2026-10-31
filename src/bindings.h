@@ -63,6 +63,13 @@ int ngb_prompts_keys(void);              /* the keyboard's keys in the prompts *
 int ngb_bind_prompts(void);              /* Button Prompts: 0 Auto, 1 Xbox, 2 PlayStation, 3 PC */
 void ngb_bind_step_prompts(int dir);
 const char *ngb_bind_prompts_name(int v);
+/* Shoulder / trigger swap (the Controls page): the pad's LB<->LT (0) and
+ * RB<->RT (1) exchanged as the buttons are read (xboxrecomp's input). */
+int ngb_bind_swap_get(int which);
+void ngb_bind_swap_set(int which, int on);
+void ngb_bind_swap_step(int which, int dir);
+struct XBOX_INPUT_STATE;
+void ngb_pad_button_swap(struct XBOX_INPUT_STATE *st);   /* the physical buttons, exchanged */
 const char *ngb_bind_pad_combo(int a);   /* "X + A" for Wind Run, "Y + B" for Ninpo; else NULL */
 void ngb_bind_input_short(int input, char *out, int n);
 /* The keyboard or mouse input shown for the pad's button b (XBOX_BUTTON_*)

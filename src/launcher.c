@@ -212,7 +212,7 @@ void ngb_settings_load(NgbSettings *s)
         } else if (!strcmp(key, "render_thread")) {
             s->render_thread = atoi(val) != 0;
         } else if (!strcmp(key, "gpu_driver")) {
-            s->gpu_driver = atoi(val) < 0 ? 0 : atoi(val) > 2 ? 2 : atoi(val);
+            s->gpu_driver = atoi(val) < 0 ? 0 : atoi(val) > 3 ? 3 : atoi(val);
         } else if (!strcmp(key, "essence_only_charging")) {
             s->essence_charging = atoi(val) != 0;
         } else if (!strcmp(key, "skip_any_cutscene")) {

@@ -205,6 +205,7 @@ static int s_third_start;
 static int s_mouse_pct = 100;   /* Camera Sensitivity, percent: the right stick, mouse and keys (#67) */
 static int s_prompts;           /* Button Prompts: 0 Auto (the device in use), 1 Xbox, 2 PlayStation, 3 PC */
 static const char *const s_prompts_ini[4] = { "auto", "xbox", "playstation", "pc" };
+static int s_swap[2];           /* the pad's shoulders and triggers exchanged: 0 LB<->LT, 1 RB<->RT */
 
 void ngb_bind_defaults(void)
 {
@@ -212,6 +213,7 @@ void ngb_bind_defaults(void)
     s_third_start = 1;   /* (on from 0.9.45) */
     s_mouse_pct = 100;
     s_prompts = 0;
+    s_swap[0] = s_swap[1] = 0;
     for (int a = 0; a < A_COUNT; a++) {
         s_bind[a][0] = s_act[a].key0;
         s_bind[a][1] = s_act[a].key1;
@@ -248,6 +250,54 @@ const char *ngb_bind_prompts_name(int v)
 {
     static const char *const name[4] = { "Auto", "Xbox", "PlayStation", "PC" };
     return name[v & 3];
+}
+
+/* Shoulder / trigger swap (the Controls page): the pad's LB and LT, RB and RT
+ * exchanged as the buttons are read (xboxrecomp's input, before the bindings
+ * and the keyboard's merge) -- for pads whose bumpers suit the game's
+ * triggers better. The keyboard, the mouse and the touch controls are not
+ * touched (they press actions, not the pad's buttons). */
+int ngb_bind_swap_get(int which)
+{
+    ensure();
+    return which >= 0 && which < 2 ? s_swap[which] : 0;
+}
+
+void ngb_bind_swap_set(int which, int on)
+{
+    ensure();
+    if (which < 0 || which > 1)
+        return;
+    on = !!on;
+    if (s_swap[which] == on)
+        return;
+    s_swap[which] = on;
+    s_gen++;
+    save();
+}
+
+void ngb_bind_swap_step(int which, int dir)
+{
+    (void)dir;                                        /* two states: either way toggles */
+    ngb_bind_swap_set(which, !ngb_bind_swap_get(which));
+}
+
+/* xboxrecomp's input, each read of a controller (weak there), before the
+ * buttons are bound to actions: the physical buttons exchanged. */
+void ngb_pad_button_swap(XBOX_INPUT_STATE *st)
+{
+    ensure();
+    BYTE *an = st->Gamepad.bAnalogButtons;
+    if (s_swap[0]) {
+        BYTE t = an[XBOX_BUTTON_BLACK];
+        an[XBOX_BUTTON_BLACK] = an[XBOX_BUTTON_LTRIGGER];
+        an[XBOX_BUTTON_LTRIGGER] = t;
+    }
+    if (s_swap[1]) {
+        BYTE t = an[XBOX_BUTTON_WHITE];
+        an[XBOX_BUTTON_WHITE] = an[XBOX_BUTTON_RTRIGGER];
+        an[XBOX_BUTTON_RTRIGGER] = t;
+    }
 }
 
 static int prompts_forced(void)   /* NGB_PAD_PROMPTS: 2 PlayStation, 1 Xbox, 0 not set */
@@ -389,6 +439,7 @@ static void save(void)
     fprintf(f, "third_person_on_load = %d\n", s_third_start);
     fprintf(f, "mouse_sensitivity = %d\n", s_mouse_pct);
     fprintf(f, "button_prompts = %s\n", s_prompts_ini[s_prompts]);
+    fprintf(f, "swap_lb_lt = %d\nswap_rb_rt = %d\n", s_swap[0], s_swap[1]);
     fclose(f);
 }
 
@@ -429,6 +480,10 @@ void ngb_bind_load(void)
             int v = atoi(val);
             v = (v + 12) / 25 * 25;
             s_mouse_pct = v < 25 ? 25 : v > 300 ? 300 : v;
+            continue;
+        }
+        if (!strcmp(key, "swap_lb_lt") || !strcmp(key, "swap_rb_rt")) {
+            s_swap[!strcmp(key, "swap_lb_lt") ? 0 : 1] = atoi(val) != 0;
             continue;
         }
         for (int a = 0; a < A_COUNT; a++) {

@@ -51,6 +51,22 @@ static VkExtent2D s_extent;
 static bool s_system_turns;   /* the system turns the pictures for the display (swapchain_create) */
 static bool s_swapchain_color;   /* its images can be drawn into (the overlay picture, layer_draw) */
 
+/* The window's size now against the swapchain's: they must agree, and the
+ * present results do not say so on a system-turned surface (SUBOPTIMAL is
+ * the word for the turning there, taken as such). A swapchain built in the
+ * moment the surface settles (the game's first frames, a phone's bars
+ * hiding) stays offset for good -- the picture dropped low with a black
+ * band above -- so each present takes a look and orders the rebuild. */
+static void drawable_check(void)
+{
+    if (!s_window || !s_swapchain)
+        return;
+    int w, h;
+    SDL_Vulkan_GetDrawableSize(s_window, &w, &h);
+    if (w > 0 && h > 0 && ((uint32_t)w != s_extent.width || (uint32_t)h != s_extent.height))
+        s_resized = true;
+}
+
 static VkCommandPool s_pool = VK_NULL_HANDLE;
 static VkCommandBuffer s_cmd[FRAMES_IN_FLIGHT];
 static VkFence s_fence[FRAMES_IN_FLIGHT];
@@ -181,6 +197,9 @@ static const struct { char c; uint8_t rows[7]; } s_glyphs[] = {
     { 'F', { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 } },
     { 'P', { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 } },
     { 'S', { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E } },
+    { 'C', { 0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E } },
+    { 'G', { 0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F } },
+    { 'U', { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E } },
     { 'm', { 0x00, 0x00, 0x1A, 0x15, 0x15, 0x11, 0x11 } },
     { 's', { 0x00, 0x00, 0x0E, 0x10, 0x0E, 0x01, 0x1E } },
     { 'a', { 0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F } },
@@ -196,8 +215,19 @@ static const uint8_t *glyph(char c)
 }
 
 /* Frame statistics over half a second, refreshed as they complete. */
-static char s_fps_text[48] = "-- FPS";
+static char s_fps_text[72] = "-- FPS";
 static pthread_mutex_t s_fps_text_mu = PTHREAD_MUTEX_INITIALIZER;   /* (read on the title's thread too) */
+
+/* Per-frame host CPU and GPU times, from draw.c's pgraph_vk_finish and the
+ * present path here; accumulated in nanoseconds over the process. */
+extern volatile unsigned long long nv2a_stat_cpu_ns, nv2a_stat_gpu_ns;
+
+static inline unsigned long long stat_now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long long)ts.tv_sec * 1000000000ull + (unsigned long long)ts.tv_nsec;
+}
 
 static void fps_track(void)
 {
@@ -208,6 +238,7 @@ static void fps_track(void)
     static double max_ms;
     static double jitter_sum;
     static unsigned jitter_n;
+    static unsigned long long last_cpu_ns, last_gpu_ns;
     unsigned flips = __atomic_load_n(&nv2a_pcrtc_start_writes, __ATOMIC_ACQUIRE);
     struct timespec ts;
     uint64_t now;
@@ -217,14 +248,18 @@ static void fps_track(void)
     if (!window_ns)
         window_ns = now;
     if (flips != last_flips) {
+        /* Every flip, not every present that carries one: a present is skipped when two flips land inside one
+         * refresh (the picture of the second replaces the first, nothing shows the first twice), and counting
+         * those presents read 55 fps on a title that did flip 60 times a second. */
+        unsigned d = flips - last_flips;
         if (last_flip_ns) {
-            double ms = (now - last_flip_ns) / 1e6;
+            double ms = (now - last_flip_ns) / 1e6 / d;
             if (ms > max_ms)
                 max_ms = ms;
-            jitter_sum += fabs(ms - 1000.0 / 60.0);
-            jitter_n++;
+            jitter_sum += fabs(ms - 1000.0 / 60.0) * d;
+            jitter_n += d;
         }
-        frames++;
+        frames += d;
         last_flips = flips;
         last_flip_ns = now;
     }
@@ -232,9 +267,16 @@ static void fps_track(void)
         double secs = (now - window_ns) / 1e9;
         unsigned frames_logged = frames;
         double fps = frames / secs;
+        unsigned long long cpu_ns = __atomic_load_n(&nv2a_stat_cpu_ns, __ATOMIC_RELAXED);
+        unsigned long long gpu_ns = __atomic_load_n(&nv2a_stat_gpu_ns, __ATOMIC_RELAXED);
+        double cpu_ms = frames_logged ? (double)(cpu_ns - last_cpu_ns) / 1e6 / frames_logged : 0.0;
+        double gpu_ms = frames_logged ? (double)(gpu_ns - last_gpu_ns) / 1e6 / frames_logged : 0.0;
+        last_cpu_ns = cpu_ns;
+        last_gpu_ns = gpu_ns;
         pthread_mutex_lock(&s_fps_text_mu);
-        snprintf(s_fps_text, sizeof s_fps_text, "%.0f FPS  %.1f ms  max %.1f",
-                 fps, frames ? secs * 1000.0 / frames : 0.0, max_ms);
+        snprintf(s_fps_text, sizeof s_fps_text,
+                 "%.0f FPS  %.1f ms  CPU %.1f ms  GPU %.1f ms  max %.1f ms",
+                 fps, frames ? secs * 1000.0 / frames : 0.0, cpu_ms, gpu_ms, max_ms);
         pthread_mutex_unlock(&s_fps_text_mu);
         /* NV2A_FPS_LOG=1: to stderr; NV2A_FPS_LOG=<path>: appended to that
          * file (where stderr is hard to reach, e.g. a Steam launch). */
@@ -1503,6 +1545,7 @@ static void present_pixels(PGRAPHVkState *r, VkBuffer buf, int w, int h)
     nv2a_vk_queue_unlock();
     if (res == VK_ERROR_OUT_OF_DATE_KHR || (res == VK_SUBOPTIMAL_KHR && !s_system_turns))
         s_resized = true;
+    drawable_check();
 }
 
 /* The overlay, over the frame the game is held at: the renderer's thread
@@ -1659,12 +1702,25 @@ void nv2a_host_vk_present(PGRAPHState *pg)
  * the tick a whole refresh late). False to leave it to the tick. */
 static bool present_external_now(void)
 {
-    static int on = -1;
+    static int on = -1;   /* 0: the tick's; 1: at the hand-over; 2: at the hand-over, one a refresh */
     PGRAPHState *pg = s_pg;
-    if (on < 0)
-        on = !(getenv("NV2A_PACE") && !strcmp(getenv("NV2A_PACE"), "tick"));
+    if (on < 0) {
+        const char *pace = getenv("NV2A_PACE");
+        on = pace && !strcmp(pace, "tick") ? 0 : pace && !strcmp(pace, "auto") ? 2 : 1;
+    }
     if (!on || !pg || __atomic_load_n(&s_quality_set, __ATOMIC_ACQUIRE))
         return false;   /* (quality changes are the renderer's, applied on its thread) */
+    if (on == 2) {
+        /* One a refresh: the picture shown as soon as it lands, but never twice in one refresh -- the tick's even
+         * spacing with the hand-over's latency (NV2A_PACE=tick waits for the tick: a steady 60 fps, but the picture
+         * at the present is 7 ms old where the hand-over's is 0.2). */
+        extern volatile int64_t nv2a_vblank_us;
+        static int64_t shown_at;
+        int64_t tick = __atomic_load_n(&nv2a_vblank_us, __ATOMIC_RELAXED);
+        if (tick == shown_at)
+            return false;
+        shown_at = tick;
+    }
     /* claimed first: the tick must not present it again meanwhile */
     __atomic_store_n(&nv2a_ext_presented, __atomic_load_n(&nv2a_ext_pictures, __ATOMIC_ACQUIRE),
                      __ATOMIC_RELEASE);
@@ -1674,6 +1730,11 @@ static bool present_external_now(void)
     return true;
 }
 
+/* Diagnosis: where the title's thread spends its frame in the present path -- waiting for the present two
+ * frames back, waiting for an image, queueing the present, and the path whole. Nanoseconds, summed since the
+ * D3D renderer (src/d3d/vk/backend.cpp) last read them and divided by the frames it drew. */
+unsigned long long nv2a_present_wait_ns, nv2a_present_acq_ns, nv2a_present_queue_ns, nv2a_present_total_ns;
+
 static void present_locked(PGRAPHState *pg, bool on_pfifo)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
@@ -1681,6 +1742,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
     uint32_t idx;
     VkResult res;
     unsigned f;
+    unsigned long long diag_t0 = stat_now_ns();
 
     {
         /* NV2A_CAPTURE=prefix: the display image as PPM every 300 frames;
@@ -1747,10 +1809,18 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
                                 s_q_scale, s_q_aniso, s_q_shadow);
 
     f = s_frame++ % FRAMES_IN_FLIGHT;
-    vkWaitForFences(r->device, 1, &s_fence[f], VK_TRUE, UINT64_MAX);
+    {
+        unsigned long long w = stat_now_ns();
+        vkWaitForFences(r->device, 1, &s_fence[f], VK_TRUE, UINT64_MAX);
+        nv2a_present_wait_ns += stat_now_ns() - w;
+    }
 
-    res = vkAcquireNextImageKHR(r->device, s_swapchain, 0, s_acquired[f],
-                                VK_NULL_HANDLE, &idx);
+    {
+        unsigned long long w = stat_now_ns();
+        res = vkAcquireNextImageKHR(r->device, s_swapchain, 0, s_acquired[f],
+                                    VK_NULL_HANDLE, &idx);
+        nv2a_present_acq_ns += stat_now_ns() - w;
+    }
     if (res == VK_ERROR_OUT_OF_DATE_KHR) {
         s_resized = true;
         return;
@@ -1763,6 +1833,7 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         return;
     vkResetFences(r->device, 1, &s_fence[f]);
 
+    unsigned long long present_t0 = stat_now_ns();
     cmd = s_cmd[f];
     vkResetCommandBuffer(cmd, 0);
     {
@@ -1918,7 +1989,8 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
         nv2a_vk_queue_lock();
         VK_CHECK(vkQueueSubmit(r->queue, 1, &si, s_fence[f]));
     }
-    {
+    {   /* (the CPU of this path is the title thread's own, counted where the renderer's frame ends:
+         * src/d3d/vk/backend.cpp -- adding the wall clock here counted the waiting too, twice over) */
         VkPresentInfoKHR pi = {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
@@ -1927,11 +1999,15 @@ static void present_locked(PGRAPHState *pg, bool on_pfifo)
             .pSwapchains = &s_swapchain,
             .pImageIndices = &idx,
         };
+        unsigned long long w = stat_now_ns();
         res = vkQueuePresentKHR(r->queue, &pi);
+        nv2a_present_queue_ns += stat_now_ns() - w;
         nv2a_vk_queue_unlock();
         if (res == VK_ERROR_OUT_OF_DATE_KHR || (res == VK_SUBOPTIMAL_KHR && !s_system_turns))
             s_resized = true;
+        drawable_check();
     }
+    nv2a_present_total_ns += stat_now_ns() - diag_t0;
     lat_note(ext);
 }
 

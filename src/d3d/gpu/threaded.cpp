@@ -44,14 +44,37 @@ namespace gpu {
 
 namespace {
 
-// commands handed over at once, so the render thread keeps close behind
-constexpr uint32_t kBatchCommands = 64;
+// commands handed over at once, so the render thread keeps close behind (NGB_D3D_BATCH over it: a batch shorter
+// starts the drawing sooner in the frame, one longer hands over fewer times)
+uint32_t BatchCommands() {
+    static const uint32_t n = [] {
+        const char* e = std::getenv("NGB_D3D_BATCH");
+        uint32_t v = e ? uint32_t(std::strtoul(e, nullptr, 10)) : 0;
+        return v ? v : 64u;
+    }();
+    return n;
+}
 constexpr size_t kFreeBatches = 64;   // spare batches kept for reuse
 // the render thread, waiting with nothing queued, takes what the title has recorded so far after this long: the
 // title may be waiting on memory the GPU emulation writes (a semaphore) behind calls it has not handed over
 constexpr auto kIdleTake = std::chrono::microseconds(1500);
 
 enum class Op : uint8_t { State, Headers, Peek, Draw, Clear, Copy, Present, Flush, Gamma, VisBegin, VisEnd };
+
+// Diagnosis (NGB_D3D_THREADS_STATS): a batch's commands by kind -- state, headers, draws, clears and copies, the
+// present, the rest -- so a frame's drawing says where the render thread's time went.
+static int OpBucket(Op o) {
+    switch (o) {
+        case Op::State: return 0;
+        case Op::Headers:
+        case Op::Peek: return 1;
+        case Op::Draw: return 2;
+        case Op::Clear:
+        case Op::Copy: return 3;
+        case Op::Present: return 4;
+        default: return 5;
+    }
+}
 
 struct Cmd {
     Op op;
@@ -200,7 +223,7 @@ public:
             c.data = Put(indices, size_t(count) * 2);
         }
         cur_->cmds.push_back(c);
-        if (!thread_ || cur_->cmds.size() >= kBatchCommands) Submit();
+        if (!thread_ || cur_->cmds.size() >= BatchCommands()) Submit();
     }
 
     void Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
@@ -259,6 +282,7 @@ public:
         if (thread_) {
             frame_wait_ = last_present_;
             last_present_ = id;
+            if (stats_) StatsFrame();
         }
     }
     void FrameWait() override {
@@ -455,6 +479,12 @@ private:
         }
         cur_->put = nv2a_pfifo_put();
         submitted_ = id;
+        if (stats_) {
+            uint32_t nc = uint32_t(cur_->cmds.size());
+            st_batches_.fetch_add(1);
+            st_cmds_.fetch_add(nc);
+            if (nc > st_maxcmds_.load()) st_maxcmds_.store(nc);
+        }
         {
             std::lock_guard lock(m_);
             queue_.push_back(cur_);
@@ -486,6 +516,7 @@ private:
             std::lock_guard lock(cap_);
             id = Submit();
         }
+        auto wt0 = std::chrono::steady_clock::now();
 #if XBOX_HAS_VCPU
         static const bool release = std::getenv("NGB_D3D_WAIT_RELEASE") && *std::getenv("NGB_D3D_WAIT_RELEASE") == '1';
         if (release) vcpu_block_begin();
@@ -506,6 +537,9 @@ private:
 #if XBOX_HAS_VCPU
         if (release) vcpu_block_end();
 #endif
+        if (stats_)
+            st_wait_ns_.fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::steady_clock::now() - wt0).count()));
     }
 
     void Recycle(Batch* b) {
@@ -529,6 +563,9 @@ private:
             {
                 std::unique_lock lock(m_);
                 if (!cv_.wait_for(lock, kIdleTake, [&] { return stop_ || !queue_.empty(); })) {
+                    if (stats_)
+                        st_idle_ns_.fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                          kIdleTake).count()));
                     // nothing handed over for a while: what the title has recorded may be what it waits on
                     lock.unlock();
                     if (cap_.try_lock()) {
@@ -558,7 +595,17 @@ private:
     }
 
     void ExecuteBatch(Batch& b) {
-        for (const Cmd& c : b.cmds) Execute(b, c);
+        if (!stats_) {
+            for (const Cmd& c : b.cmds) Execute(b, c);
+        } else {
+            auto t = std::chrono::steady_clock::now();
+            for (const Cmd& c : b.cmds) {
+                Execute(b, c);
+                auto t2 = std::chrono::steady_clock::now();
+                ex_ns_[OpBucket(c.op)].fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t).count()));
+                t = t2;
+            }
+        }
         for (uint32_t a : hosted_) headers_[a].host = nullptr;   // (its bytes go with the batch)
         hosted_.clear();
     }
@@ -639,6 +686,46 @@ private:
     std::vector<Batch*> free_;
     std::atomic<uint64_t> done_{0};
     bool stop_ = false, exited_ = false;
+
+    // Diagnosis (NGB_D3D_THREADS_STATS=1): how the two threads share a frame -- what the title spent waiting for a
+    // drawn frame, how many batches a frame came to, and how long the render thread sat with nothing to draw.
+    const bool stats_ = std::getenv("NGB_D3D_THREADS_STATS") != nullptr;
+    std::atomic<uint64_t> st_wait_ns_{0}, st_idle_ns_{0}, st_last_ns_{0};
+    std::atomic<uint32_t> st_frames_{0}, st_batches_{0}, st_cmds_{0}, st_maxcmds_{0};
+    std::atomic<uint64_t> ex_ns_[6];
+
+    // every 120 frames, what the two threads came to (the counts are since the last line)
+    void StatsFrame() {
+        uint32_t n = st_frames_.fetch_add(1) + 1;
+        if (n % 120) return;
+        uint64_t now = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::steady_clock::now().time_since_epoch()).count());
+        uint64_t w = st_wait_ns_.load(), i = st_idle_ns_.load();
+        uint32_t b = st_batches_.load(), c = st_cmds_.load(), mx = st_maxcmds_.exchange(0);
+        static uint64_t last_ns = 0, last_w = 0, last_i = 0;
+        static uint32_t last_b = 0, last_c = 0;
+        if (last_ns) {
+            const double k = 1.0 / 120.0;
+            std::fprintf(stderr,
+                         "[D3DTS] frame %5.2f ms | title waits %5.2f ms | %4.1f batches %6.1f cmds (max %u) | "
+                         "render idle %5.2f ms\n",
+                         (now - last_ns) * 1e-6 * k, (w - last_w) * 1e-6 * k, (b - last_b) * k,
+                         (c - last_c) * k, mx, (i - last_i) * 1e-6 * k);
+            static uint64_t last_e[6];
+            std::fprintf(stderr,
+                         "[D3DOP] state %5.2f headers %5.2f draws %5.2f clears %5.2f present %5.2f other %5.2f "
+                         "ms/frame\n",
+                         (ex_ns_[0].load() - last_e[0]) * 1e-6 * k, (ex_ns_[1].load() - last_e[1]) * 1e-6 * k,
+                         (ex_ns_[2].load() - last_e[2]) * 1e-6 * k, (ex_ns_[3].load() - last_e[3]) * 1e-6 * k,
+                         (ex_ns_[4].load() - last_e[4]) * 1e-6 * k, (ex_ns_[5].load() - last_e[5]) * 1e-6 * k);
+            for (int i2 = 0; i2 < 6; i2++) last_e[i2] = ex_ns_[i2].load();
+        }
+        last_ns = now;
+        last_w = w;
+        last_i = i;
+        last_b = b;
+        last_c = c;
+    }
 };
 
 }  // namespace

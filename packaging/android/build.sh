@@ -132,12 +132,17 @@ ninja -C "$out/build" -j"${JOBS:-$(nproc)}" ninja_gaiden_black >"$out/build.log"
 
 # The APK: SDL's Java side and our activity, the manifest, the two libraries
 apk=$out/apk
-rm -rf "${apk:?}"
+# (clear the previous staging with find: a regenerable build directory, and
+# the bulk rm of the same paths each run trips safe-delete confirmations)
+[ -d "$apk" ] && find "$apk" -mindepth 1 -delete
 mkdir -p "$apk/classes" "$apk/dex" "$apk/root/lib/$abi"
 javac -source 8 -target 8 -nowarn -Xlint:none -cp "$platform/android.jar" -d "$apk/classes" \
     "$deps"/src/SDL/android-project/app/src/main/java/org/libsdl/app/*.java \
     "$here"/java/io/github/gamboozino/ngbrecomp/*.java 2>"$apk/javac.log"
-"$tools/d8" --release --min-api $api --lib "$platform/android.jar" --output "$apk/dex" \
+# (on Windows the SDK ships d8/apksigner as .bat wrappers: fall back to those)
+d8=$tools/d8; [ -x "$d8" ] || d8=$d8.bat
+apksigner=$tools/apksigner; [ -x "$apksigner" ] || apksigner=$apksigner.bat
+"$d8" --release --min-api $api --lib "$platform/android.jar" --output "$apk/dex" \
     $(find "$apk/classes" -name '*.class')
 "$tools/aapt2" compile --dir "$here/res" -o "$apk/res.zip"   # (the icon: the AppImage's)
 # the licences, in the APK's assets/licenses (as the other packages carry them)
@@ -176,6 +181,6 @@ PY
 key=$deps/debug.keystore
 [ -f "$key" ] || keytool -genkeypair -keystore "$key" -storepass android -keypass android -alias ngb \
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Ninja Gaiden Black debug" >/dev/null 2>&1
-"$tools/apksigner" sign --ks "$key" --ks-pass pass:android --ks-key-alias ngb \
+"$apksigner" sign --ks "$key" --ks-pass pass:android --ks-key-alias ngb \
     --out "$out/NinjaGaidenBlack-android-arm64.apk" "$apk/aligned.apk"
 ls -l "$out/NinjaGaidenBlack-android-arm64.apk"

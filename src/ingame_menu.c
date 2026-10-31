@@ -182,7 +182,7 @@ void ngb_pc_set_setting(int which, int value)
     case 30: s_running.render_thread = !!value; break;   /* at the next start */
     case 33: s_running.essence_charging = !!value; break;
     case 34: s_running.skip_cutscenes = !!value; break;
-    case 35: s_running.gpu_driver = value < 0 ? 0 : value > 2 ? 2 : value; break;   /* at the next start */
+    case 35: s_running.gpu_driver = value < 0 ? 0 : value > 3 ? 3 : value; break;   /* at the next start */
     case 25:   /* the mixer's at the next start; the arcade's at its next */
         s_running.audio_output = value < 0 ? 0 : value > 2 ? 2 : value;
         ngb_audio_set_output(s_running.audio_output);

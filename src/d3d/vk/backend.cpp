@@ -34,6 +34,7 @@
 #include <unordered_map>
 #include <vector>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "gpu/backend.h"
@@ -52,6 +53,11 @@ extern volatile int nv2a_fps_drawn_outside;   // (its own corner copy off once t
 int ngb_fps_picture(uint32_t* out, size_t max, int* w, int* h, unsigned* serial);   // src/fps_text.c
 extern volatile int ngb_fps_target_h;
 int ngb_fps_cap(int h, float* scale);
+/* the frame counter's CPU and GPU sums (xemu's draw.c defines them; the counter divides their deltas by the
+ * frames a window held). Ours, so the counter reads real numbers with this renderer too. */
+extern volatile unsigned long long nv2a_stat_cpu_ns, nv2a_stat_gpu_ns;
+/* where the title's thread waited in the present path (present_sdl.c sums these; we log them) */
+extern unsigned long long nv2a_present_wait_ns, nv2a_present_acq_ns, nv2a_present_queue_ns, nv2a_present_total_ns;
 }
 constexpr int kFpsWidth = 1024, kFpsHeight = 128;   // the counter's picture, at most (src/fps_text.c's)
 int ngb_pc_setting(int which);
@@ -486,6 +492,22 @@ private:
     uint32_t vis_test_ = 0;
     bool vis_on_ = false;
     void VisResults(int slot);
+
+    // The frame's own timings for the counter (src/fps_text.c): CPU is the recording, Begin to the submit
+    // that ends it; GPU is two timestamps the GPU writes itself, the top of the frame's commands and the
+    // bottom, read back once the slot's frame is done (the fence the title waited on). Without timestamps
+    // on the device's queue the GPU stays 0 and only the CPU half counts.
+    VkQueryPool ts_pool_[2] = {};
+    float ts_period_ = 0;
+    bool ts_ok_ = false;
+    uint64_t ts_cpu_last_ = 0;
+    uint64_t frame_wait_ns_ = 0;
+    // Diagnosis (NGB_D3D_PROF=1): where a drawn draw's time went, summed over a frame -- the targets, the vertex
+    // shader, the textures, the pixel shader and its pipeline, and the rest (constants, uploads, the call).
+    uint64_t pf_ns_[6] = {};
+    uint64_t pf_bytes_ = 0;
+    void TsResults(int slot);
+    void FrameCpu();
     VkInstance inst_ = VK_NULL_HANDLE;
     VkPhysicalDevice phys_ = VK_NULL_HANDLE;
     uint32_t api_version_ = VK_API_VERSION_1_3;   // the device's (its own: 1.3; the NV2A renderer's: AdoptDevice)
@@ -772,6 +794,16 @@ bool VulkanBackend::FinishDevice() {
     std::fprintf(stderr, "[D3D] depth: %s\n", ds_format_ == VK_FORMAT_D32_SFLOAT_S8_UINT ? "32-bit float" : "24-bit");
     VkPhysicalDeviceProperties pr;
     vkGetPhysicalDeviceProperties(phys_, &pr);
+    {   // the frame counter's GPU half: two timestamps a frame, where this device's queue can write them
+        // (both devices: our own, and the NV2A renderer's this one adopts on Android)
+        uint32_t qn = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(phys_, &qn, nullptr);
+        std::vector<VkQueueFamilyProperties> qf(qn);
+        vkGetPhysicalDeviceQueueFamilyProperties(phys_, &qn, qf.data());
+        ts_ok_ = qfam_ < qn && qf[qfam_].timestampValidBits > 0 && pr.limits.timestampPeriod > 0;
+        ts_period_ = ts_ok_ ? pr.limits.timestampPeriod : 0;
+        std::fprintf(stderr, "[D3D] frame timings: %s\n", ts_ok_ ? "GPU timestamps on" : "CPU only (no timestamps)");
+    }
     ringAlign_ = std::max<VkDeviceSize>(pr.limits.minUniformBufferOffsetAlignment, 16);
     VkPhysicalDeviceFeatures feat;
     vkGetPhysicalDeviceFeatures(phys_, &feat);   // both devices enable it when it is there
@@ -910,6 +942,16 @@ bool VulkanBackend::Init(uint32_t, uint32_t) {
     qci.queryCount = kVisQueries;
     for (auto& p : vis_pool_)
         if (d_.vkCreateQueryPool(dev_, &qci, nullptr, &p) != VK_SUCCESS) p = VK_NULL_HANDLE;
+    if (ts_ok_) {
+        VkQueryPoolCreateInfo tci{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+        tci.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        tci.queryCount = 2;
+        for (auto& p : ts_pool_)
+            if (d_.vkCreateQueryPool(dev_, &tci, nullptr, &p) != VK_SUCCESS) {
+                p = VK_NULL_HANDLE;
+                ts_ok_ = false;
+            }
+    }
     Begin();
     Barrier(null2d_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Barrier(nullcube_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -948,6 +990,20 @@ VulkanBackend::~VulkanBackend() {
     }
 }
 
+// The frame counter's CPU half: this thread's own CPU time (not the wall clock, which on a frame the game
+// paced by its vblank would count the waiting too -- the counter would read a full 16.7 ms on a still menu).
+static uint64_t thread_cpu_ns() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0) return 0;
+    return uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
+}
+
+static uint64_t wall_ns() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
+}
+
 void VulkanBackend::Begin() {
     if (recording_) return;
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -955,6 +1011,10 @@ void VulkanBackend::Begin() {
     d_.vkBeginCommandBuffer(cmd_, &bi);
     recording_ = true;
     if (vis_pool_[slot_]) d_.vkCmdResetQueryPool(cmd_, vis_pool_[slot_], 0, kVisQueries);
+    if (ts_pool_[slot_]) {
+        d_.vkCmdResetQueryPool(cmd_, ts_pool_[slot_], 0, 2);
+        d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, ts_pool_[slot_], 0);
+    }
 }
 
 // Everything recorded so far, done: the slot's commands submitted and waited for, and the other
@@ -962,12 +1022,14 @@ void VulkanBackend::Begin() {
 void VulkanBackend::Submit() {
     if (!recording_) return;
     EndRendering();
+    if (ts_pool_[slot_]) d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ts_pool_[slot_], 1);
     d_.vkEndCommandBuffer(cmd_);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
     si.pCommandBuffers = &cmd_;
     d_.vkResetFences(dev_, 1, &fence_);
     QueueSubmit(si, fence_);
+    FrameCpu();   // what this thread spent since the last submit: this frame's recording and the last one's present
     d_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
     if (submitted_[slot_ ^ 1]) {
         d_.vkWaitForFences(dev_, 1, &fences_[slot_ ^ 1], VK_TRUE, UINT64_MAX);
@@ -987,19 +1049,23 @@ void VulkanBackend::Submit() {
 void VulkanBackend::EndFrame() {
     if (!recording_) return;
     EndRendering();
+    if (ts_pool_[slot_]) d_.vkCmdWriteTimestamp(cmd_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, ts_pool_[slot_], 1);
     d_.vkEndCommandBuffer(cmd_);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
     si.pCommandBuffers = &cmd_;
     d_.vkResetFences(dev_, 1, &fence_);
     QueueSubmit(si, fence_);
+    FrameCpu();   // the whole frame on this thread: the recording, and the present the last one ended with
     submitted_[slot_] = true;
     recording_ = false;
     slot_ ^= 1;
     cmd_ = cmds_[slot_];
     fence_ = fences_[slot_];
     if (submitted_[slot_]) {
+        uint64_t w = wall_ns();
         d_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+        frame_wait_ns_ += wall_ns() - w;
         submitted_[slot_] = false;
         VisResults(slot_);
     }
@@ -1411,9 +1477,33 @@ void VulkanBackend::VisibilityEnd(uint32_t report_va) {
     vis_end_[slot_].push_back({vis_test_, report_va});
 }
 
+// This thread's CPU time since the last frame ended, added to the counter's CPU sum: the game's logic and
+// the frame's recording, plus the last frame's present (both on this thread). Waiting does not count.
+void VulkanBackend::FrameCpu() {
+    uint64_t c = thread_cpu_ns();
+    if (!c) return;
+    if (ts_cpu_last_ && c > ts_cpu_last_)
+        __atomic_add_fetch(&nv2a_stat_cpu_ns, c - ts_cpu_last_, __ATOMIC_RELAXED);
+    ts_cpu_last_ = c;
+}
+
+// The slot's frame is done: what the GPU's two timestamps say it took, added to the counter's GPU sum.
+void VulkanBackend::TsResults(int slot) {
+    if (!ts_ok_ || !ts_pool_[slot]) return;
+    uint64_t r[2] = {0, 0};
+    if (d_.vkGetQueryPoolResults(dev_, ts_pool_[slot], 0, 2, sizeof r, r, sizeof(uint64_t),
+                                 VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) != VK_SUCCESS)
+        return;
+    // the top of the frame's commands to the bottom: the GPU's own clock, which only counts while it draws
+    if (r[1] > r[0] && r[0])
+        __atomic_add_fetch(&nv2a_stat_gpu_ns, uint64_t(double(r[1] - r[0]) * double(ts_period_)),
+                           __ATOMIC_RELAXED);
+}
+
 // The slot's frame is done: its queries' counts, and the reports of the tests that ended in it -- laid out as
 // the GPU writes them (xemu's pgraph_write_zpass_pixel_cnt_report): a timestamp, the count, 0.
 void VulkanBackend::VisResults(int slot) {
+    TsResults(slot);
     if (!vis_q_[slot].empty()) {
         std::vector<uint64_t> r(vis_q_[slot].size());
         if (d_.vkGetQueryPoolResults(dev_, vis_pool_[slot], 0, uint32_t(r.size()), r.size() * 8, r.data(), 8,
@@ -2555,6 +2645,14 @@ void VulkanBackend::CaptureQuick(QuickPeek& q) {
 }
 
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
+    static const bool pf = std::getenv("NGB_D3D_PROF") != nullptr;
+    auto pf_t0 = pf ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    auto mark = [&](int i) {
+        if (!pf) return;
+        auto t = std::chrono::steady_clock::now();
+        pf_ns_[i] += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(t - pf_t0).count());
+        pf_t0 = t;
+    };
     if (!pk_given_) CapturePeek(s, pk_);
     st_.draws++;
     if (!Assemble(s, prim, start, count, indices, asm_)) { st_.noasm++; return; }
@@ -2579,6 +2677,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     Assembled& a=spark_quad?spark_assembled:asm_;
     rt_draws_[s.rt.data]++;
 
+    mark(0);
     // vertex shader: the title's program, or fixed function for its declaration
     bool prog = (s.vs_handle & 1) && s.vs && !s.vs->program.empty();
     bool quad = count <= kQuadVertices && !s.rs[kRsZEnable];
@@ -2655,6 +2754,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         return src;
     }, true);
 
+    mark(1);
     // textures, then the pixel shader made for them
     TexInfo info[4];
     VkImageView views[4];
@@ -2665,6 +2765,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     for (int i = 0; i < 4 && quad; i++)   // a screen quad's linearly filtered textures (QuadSnap's alpha weighting)
         if (info[i].kind == kTex2D && !info[i].shadow && (s.tss[size_t(i)][kTssMagFilter] >= 2 || aniso_level_ > 0))
             info[i].flags |= kTexLinear;
+    mark(2);
     static const bool bumplog = std::getenv("NGB_D3D_BUMPLOG") != nullptr;
     if ((info[0].flags & kTexSigned) && bumplog) {   // the water's stage 0 sampling (#16)
         static int n;
@@ -2915,6 +3016,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         views[0]=glow_soft_[1].view;
     }
     st_.drawn++;
+    mark(3);
 
     // constants
     uint32_t gw, gh;
@@ -3353,6 +3455,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     VkDeviceSize ioff = 0;
     uint32_t ibytes = a.index_count * (a.index16 ? 2 : 4);
     if (a.index_count) ioff = Upload(a.index_src, ibytes, 4);
+    if (pf) {
+        uint64_t bytes = sizeof(c) + ibytes;
+        for (uint32_t b = 0; b < a.buffer_count; b++) bytes += a.buffers[b].bytes;
+        pf_bytes_ += bytes;
+    }
+    mark(4);
 
     // record: the uploads above may have submitted, so everything is set after them
     BeginRendering(rt, ds);
@@ -3599,6 +3707,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         std::snprintf(name, sizeof(name), "step_%05u_%04u_%08X", presents_, st_.drawn, s.rt.data);
         Dump(*rt, name);
     }
+    mark(5);
 }
 
 void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count, const uint8_t* src_rects,
@@ -4104,6 +4213,55 @@ void VulkanBackend::Present(const Surface& front) {
         view_seen_ = false;
     }
     EndFrame();
+    // Diagnosis (NGB_FRAME_LOG=1): every 128 frames, what a frame cost on this thread and where it waited --
+    // the GPU fence the frame ended on, and the three waits of the present path (present_sdl.c).
+    static const bool frame_log = std::getenv("NGB_FRAME_LOG") != nullptr;
+    if (frame_log && presents_ % 128 == 0) {
+        static uint32_t last_n;
+        static uint64_t last_wall, last_cpu, last_gpu, last_wait, last_pw, last_pa, last_pq, last_pt;
+        uint64_t wall = wall_ns();
+        uint32_t n = presents_ - last_n;
+        if (last_n && n) {
+            double k = 1e6 / n;
+            std::fprintf(stderr,
+                         "[FRAME] %u frames: frame %5.2f ms | cpu %5.2f gpu %5.2f fence %5.2f | present %5.2f "
+                         "(fence %4.2f acquire %4.2f queue %4.2f) ms\n", n, (wall - last_wall) / k,
+                         (double)(__atomic_load_n(&nv2a_stat_cpu_ns, __ATOMIC_RELAXED) - last_cpu) / k,
+                         (double)(__atomic_load_n(&nv2a_stat_gpu_ns, __ATOMIC_RELAXED) - last_gpu) / k,
+                         (double)(frame_wait_ns_ - last_wait) / k,
+                         (double)(__atomic_load_n(&nv2a_present_total_ns, __ATOMIC_RELAXED) - last_pt) / k,
+                         (double)(__atomic_load_n(&nv2a_present_wait_ns, __ATOMIC_RELAXED) - last_pw) / k,
+                         (double)(__atomic_load_n(&nv2a_present_acq_ns, __ATOMIC_RELAXED) - last_pa) / k,
+                         (double)(__atomic_load_n(&nv2a_present_queue_ns, __ATOMIC_RELAXED) - last_pq) / k);
+        }
+        last_n = presents_;
+        last_wall = wall;
+        last_cpu = __atomic_load_n(&nv2a_stat_cpu_ns, __ATOMIC_RELAXED);
+        last_gpu = __atomic_load_n(&nv2a_stat_gpu_ns, __ATOMIC_RELAXED);
+        last_wait = frame_wait_ns_;
+        last_pt = __atomic_load_n(&nv2a_present_total_ns, __ATOMIC_RELAXED);
+        last_pw = __atomic_load_n(&nv2a_present_wait_ns, __ATOMIC_RELAXED);
+        last_pa = __atomic_load_n(&nv2a_present_acq_ns, __ATOMIC_RELAXED);
+        last_pq = __atomic_load_n(&nv2a_present_queue_ns, __ATOMIC_RELAXED);
+    }
+    static const bool prof = std::getenv("NGB_D3D_PROF") != nullptr;
+    if (prof && presents_ % 120 == 0) {
+        static uint32_t last_p;
+        static uint64_t last_b[6], last_by;
+        uint32_t nf = presents_ - last_p;
+        if (last_p && nf) {
+            const double k = 1e-6 / nf;
+            std::fprintf(stderr,
+                         "[D3DPROF] %u frames: targets %5.2f vs %5.2f tex %5.2f ps+pipe %5.2f up %5.2f draw %5.2f "
+                         "ms/frame, %5.1f KB/frame up\n",
+                         nf, (pf_ns_[0] - last_b[0]) * k, (pf_ns_[1] - last_b[1]) * k, (pf_ns_[2] - last_b[2]) * k,
+                         (pf_ns_[3] - last_b[3]) * k, (pf_ns_[4] - last_b[4]) * k, (pf_ns_[5] - last_b[5]) * k,
+                         (pf_bytes_ - last_by) / 1024.0 / nf);
+        }
+        last_p = presents_;
+        last_by = pf_bytes_;
+        for (int i = 0; i < 6; i++) last_b[i] = pf_ns_[i];
+    }
     // after the frame is on the queue: the presenter's blit, later on the same queue, waits for it
     // (its barrier on the picture)
     if (show) nv2a_present_set_external(show->image, show->w, show->h);

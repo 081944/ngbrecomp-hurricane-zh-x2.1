@@ -7,12 +7,21 @@ import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
+import org.json.JSONObject;
 import org.libsdl.app.SDLActivity;
 
 /* SDL's activity, loading the game (libmain.so, src/android_main.c) after SDL itself; and what the first start
  * needs to install the game from the player's disc image (src/android_install.c calls these): the system's file
- * picker, which gives the app the one file chosen (no storage permission), and the SD card. */
+ * picker, which gives the app the one file chosen (no storage permission), and the SD card. Also the Vulkan
+ * driver packages (src/android_gpu.c): the zips of the emulator kind -- meta.json and the driver's .so -- that
+ * the player copies into the app's own files folder's drivers/ (Android/data/.../files/drivers), unpacked here
+ * into files/drivers/<name>/ for the game to load. */
 public class NgbActivity extends SDLActivity {
     private static final int PICK_DISC = 0x4E47;
     private volatile String mPicked;
@@ -21,6 +30,49 @@ public class NgbActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] { "SDL2", "main" };
+    }
+
+    /* The system bars, hidden: the status bar otherwise draws over the picture's top (a black band above,
+     * the picture looking dropped). Again whenever the window regains focus (the system brings them back
+     * on some devices, as at the start). A swipe shows them for a moment. */
+    private void hideSystemBars() {
+        runOnUiThread(() -> {
+            try {
+                android.view.View decor = getWindow().getDecorView();
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    getWindow().setDecorFitsSystemWindows(false);
+                    android.view.WindowInsetsController c = decor.getWindowInsetsController();
+                    if (c != null) {
+                        c.hide(android.view.WindowInsets.Type.statusBars() |
+                               android.view.WindowInsets.Type.navigationBars());
+                        c.setSystemBarsBehavior(
+                            android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    }
+                } else {
+                    decor.setSystemUiVisibility(
+                        android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                        android.view.View.SYSTEM_UI_FLAG_FULLSCREEN |
+                        android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                        android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                        android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                        android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+                }
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus)
+            hideSystemBars();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        hideSystemBars();
     }
 
     /* The system's file picker, for the disc image: pickDone() turns true when it closes, pickedPath() is then
@@ -59,6 +111,104 @@ public class NgbActivity extends SDLActivity {
             return;
         }
         super.onActivityResult(request, result, data);
+    }
+
+    /* The driver zips (the emulators' kind: meta.json -- name, vendor, libraryName -- and the driver's .so) that
+     * the player copies into the app's own files folder's drivers/ (Android/data/.../files/drivers), unpacked
+     * into files/drivers/<zip's name>/ for src/android_gpu.c to list and load. A zip already unpacked (its .src
+     * marker agrees) is left as it is. */
+    public void syncDrivers() {
+        try {
+            File store = new File(getFilesDir(), "drivers");
+            store.mkdirs();
+            File inbox = new File(getExternalFilesDir(null), "drivers");
+            inbox.mkdirs();
+            File[] zips = inbox.listFiles((d, n) -> n.toLowerCase().endsWith(".zip"));
+            if (zips == null)
+                return;
+            for (File zip : zips) {
+                try {
+                    installDriverZip(zip, store);
+                } catch (Exception e) {   /* (one bad zip does not stop the others) */
+                    android.util.Log.i("NGB", "syncDrivers: " + zip.getName() + ": " + e);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void installDriverZip(File zip, File store) throws Exception {
+        File out = new File(store, zip.getName().replaceAll("(?i)\\.zip$", ""));
+        String want = zip.getName() + " " + zip.lastModified() + " " + zip.length();
+        File marker = new File(out, ".src");
+        if (out.isDirectory() && marker.isFile() && readFile(marker).equals(want))
+            return;
+        File staging = new File(store, ".staging");
+        deleteTree(staging);
+        staging.mkdirs();
+        String libName = null;
+        InputStream in = new java.io.FileInputStream(zip);
+        ZipInputStream zp = new ZipInputStream(in);
+        for (ZipEntry e; (e = zp.getNextEntry()) != null; ) {
+            if (e.isDirectory())
+                continue;
+            String fn = new File(e.getName()).getName();   /* (flat: no zip-slip) */
+            if (fn.equals("meta.json"))
+                copy(zp, new File(staging, "meta.json"));
+            else if (fn.endsWith(".so")) {
+                libName = fn;
+                copy(zp, new File(staging, fn));
+            }
+        }
+        zp.close();
+        File meta = new File(staging, "meta.json");
+        if (!meta.isFile() || libName == null) {
+            deleteTree(staging);                           /* (not a driver zip: left as it is) */
+            android.util.Log.i("NGB", "syncDrivers: " + zip.getName() + ": not a driver zip");
+            return;
+        }
+        JSONObject m = new JSONObject(readFile(meta));
+        String named = m.optString("libraryName", "");
+        if (!named.isEmpty())
+            libName = named;
+        if (!new File(staging, libName).isFile()) {
+            deleteTree(staging);
+            android.util.Log.i("NGB", "syncDrivers: " + zip.getName() + ": no " + libName + " in it");
+            return;
+        }
+        deleteTree(out);
+        if (!staging.renameTo(out))
+            return;
+        OutputStream mk = new FileOutputStream(marker);
+        mk.write(want.getBytes("UTF-8"));
+        mk.close();
+        android.util.Log.i("NGB", "syncDrivers: installed " + out.getName() + " (" + libName + ")");
+    }
+
+    private static void copy(InputStream in, File out) throws Exception {
+        OutputStream f = new FileOutputStream(out);
+        byte[] buf = new byte[65536];
+        for (int n; (n = in.read(buf)) > 0; )
+            f.write(buf, 0, n);
+        f.close();
+    }
+
+    private static String readFile(File f) throws Exception {
+        InputStream in = new java.io.FileInputStream(f);
+        java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[65536];
+        for (int n; (n = in.read(buf)) > 0; )
+            b.write(buf, 0, n);
+        in.close();
+        return b.toString("UTF-8");
+    }
+
+    private static void deleteTree(File f) {
+        File[] c = f.listFiles();
+        if (c != null)
+            for (File x : c)
+                deleteTree(x);
+        f.delete();
     }
 
     /* The file by its path where the app can read it there; else (most often, with no storage permission) an open
