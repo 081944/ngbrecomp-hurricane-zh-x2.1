@@ -1,5 +1,5 @@
-# Shared helpers for the Android build scripts (build-apk.ps1, build-deps.ps1,
-# build-glib.ps1).
+# Shared helpers for the Android dependency scripts (build-deps.ps1, build-glib.ps1).
+# They fill build/android-deps, the prefix packaging/android/build.sh builds against.
 #
 # The project is checked out on different machines and different drives, so no
 # script may hard-code where the NDK, Gradle or the JDK live, and no build tree

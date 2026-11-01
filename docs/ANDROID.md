@@ -9,18 +9,18 @@ history: it describes the checkout before any of this existed.
 
 - `libmain.so` is the whole game, statically recompiled from the x2.1 `default.xbe`
   for `arm64-v8a`, drawn through Vulkan. No JIT, no executable guest memory.
-- `libngbsetup.so` (`src/install.c` + `src/android_setup.c`) is loaded by the setup
-  Activity only, so the import screen never pulls the game library in.
+- Import is C side: `src/install.c` + `src/android_install.c`. A folder (SAF tree) or a disc
+  image (SAF fd, `ngb_install_iso_fd`, extracted into `game.partial` and renamed into place).
 - First run: the setup screen appears only when `game/default.xbe` is missing or is
   not the XBE this build was made from (`ngb_check_xbe`). It imports either a folder
   (SAF tree) or a disc image (SAF fd, `ngb_install_iso_fd`, extracted into
   `game.partial` and renamed into place). After a successful import the game starts
   by itself; a manual start button and a two-failed-starts fallback stay behind it.
-- In game, the **☰** button opens `TouchMenu.java` on the presenter thread:
+- In game, the **☰** button opens the port's own menu (`src/ingame_menu.c`, `src/quick_ui.c`):
   display (render scale, MSAA, aspect, V-Sync, FPS), quality (texture filtering,
   shadow resolution, glow, detail under load, HUD), audio (positional, channels) and
   graphics driver (system driver, imported ZIPs, ZIP import). A driver change
-  restarts the app through `AlarmManager` so the process reloads the new library.
+  restarts the app so the process reloads the new library.
 - Driver ZIPs land in the app's own `files/drivers/<id>/`; nothing is written to
   shared storage except the game folder, which the player imported on purpose.
 - Force feedback goes to the phone's own motor (`src/android_haptic.c`,
@@ -42,29 +42,36 @@ the 8 Gen 2 acceptance gate below is still open.
 ## Building and packaging
 
 ```powershell
-# one-off: SDL2, GLib, glslang and the Vulkan loader for arm64-v8a
+# one-off: SDL2, GLib, glslang and the Vulkan loader for arm64-v8a (build.sh reuses this prefix)
 ./tools/android/build-deps.ps1
 ./tools/android/build-glib.ps1
-# debug APK, or -Release for the signed one that goes on a release page
-./tools/android/build-apk.ps1
-./tools/android/build-apk.ps1 -Release
-./tools/android/build-apk.ps1 -Install -Serial '<adb serial>'      # also installs
-python ./tools/android/make-icon.py ../icon03.png                   # launcher icons
+
+# the APK -> build/android-release/NinjaGaidenBlack-android-arm64.apk
+packaging/android/build.sh
 ```
 
-`android/keystore/ngb-android.jks` is committed on purpose: the published APK has to
-upgrade over local debug builds and anyone checking out the branch has to be able to
-rebuild it. It is a shared test key, not a secret — do not treat an APK as trusted
-because of it.
+`packaging/android/build.sh` is the only build entry for the phone port. It produces
+`NinjaGaidenBlack-android-arm64.apk` under `build/android-release/`, package
+`io.github.gamboozino.ngbrecomp`, version 0.9.49. There is no Gradle project and no second
+script; a build that reports any other package name is the wrong build.
 
-The Gradle project above is the 0.2.0 app (`org.ngb.port`) and uses that key. The
-releases built by `packaging/android/build.sh` are a different application
-(`io.github.gamboozino.ngbrecomp`), signed with `packaging/android/keystore/ngb-release.jks`
-(alias `ngb`, password `android`, as above) — committed for the same reason: an APK built from
-any checkout has to upgrade over the one already installed, including after `build/` is
-wiped. Its certificate SHA-256 is `23:C2:2B:9A:…:63:A3:57`; if a build ever reports a
-different one, it is signing with a key generated on the spot and will not install over
-the published APK.
+`packaging/android/keystore/ngb-release.jks` (alias `ngb`, password `android`) is committed
+on purpose: an APK built from any checkout has to upgrade over the one already installed,
+including after `build/` is wiped. Its certificate SHA-256 is `23:C2:2B:9A:…:63:A3:57`; if a
+build ever reports a different one, it is signing with a key generated on the spot and will
+not install over the published APK.
+
+The Java side is one file,
+`packaging/android/java/io/github/gamboozino/ngbrecomp/NgbActivity.java` — it extends SDL's
+`SDLActivity` and declares no native methods. Everything else on Android is C:
+`src/android_main.c` (paths and `SDL_main`), `src/android_install.c`, `src/android_gpu.c`,
+`src/android_haptic.c`.
+
+An earlier Gradle build of a separate 0.2.0 app (`org.ngb.port`, with `SetupActivity`,
+`TouchMenu`, `VirtualPad` and `DriverStore`, JNI in `src/android.c` / `src/android_setup.c`)
+has been removed. It produced a differently named APK with its own data directory, so
+building it installed beside the release app, could not see the player's game and saves, and
+landed on the import screen. The removed sources stay in git history at commit `de4ec2a`.
 
 ## Implementation progress
 
@@ -117,7 +124,6 @@ python ./tools/pipeline.py 'E:/path/to/ngb.iso'
 ./tools/android/probes.ps1
 ./tools/android/build-deps.ps1
 ./tools/android/build-glib.ps1
-./tools/android/build-apk.ps1
 # Explicitly select the intended device; no phone is chosen automatically:
 ./tools/android/probes.ps1 -Run -Serial '<Thor adb serial>'
 # Compile generated game C independently of unfinished graphics dependencies:

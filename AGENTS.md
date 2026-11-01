@@ -36,10 +36,34 @@ cmake -S . -B build/linux -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER
 ninja -C build/linux                    # build/linux/NinjaGaidenBlack (+ NinjaTrilogy, NinjaTomoe)
 packaging/appimage/build.sh             # build/appimage/NinjaGaidenBlack-x86_64.AppImage
 packaging/windows/build.sh              # build/windows-release/NinjaGaidenBlack-windows-x64.zip
+packaging/android/build.sh              # build/android-release/NinjaGaidenBlack-android-arm64.apk
 ```
 
 The generated code is large: cap the memory of big builds (`systemd-run --user --scope -p
 MemoryMax=14G ...`).
+
+### Android: one entry point, one package name
+
+`packaging/android/build.sh` is the only way to build the phone port. There is no Gradle
+project and no second script.
+
+- Output: `build/android-release/NinjaGaidenBlack-android-arm64.apk`
+- Package: `io.github.gamboozino.ngbrecomp`, version 0.9.49
+- Signing key: `packaging/android/keystore/ngb-release.jks` — this is what lets an APK built
+  here upgrade over an installed copy instead of landing beside it as a second app
+- Java: one file, `packaging/android/java/io/github/gamboozino/ngbrecomp/NgbActivity.java`,
+  extending SDL's `SDLActivity` with no native methods of its own. The Android side of the
+  port is `src/android_main.c` (paths, `SDL_main`), `src/android_install.c`, `src/android_gpu.c`
+  and `src/android_haptic.c`; the JNI surface lives there, not in Java.
+
+**Do not add a Gradle project, an `android/` directory, or an `org.ngb.port` application.**
+An earlier 0.2.0 Gradle build produced a differently-named app with its own data directory:
+building that one yields an APK that installs fine and then shows the import screen, because
+the player's game and saves are under `io.github.gamboozino.ngbrecomp` and the new package
+cannot see them. If a build ever reports a package name other than
+`io.github.gamboozino.ngbrecomp`, it is the wrong build — stop and use `build.sh`.
+The removed Gradle port (touch menu, virtual pad, driver store, `org.ngb.port` JNI) is
+recoverable from git at commit `de4ec2a` if any of it is ever wanted back.
 
 ## Testing
 
