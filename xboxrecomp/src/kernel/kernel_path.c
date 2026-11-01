@@ -177,6 +177,10 @@ const wchar_t *xbox_LastHostPath(void)
 
 static WCHAR s_game_dir[MAX_PATH];
 static WCHAR s_save_dir[MAX_PATH];
+/* Where the partition images live. Usually the save directory, but a platform
+ * whose save directory is a mount that counts holes as used space (the phone's
+ * Android/data, a FUSE mount) can point them somewhere that does not. */
+static WCHAR s_part_dir[MAX_PATH];
 static BOOL  s_initialized = FALSE;
 
 /*
@@ -191,7 +195,6 @@ static BOOL  s_initialized = FALSE;
  * The table is the standard retail geometry. This is emulating a device that
  * has to be there, not fabricating anything the title owns.
  */
-#define XBOX_DISK_IMAGE_NAME   L"Partition0.img"
 #define XBOX_PART_TABLE_OFFSET 0x800
 #define XBOX_PART_IN_USE       0x80000000u
 
@@ -235,6 +238,65 @@ static void xbox_write_partition_table(const WCHAR *path)
     CloseHandle(h);
 }
 
+/* Geometry of the partitions the table above describes, in sectors, indexed by
+ * partition number. 0 is the whole disk, which is never sized (only the table
+ * at sector 4 is written into it); 1 is E:, 2 is C:, 3 to 5 are the X:, Y: and
+ * Z: caches. The table and these sizes have to agree -- a title that reads the
+ * table and then asks the device how big it is sees both. */
+static const ULONGLONG s_part_sectors[6] = {
+    0,             /* 0: whole disk, table only            */
+    0x00465400ull, /* 1: E: game and saves            */
+    0x000FA000ull, /* 2: C: system                    */
+    0x00177000ull, /* 3: X: cache                     */
+    0x00177000ull, /* 4: Y: cache                     */
+    0x00177000ull, /* 5: Z: cache                     */
+};
+
+/*
+ * Create the image behind one partition device, if it is not there already.
+ *
+ * Called when a title opens the device, not at start-up. Every one of these is
+ * mostly holes -- a 750 MB cache partition that a title formats and then barely
+ * writes to -- and on the phone's Android/data that is what fills up: the FUSE
+ * mount there reports each hole as used space, so five images that cost nothing
+ * on disk cost their full 4.9 GB when a file manager looks. Creating them on
+ * demand means a title that never opens X:, Y:, Z: or C: as raw devices (the
+ * great majority open only Partition0, to read the table) leaves no images
+ * behind at all, and the ones it does open cost only what it writes.
+ *
+ * Only Partition0 has to exist up front: it carries the table that tells a
+ * title the other partitions are there.
+ */
+static void xbox_ensure_partition_image(int p)
+{
+    const WCHAR *dir = s_part_dir[0] ? s_part_dir : s_save_dir;
+    WCHAR image[MAX_PATH];
+    HANDLE h;
+    DWORD ret;
+    LARGE_INTEGER end, have;
+
+    if (p < 0 || p > 5)
+        return;
+    swprintf_s(image, MAX_PATH, L"%s\\Partition%d.img", dir, p);
+    if (p == 0) {
+        xbox_write_partition_table(image);
+        return;
+    }
+
+    h = CreateFileW(image, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                    OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &ret, NULL);
+    end.QuadPart = (LONGLONG)(s_part_sectors[p] * 512ull);
+    /* Only ever grow: a partition the title formatted on an earlier run keeps
+     * what it put there. */
+    if (GetFileSizeEx(h, &have) && have.QuadPart < end.QuadPart)
+        if (SetFilePointerEx(h, end, NULL, FILE_BEGIN))
+            SetEndOfFile(h);
+    CloseHandle(h);
+}
+
 /*
  * Map a partition device onto an image file.
  *
@@ -272,7 +334,13 @@ static BOOL xbox_partition_device_path(const char *xbox_path, WCHAR *out, DWORD 
     if (*rest != '\0')
         return FALSE;
 
-    swprintf_s(out, n, L"%s\\Partition%c.img", s_save_dir, (WCHAR)digit);
+    /* The caller opens the path this returns straight away, and a title that
+     * asks for a device its image does not exist for gets a create failure it
+     * reads as a broken disk, so the image is made here rather than at
+     * start-up. */
+    xbox_ensure_partition_image(digit - '0');
+    swprintf_s(out, n, L"%s\\Partition%c.img",
+               s_part_dir[0] ? s_part_dir : s_save_dir, (WCHAR)digit);
     return TRUE;
 }
 
@@ -324,48 +392,33 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     {
         static const WCHAR *subs[] = { L"TitleData", L"UserData", L"Cache",
                                        L"SystemData" };
-        WCHAR image[MAX_PATH];
         WCHAR dir[MAX_PATH];
+        const char *part_env;
         SHCreateDirectoryExW(NULL, s_save_dir, NULL);
         for (int i = 0; i < (int)(sizeof(subs) / sizeof(subs[0])); i++) {
             swprintf_s(dir, MAX_PATH, L"%s\\%s", s_save_dir, subs[i]);
             SHCreateDirectoryExW(NULL, dir, NULL);
         }
-        swprintf_s(image, MAX_PATH, L"%s\\%s", s_save_dir, XBOX_DISK_IMAGE_NAME);
-        xbox_write_partition_table(image);
-        /* The other partition devices, sized to the same geometry the table
-         * above describes, so a title that asks the device how big it is gets
-         * an answer consistent with the table it just read. Marked sparse
-         * first: the cache partitions are 750 MB each and none of that is
-         * touched until something writes to it. */
-        {
-            static const ULONGLONG part_sectors[6] = {
-                0,             /* 0: whole disk, sized below      */
-                0x00465400ull, /* 1: E: game and saves            */
-                0x000FA000ull, /* 2: C: system                    */
-                0x00177000ull, /* 3: X: cache                     */
-                0x00177000ull, /* 4: Y: cache                     */
-                0x00177000ull, /* 5: Z: cache                     */
-            };
-            for (int p = 1; p <= 5; p++) {
-                HANDLE h;
-                DWORD ret;
-                LARGE_INTEGER end;
 
-                swprintf_s(image, MAX_PATH, L"%s\\Partition%d.img",
-                           s_save_dir, p);
-                h = CreateFileW(image, GENERIC_WRITE, FILE_SHARE_READ, NULL,
-                                OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (h == INVALID_HANDLE_VALUE)
-                    continue;
-                DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0,
-                                &ret, NULL);
-                end.QuadPart = (LONGLONG)(part_sectors[p] * 512ull);
-                if (SetFilePointerEx(h, end, NULL, FILE_BEGIN))
-                    SetEndOfFile(h);
-                CloseHandle(h);
-            }
+        /* NGB_PART_DIR keeps the images out of the save directory -- see the
+         * note on xbox_ensure_partition_image. */
+        part_env = getenv("NGB_PART_DIR");
+        if (part_env && part_env[0])
+            MultiByteToWideChar(CP_UTF8, 0, part_env, -1, s_part_dir, MAX_PATH);
+        else
+            wcscpy_s(s_part_dir, MAX_PATH, s_save_dir);
+        {
+            size_t n = wcslen(s_part_dir);
+            while (n > 1 && (s_part_dir[n - 1] == L'\\'
+                             || s_part_dir[n - 1] == L'/'))
+                s_part_dir[--n] = L'\0';
         }
+        SHCreateDirectoryExW(NULL, s_part_dir, NULL);
+
+        /* Partition0 only: it carries the table. The other images are made
+         * when a title opens the device, so a title that never touches them
+         * leaves nothing behind. */
+        xbox_ensure_partition_image(0);
     }
 
     s_initialized = TRUE;
@@ -483,6 +536,9 @@ translate:
 
 static char s_game_dir[MAX_PATH];
 static char s_save_dir[MAX_PATH];
+/* Where the partition images live; the save directory unless NGB_PART_DIR
+ * names another one (see the Android note in src/android_main.c). */
+static char s_part_dir[MAX_PATH];
 static BOOL s_initialized = FALSE;
 
 /* Strip a single trailing '/' (but never the root '/'). */
@@ -496,7 +552,6 @@ static void strip_trailing_slash(char* s)
 /* The raw disk device, \\Device\\Harddisk0\\Partition0, backed by an image
  * holding the retail partition table at sector 4 -- see the Windows half
  * above for why it has to exist. Same geometry, same bytes. */
-#define XBOX_DISK_IMAGE_NAME_A "Partition0.img"
 
 static void xbox_write_partition_table_posix(const char *path)
 {
@@ -529,6 +584,51 @@ static void xbox_write_partition_table_posix(const char *path)
     close(fd);
 }
 
+/* Geometry of the partitions the table describes, in sectors, indexed by
+ * partition number -- same numbers, same reason, as the Windows half. */
+static const unsigned long long s_part_sectors[6] = {
+    0,             /* 0: whole disk, table only           */
+    0x00465400ull, /* 1: E: game and saves            */
+    0x000FA000ull, /* 2: C: system                    */
+    0x00177000ull, /* 3: X: cache                     */
+    0x00177000ull, /* 4: Y: cache                     */
+    0x00177000ull, /* 5: Z: cache                     */
+};
+
+/* Make the image behind one partition device, if it is not there yet -- called
+ * when a title opens the device rather than at start-up (see the Windows half
+ * for why: on a phone the save directory is a FUSE mount that charges every
+ * hole, so five mostly-empty images cost their full 4.9 GB there). Only
+ * Partition0, which carries the table, has to exist up front. */
+static void xbox_ensure_partition_image_posix(int p)
+{
+    const char *dir = s_part_dir[0] ? s_part_dir : s_save_dir;
+    char path[MAX_PATH];
+    struct stat st;
+    int fd;
+    off_t want;
+
+    if (p < 0 || p > 5)
+        return;
+    snprintf(path, sizeof(path), "%s/Partition%d.img", dir, p);
+    if (p == 0) {
+        xbox_write_partition_table_posix(path);
+        return;
+    }
+
+    fd = open(path, O_RDWR | O_CREAT, 0644);
+    if (fd < 0)
+        return;
+    /* ftruncate leaves the image sparse, and only ever grows it: a partition
+     * the title formatted on an earlier run keeps what it put there. */
+    want = (off_t)(s_part_sectors[p] * 512ull);
+    if (fstat(fd, &st) == 0 && st.st_size < want)
+        if (ftruncate(fd, want) != 0)
+            xbox_log(XBOX_LOG_WARN, XBOX_LOG_PATH, "size %s: %s",
+                     path, strerror(errno));
+    close(fd);
+}
+
 /* "\\Device\\Harddisk0\\PartitionN" with nothing below it is the device
  * itself, served from PartitionN.img; anything under it is a file path. */
 static BOOL xbox_partition_device_path_posix(const char *xbox_path, char *out,
@@ -550,7 +650,11 @@ static BOOL xbox_partition_device_path_posix(const char *xbox_path, char *out,
         rest++;
     if (*rest != '\0')
         return FALSE;
-    snprintf(out, n, "%s/Partition%c.img", s_save_dir, digit);
+    /* The caller opens this path straight away, and a missing image looks to
+     * the title like a disk it cannot read -- make it here, not at start-up. */
+    xbox_ensure_partition_image_posix(digit - '0');
+    snprintf(out, n, "%s/Partition%c.img",
+             s_part_dir[0] ? s_part_dir : s_save_dir, digit);
     return TRUE;
 }
 
@@ -610,10 +714,7 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     {
         static const char *subs[] = { "TitleData", "UserData", "Cache",
                                       "SystemData" };
-        static const unsigned long long part_sectors[6] = {
-            0, 0x00465400ull, 0x000FA000ull,
-            0x00177000ull, 0x00177000ull, 0x00177000ull,
-        };
+        const char *part_env;
         char path[MAX_PATH];
 
         mkdir_p(s_save_dir);
@@ -621,26 +722,20 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
             snprintf(path, sizeof(path), "%s/%s", s_save_dir, subs[i]);
             mkdir_p(path);
         }
-        snprintf(path, sizeof(path), "%s/%s", s_save_dir, XBOX_DISK_IMAGE_NAME_A);
-        xbox_write_partition_table_posix(path);
-        /* ftruncate leaves the images sparse: 750 MB cache partitions cost
-         * nothing until written. Only ever grows them, so a formatted
-         * partition from an earlier run survives. */
-        for (int p = 1; p <= 5; p++) {
-            struct stat st;
-            int fd;
-            off_t want = (off_t)(part_sectors[p] * 512ull);
 
-            snprintf(path, sizeof(path), "%s/Partition%d.img", s_save_dir, p);
-            fd = open(path, O_RDWR | O_CREAT, 0644);
-            if (fd < 0)
-                continue;
-            if (fstat(fd, &st) == 0 && st.st_size < want)
-                if (ftruncate(fd, want) != 0)
-                    xbox_log(XBOX_LOG_WARN, XBOX_LOG_PATH, "size %s: %s",
-                             path, strerror(errno));
-            close(fd);
-        }
+        /* NGB_PART_DIR moves the images off the save directory -- see the note
+         * on xbox_ensure_partition_image_posix. */
+        part_env = getenv("NGB_PART_DIR");
+        if (part_env && part_env[0])
+            snprintf(s_part_dir, sizeof(s_part_dir), "%s", part_env);
+        else
+            snprintf(s_part_dir, sizeof(s_part_dir), "%s", s_save_dir);
+        strip_trailing_slash(s_part_dir);
+        mkdir_p(s_part_dir);
+
+        /* Partition0 only: it carries the table a title reads to find the
+         * others. The rest are made when a title opens them. */
+        xbox_ensure_partition_image_posix(0);
     }
 
     s_initialized = TRUE;

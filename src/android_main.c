@@ -166,6 +166,16 @@ int SDL_main(int argc, char **argv)
         set_dir("XDG_CONFIG_HOME", base, "config");
         set_dir("XDG_CACHE_HOME", base, "cache");
         set_dir("XDG_DATA_HOME", base, "data");
+        /* The Xbox partition images would otherwise sit in Android/data, which
+         * is a FUSE mount: it reports each hole of a sparse file as used, so
+         * five near-empty images (E:, C: and the three caches) cost their full
+         * 4.9 GB there. The internal directory is an ordinary file system,
+         * where a 750 MB image costs nothing until the title writes to it. */
+        {
+            const char *internal = SDL_AndroidGetInternalStoragePath();
+            if (internal && strcmp(internal, base) != 0)
+                set_dir("NGB_PART_DIR", internal, "partitions");
+        }
         take_settings(base);
     }
     char log_path[1024];
