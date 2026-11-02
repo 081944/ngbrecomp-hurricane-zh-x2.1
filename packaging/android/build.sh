@@ -102,14 +102,30 @@ if [ ! -f "$turnip" ]; then
     [ -x "$deps/venv/bin/meson" ] || { python3 -m venv "$deps/venv" &&
         "$deps/venv/bin/pip" install -q meson==1.12.1 Mako==1.4.3 PyYAML==6.0.3 packaging==26.3; }
     bin=$(echo "$ndk"/toolchains/llvm/prebuilt/*/bin)
+    # Windows: the NDK's clang drivers are .cmd wrappers, which Meson takes for something other than a
+    # compiler ("binary or interpreter not executable"). All they run is clang.exe with a --target, so say
+    # that instead when the .cmd is what is there.
+    if [ -f "$bin/aarch64-linux-android$api-clang.cmd" ]; then
+        c_line="c = ['$bin/clang.exe', '--target=aarch64-linux-android$api']"
+        cpp_line="cpp = ['$bin/clang++.exe', '--target=aarch64-linux-android$api', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']"
+        ar_line="ar = '$bin/llvm-ar.exe'"
+        strip_line="strip = '$bin/llvm-strip.exe'"
+        ld_line=""            # (clang.exe picks lld itself; there is no bare 'lld' on PATH)
+    else
+        c_line="c = ['$bin/aarch64-linux-android$api-clang']"
+        cpp_line="cpp = ['$bin/aarch64-linux-android$api-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']"
+        ar_line="ar = '$bin/llvm-ar'"
+        strip_line="strip = '$bin/llvm-strip'"
+        ld_line="c_ld = 'lld'
+cpp_ld = 'lld'"
+    fi
     cat > "$deps/android-$abi.cross" <<CROSS
 [binaries]
-ar = '$bin/llvm-ar'
-c = ['$bin/aarch64-linux-android$api-clang']
-cpp = ['$bin/aarch64-linux-android$api-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
-c_ld = 'lld'
-cpp_ld = 'lld'
-strip = '$bin/llvm-strip'
+$ar_line
+$c_line
+$cpp_line
+$ld_line
+$strip_line
 pkg-config = ['/usr/bin/false']
 
 [built-in options]
