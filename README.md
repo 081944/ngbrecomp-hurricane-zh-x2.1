@@ -73,10 +73,11 @@ The same x2.1 build runs on ARM64 Android phones and handhelds: the recompiled c
 [docs/ANDROID.md](docs/ANDROID.md).
 
 Needs Android 11 (API 30) or newer, a 64-bit ARM device and a **Vulkan 1.3** driver — stock Adreno 6xx/7xx
-drivers usually report 1.1, so a Mesa Turnip ZIP (KIMCHI's builds, for example) is normally required, and
-both the first-run screen and the in-game menu can import one. Installing the image needs about 6 GB free
-plus the image itself. Import the disc once with **导入游戏 ISO** or **导入游戏文件夹** and the game starts by
-itself; the **☰** button opens the touch menu (display, quality, audio, graphics driver), and the on-screen
+drivers usually report 1.1, so the APK carries Mesa's Turnip and uses it on such a phone by itself; Graphics >
+GPU Driver offers Auto, the phone's own driver or Turnip (a change needs a restart). Installing the image needs
+about 6 GB free plus the image itself. Import the disc once with **导入游戏 ISO** or
+**导入游戏文件夹** and the game starts by itself; the **☰** button opens the touch menu (display, quality,
+audio), and the on-screen
 pad gives way to a Bluetooth or USB gamepad when one is connected.
 
 Compared with the PC build there is no keyboard/mouse or rebinding, no F1 settings overlay, and no hand-over
@@ -85,7 +86,7 @@ to the arcade programs. Saves live in the app's own folder, so uninstalling dele
 ## Versions
 
 Releases follow the ngbrecomp version they are based on (`hurricane-v0.9.9` = ngbrecomp 0.9.9); our own
-updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.51`.
+updates on top of one add `-1`, `-2`, ... The window title shows it: `Ninja Gaiden Black Hurricane_x2.1_v0.9.52`.
 
 ## Changes from ngbrecomp
 

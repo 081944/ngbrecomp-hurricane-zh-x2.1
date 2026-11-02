@@ -84,26 +84,11 @@ enum { S_RENDER, S_TEXTURE, S_SHADOW, S_DISPLAY, S_VSYNC, S_FPS, S_WINDOW, S_ASP
        S_ALLWEAP,
        S_ESSCHARGE, S_CUTSKIP, S_UNUSED35 /* (the GPU driver was) */, S_RESPONSIVE, S_ALLARM, S_ALLSCROLL,
        S_ONEHIT, S_UNLOCKS,                 /* not a setting: Cheats' row opening the Unlocks page */
-       S_GPUDRV, S_DRVPKG,                  /* Android only: src/android_gpu.c. Kept after upstream's, whose numbers
-                                             * responsive.c and pc_menu.c take as given */
+       S_GPUDRV,                            /* Android only: src/android_gpu.c */
        S_COUNT };
 _Static_assert(S_RTHREAD == 30 && S_ALLWEAP == 32 && S_ESSCHARGE == 33 && S_CUTSKIP == 34 && S_RESPONSIVE == 36 &&
-               S_UNLOCKS == 40 && S_GPUDRV == 41 && S_DRVPKG == 42,
+               S_UNLOCKS == 40 && S_GPUDRV == 41,
                "the S_ numbers are ngb_pc_setting's (src/ingame_menu.c)");
-
-/* The driver packages (Android only, src/android_gpu.c; weak here: the desktop builds none) */
-#ifdef __ANDROID__
-int ngb_driver_pkg(int i, char *dir, size_t dn, char *name, size_t nn);
-int ngb_driver_pkg_count(void);
-void ngb_driver_pkg_select(const char *name);
-int ngb_driver_pkg_selected(char *out, size_t n);
-#else
-__attribute__((weak)) int ngb_driver_pkg(int i, char *dir, size_t dn, char *name, size_t nn)
-    { (void)i; (void)dir; (void)dn; (void)name; (void)nn; return 0; }
-__attribute__((weak)) int ngb_driver_pkg_count(void) { return 0; }
-__attribute__((weak)) void ngb_driver_pkg_select(const char *name) { (void)name; }
-__attribute__((weak)) int ngb_driver_pkg_selected(char *out, size_t n) { (void)out; (void)n; return 0; }
-#endif
 
 static const char *const s_label[S_COUNT] = {
     "Render Resolution", "Anisotropic Filtering", "Shadow Resolution",
@@ -116,7 +101,7 @@ static const char *const s_label[S_COUNT] = {
     "Multithreaded Renderer", "", "All Weapons", "Essence-Only Charging", "Skip Any Cutscene", "",
     "Responsive Menus", "All Armlets", "All Scrolls",
     "One Hit Kill", "Unlocks",
-    "GPU Driver", "Driver Packages",
+    "GPU Driver",
 };
 static const char *const s_help[S_COUNT] = {
     "Draws the game at a multiple of the console's resolution.",
@@ -160,8 +145,7 @@ static const char *const s_help[S_COUNT] = {
     "The Izuna Drop, Counter Attack and Guillotine Throw scrolls. Turned off, they are taken back.",
     "Any hit that hurts an enemy or a boss kills it. For this session only.",
     "Difficulties, costumes and the main menu's extras (saved); weapons, armlets and scrolls (this session).",
-    "Turnip: Mesa's driver for Adreno GPUs. Auto uses it only when needed. Package: a driver zip of yours. Needs restart.",
-    "The driver package the GPU Driver's Package choice loads. A to go through the ones installed from the driver zips you copy into the app's files folder's drivers/ (Android/data/.../files/drivers).",
+    "Auto: Turnip only on a phone whose own driver lacks what the renderer needs. System: the phone's own. Turnip: Mesa's, built into the app. Needs restart.",
 };
 
 /* The categories: the strip's words, their rows. */
@@ -180,7 +164,7 @@ static const char *cat_name(int c)
 }
 static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
 #ifdef __ANDROID__   /* (the GPU driver: Adreno phones, src/android_gpu.c) */
-    { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, S_LOADDETAIL, S_RTHREAD, S_GPUDRV, S_DRVPKG, -1 },
+    { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, S_LOADDETAIL, S_RTHREAD, S_GPUDRV, -1 },
 #else
     { S_RENDER, S_TEXTURE, S_MSAA, S_SHADOW, S_GLOW, S_LOADDETAIL, S_RTHREAD, -1 },   /* -1 ends a page shorter than CAT_ROWS */
 #endif
@@ -203,8 +187,11 @@ static const signed char s_cat_rows[CATS + 1][CAT_ROWS] = {
 #define CTL_PROMPTS (A_COUNT + 1) /* Button Prompts: Auto, Xbox, PlayStation, PC (#113) */
 #define CTL_SWAP0 (A_COUNT + 2)   /* Swap LB and LT: the pad's shoulders for its triggers */
 #define CTL_SWAP1 (A_COUNT + 3)   /* Swap RB and RT */
-#define CTL_DEF  (A_COUNT + 4)
-#define CTL_ROWS (A_COUNT + 5)
+#define CTL_SWAP2 (A_COUNT + 4)   /* Swap A and B: the pad's face buttons */
+#define CTL_SWAP3 (A_COUNT + 5)   /* Swap X and Y */
+#define CTL_DEF  (A_COUNT + 6)
+#define CTL_ROWS (A_COUNT + 7)
+static int ctl_swap_which(int r) { return r >= CTL_SWAP0 && r <= CTL_SWAP3 ? r - CTL_SWAP0 : -1; }
 #define CTL_TOGGLE(r) ((void)(r), 0)
 static const char *const s_ctl_toggle_name[4] = { "", "", "", "" };
 static const char *const s_ctl_toggle_help[4] = { "", "", "", "" };
@@ -241,20 +228,7 @@ static void value_text(int row, char *out, size_t n)
     case S_QUICKSCALE: if (v) snprintf(out, n, "%d%%", v); else snprintf(out, n, "Off"); break;
     case S_POSAUDIO: snprintf(out, n, "%s", v == 2 ? "Clear" : v ? "Console" : "Off"); break;
     case S_AUDIOOUT: snprintf(out, n, "%s", v == 2 ? "5.1" : v ? "Stereo" : "Auto"); break;
-    case S_GPUDRV:  snprintf(out, n, "%s", v == 3 ? "Package" : v == 2 ? "Turnip" : v ? "System" : "Auto"); break;
-    case S_DRVPKG: {
-        char sel[128], name[128], dir[1200];
-        if (ngb_driver_pkg_selected(sel, sizeof sel)) {
-            for (int i = 0; ngb_driver_pkg(i, dir, sizeof dir, name, sizeof name); i++)
-                if (!strcmp(name, sel)) {
-                    snprintf(out, n, "%s", name);
-                    return;
-                }
-            snprintf(out, n, "%s (gone)", sel);
-        } else
-            snprintf(out, n, "%s", ngb_driver_pkg_count() ? "A to choose" : "None");
-        return;
-    }
+    case S_GPUDRV:  snprintf(out, n, "%s", v == 2 ? "Turnip" : v ? "System" : "Auto"); break;
     case S_UNLOCKS: snprintf(out, n, "%s", ""); break;
     case S_SKIP:
     case S_ALLDIFF:
@@ -313,23 +287,8 @@ static void change(int row, int step)
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
     case S_GPUDRV:
-        ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 3)) % 4);
+        ngb_pc_set_setting(row, (v + (step > 0 ? 1 : 2)) % 3);
         break;
-    case S_DRVPKG: {                       /* the packages there are, one along */
-        char sel[128], dir[1200], name[128];
-        int count = ngb_driver_pkg_count();
-        if (!count)
-            break;
-        int at = 0;
-        if (ngb_driver_pkg_selected(sel, sizeof sel))
-            for (int i = 0; ngb_driver_pkg(i, dir, sizeof dir, name, sizeof name); i++)
-                if (!strcmp(name, sel))
-                    at = i;
-        at = (at + (step > 0 ? 1 : count - 1)) % count;
-        if (ngb_driver_pkg(at, dir, sizeof dir, name, sizeof name))
-            ngb_driver_pkg_select(name);
-        break;
-    }
     case S_ASPECT:
         ngb_pc_set_setting(row, (v + (step > 0 ? 1 : ASPECT_COUNT - 1)) % ASPECT_COUNT);
         break;
@@ -973,12 +932,13 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
             page_text(px, m, v, s_ctl_cx[2], y + 18, 15, sel ? 0xFFFFFF : 0xC8C8D0, 1);
             continue;
         }
-        if (r == CTL_SWAP0 || r == CTL_SWAP1) {        /* the shoulders for the triggers */
+        if (ctl_swap_which(r) >= 0) {                  /* the shoulders and the face buttons swapped */
+            static const char *const name[4] = { "Swap LB and LT", "Swap RB and RT", "Swap A and B", "Swap X and Y" };
             if (sel)
                 page_fill(px, 10, y + 2, 440, ROW_H - 4, 0x6E64DC, 0.85f, 0.05f);
-            page_text_fit(px, m, r == CTL_SWAP0 ? "Swap LB and LT" : "Swap RB and RT", CTL_NAME_X + 6, y + 19,
+            page_text_fit(px, m, name[ctl_swap_which(r)], CTL_NAME_X + 6, y + 19,
                           18, sel ? 0xF5EB5A : focused ? 0xE6E6EB : 0xA0A0A8, 0, 260);
-            page_text(px, m, ngb_bind_swap_get(r == CTL_SWAP0 ? 0 : 1) ? "On" : "Off", s_ctl_cx[2], y + 18, 15,
+            page_text(px, m, ngb_bind_swap_get(ctl_swap_which(r)) ? "On" : "Off", s_ctl_cx[2], y + 18, 15,
                       sel ? 0xFFFFFF : 0xC8C8D0, 1);
             continue;
         }
@@ -1033,10 +993,15 @@ static void draw_controls(uint32_t *px, uint8_t *m, int focused, int row)
         help = "How fast the right stick and the mouse turn the camera (play only).";
     else if (focused && row == CTL_PROMPTS)
         help = "The buttons the prompts show. Auto: whichever controller or keyboard is in use.";
-    else if (focused && row == CTL_SWAP0)
-        help = "The controller's LB acts as LT and its LT as LB -- the bumpers where the game expects triggers.";
-    else if (focused && row == CTL_SWAP1)
-        help = "The controller's RB acts as RT and its RT as RB -- the bumpers where the game expects triggers.";
+    else if (focused && ctl_swap_which(row) >= 0) {
+        static const char *const swap_help[4] = {
+            "The controller's LB acts as LT and its LT as LB -- the bumpers where the game expects triggers.",
+            "The controller's RB acts as RT and its RT as RB -- the bumpers where the game expects triggers.",
+            "The controller's A acts as B and its B as A.",
+            "The controller's X acts as Y and its Y as X.",
+        };
+        help = swap_help[ctl_swap_which(row)];
+    }
     else if (focused && row >= 0)
         help = s_ctl_col == 2 && ngb_bind_pad_fixed(row) ? ngb_bind_help(row)
              : ngb_pad_prompts_ps() ? "Cross: change   Square / Delete: clear   (play only; the menus keep theirs)"
@@ -2234,8 +2199,8 @@ static int ctl_keys(int key, int *row, int strip)
             play_sound(1);
             break;
         }
-        if (*row == CTL_SWAP0 || *row == CTL_SWAP1) {
-            ngb_bind_swap_step(*row == CTL_SWAP0 ? 0 : 1, key == K_LEFT ? -1 : 1);
+        if (ctl_swap_which(*row) >= 0) {
+            ngb_bind_swap_step(ctl_swap_which(*row), key == K_LEFT ? -1 : 1);
             play_sound(1);
             break;
         }
@@ -2256,8 +2221,8 @@ static int ctl_keys(int key, int *row, int strip)
         } else if (*row == CTL_PROMPTS) {
             ngb_bind_step_prompts(1);
             play_sound(6);
-        } else if (*row == CTL_SWAP0 || *row == CTL_SWAP1) {
-            ngb_bind_swap_step(*row == CTL_SWAP0 ? 0 : 1, 1);
+        } else if (ctl_swap_which(*row) >= 0) {
+            ngb_bind_swap_step(ctl_swap_which(*row), 1);
             play_sound(6);
         } else if (*row == CTL_DEF) {
             ngb_bind_defaults();
@@ -2377,17 +2342,6 @@ static void pt_draw(void)
         play_sound(s_focus ? 6 : 3);                  /* in, as a tab's page; back */
     for (int i = 0; i < S_COUNT; i++)
         vals[i] = ngb_pc_setting(i);
-    {   /* the Driver Packages row's value is the chosen package, not a setting: fold it in, so
-         * a switch (left/right) redraws the page -- otherwise its name stays the one drawn before */
-        char sel[128];
-        vals[S_DRVPKG] = ngb_driver_pkg_selected(sel, sizeof sel) ? -2 : -1;
-        if (vals[S_DRVPKG] == -2) {
-            char dir[1200], nm[128];
-            for (int i = 0; ngb_driver_pkg(i, dir, sizeof dir, nm, sizeof nm); i++)
-                if (!strcmp(nm, sel))
-                    vals[S_DRVPKG] = i;
-        }
-    }
     /* what is drawn, each part in bits of its own (the list's top, past 15 since the quick menu's actions,
      * ran into the column's: a scroll could leave the page as it was) */
     int shown = (s_cat & 7) << 28 | ((s_row + 1) & 0xFF) << 20 | (s_ctl_col & 3) << 18 |

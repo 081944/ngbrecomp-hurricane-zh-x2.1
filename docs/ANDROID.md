@@ -18,10 +18,11 @@ history: it describes the checkout before any of this existed.
   by itself; a manual start button and a two-failed-starts fallback stay behind it.
 - In game, the **☰** button opens the port's own menu (`src/ingame_menu.c`, `src/quick_ui.c`):
   display (render scale, MSAA, aspect, V-Sync, FPS), quality (texture filtering,
-  shadow resolution, glow, detail under load, HUD), audio (positional, channels) and
-  graphics driver (system driver, imported ZIPs, ZIP import). A driver change
-  restarts the app so the process reloads the new library.
-- Driver ZIPs land in the app's own `files/drivers/<id>/`; nothing is written to
+  shadow resolution, glow, detail under load, HUD) and audio (positional, channels).
+- Graphics > GPU Driver (`src/android_gpu.c`): Auto (Turnip only when the phone's own
+  driver lacks dynamic rendering or synchronization2, else the system's), System, or
+  Turnip (Mesa's, built into the APK; `NGB_GPU_DRIVER=system|turnip` overrides it for
+  testing). A change needs a restart. There is no ZIP import; nothing is written to
   shared storage except the game folder, which the player imported on purpose.
 - Force feedback goes to the phone's own motor (`src/android_haptic.c`,
   `NgbActivity.vibrate()`), not to the pad's: the game's XID rumble report
@@ -52,7 +53,7 @@ packaging/android/build.sh
 
 `packaging/android/build.sh` is the only build entry for the phone port. It produces
 `NinjaGaidenBlack-android-arm64.apk` under `build/android-release/`, package
-`io.github.gamboozino.ngbrecomp`, version 0.9.51. There is no Gradle project and no second
+`io.github.gamboozino.ngbrecomp`, version 0.9.52. There is no Gradle project and no second
 script; a build that reports any other package name is the wrong build.
 
 `packaging/android/keystore/ngb-release.jks` (alias `ngb`, password `android`) is committed
