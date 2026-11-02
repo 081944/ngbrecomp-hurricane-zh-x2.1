@@ -48,7 +48,7 @@ MemoryMax=14G ...`).
 project and no second script.
 
 - Output: `build/android-release/NinjaGaidenBlack-android-arm64.apk`
-- Package: `io.github.gamboozino.ngbrecomp`, version 0.9.49
+- Package: `io.github.gamboozino.ngbrecomp`, version 0.9.51
 - Signing key: `packaging/android/keystore/ngb-release.jks` — this is what lets an APK built
   here upgrade over an installed copy instead of landing beside it as a second app
 - Java: one file, `packaging/android/java/io/github/gamboozino/ngbrecomp/NgbActivity.java`,
