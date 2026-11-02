@@ -217,6 +217,8 @@ void ngb_settings_load(NgbSettings *s)
             s->essence_charging = atoi(val) != 0;
         } else if (!strcmp(key, "skip_any_cutscene")) {
             s->skip_cutscenes = atoi(val) != 0;
+        } else if (!strcmp(key, "responsive_menus")) {
+            s->responsive_menus = atoi(val) != 0;
         } else if (!strcmp(key, "movie_ratio")) {
             s->movie_43 = !strcmp(val, "4:3");
         } else if (!strcmp(key, "show_fps")) {
@@ -279,6 +281,7 @@ void ngb_settings_save(const NgbSettings *s)
     fprintf(f, "gpu_driver = %d\n", s->gpu_driver);
     fprintf(f, "essence_only_charging = %d\n", s->essence_charging);
     fprintf(f, "skip_any_cutscene = %d\n", s->skip_cutscenes);
+    fprintf(f, "responsive_menus = %d\n", s->responsive_menus);
     fprintf(f, "positional_audio = %d\n", s->positional_audio);
     fprintf(f, "show_hud = %d\n", s->show_hud);
     fprintf(f, "audio_output = %d\n", s->audio_output);

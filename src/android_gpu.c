@@ -2,13 +2,16 @@
  * Android: which Vulkan driver the game draws with. The phone's own, or Turnip -- Mesa's open driver for Qualcomm's
  * Adreno GPUs, built from Mesa's source and shipped in the APK (packaging/android/build.sh) -- loaded through
  * libadrenotools, which has the system's Vulkan loader load it for this app alone. Many Adreno 6xx phones' own
- * drivers stop at Vulkan 1.1 without the dynamic rendering, synchronization2 and push descriptors the renderer
- * needs (#87); Turnip has them.
+ * drivers stop at Vulkan 1.1 without the dynamic rendering and synchronization2 the renderer needs (#87); Turnip
+ * has them.
  *
  * The setting (Graphics > GPU Driver, settings.ini gpu_driver; NGB_GPU_DRIVER=system|turnip|package over it):
  * System; Turnip; Package (one of the driver zips in the app's files folder); or Auto, Turnip only on
  * an Adreno whose own driver lacks those -- found by a look at the system's driver first, an
- * instance made and let go. Turnip finding no GPU it knows (an Adreno too new or too old for it) falls back to the
+ * instance made and let go. Upstream ships no such setting: picking the system's driver on a phone whose driver
+ * lacked push descriptors kept the game from starting, the menu to change it back with included (#151). 0.9.50's
+ * renderer binds a set per draw without them (#159), so the choice is safe to offer here. Turnip finding no GPU it
+ * knows (an Adreno too new or too old for it) falls back to the
  * system's. The GPU emulation asks here before it starts Vulkan (xboxrecomp's instance.c, nv2a_vk_custom_loader).
  */
 #include <dlfcn.h>
@@ -17,12 +20,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+int ngb_pc_setting(int which);   /* src/ingame_menu.c: 41 GPU Driver */
+
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 
 #include <adrenotools/driver.h>
 
-int ngb_pc_setting(int which);   /* src/ingame_menu.c: 35 GPU Driver */
 
 #define TURNIP_LIB "libvulkan_freedreno.so"
 
@@ -98,9 +102,12 @@ static int usable_device(PFN_vkGetInstanceProcAddr gipa, int *qualcomm, int *mad
             dyn = d.dynamicRendering;
             sync2 = s.synchronization2;
         }
-        ok = dyn && sync2 && push;
-        fprintf(stderr, "[GPU] %s: Vulkan %u.%u, %s\n", p.deviceName, VK_API_VERSION_MAJOR(p.apiVersion),
-                VK_API_VERSION_MINOR(p.apiVersion), ok ? "has what the renderer needs" : "lacks what the renderer needs");
+        /* (push descriptors not needed -- the renderer binds a set per draw without them, #159 -- but on an Adreno
+         * still a reason to take Turnip, which has them) */
+        ok = dyn && sync2 && (push || p.vendorID != 0x5143);
+        fprintf(stderr, "[GPU] %s: Vulkan %u.%u, %s%s\n", p.deviceName, VK_API_VERSION_MAJOR(p.apiVersion),
+                VK_API_VERSION_MINOR(p.apiVersion), ok ? "has what the renderer needs" : "lacks what the renderer needs",
+                ok && !push ? " (no push descriptors)" : "");
     } else {
         fprintf(stderr, "[GPU] it lists no GPU here (%u found: built for another Adreno?)\n", n);
     }
@@ -367,7 +374,7 @@ static void prepare_hook_dir(char *out, size_t n, const char *pkgdir)
 
 PFN_vkGetInstanceProcAddr nv2a_vk_custom_loader(void)
 {
-    int mode = ngb_pc_setting(35);   /* 0 Auto, 1 System, 2 Turnip, 3 Package */
+    int mode = ngb_pc_setting(41);   /* 0 Auto, 1 System, 2 Turnip, 3 Package (S_GPUDRV, src/pause_tab.c) */
     const char *env = getenv("NGB_GPU_DRIVER");
     if (env && !strcmp(env, "system"))
         mode = 1;

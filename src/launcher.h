@@ -35,6 +35,7 @@ typedef struct NgbSettings {
     int gpu_driver;         /* Android: 0 Auto, 1 the system's, 2 Turnip, 3 a driver package (src/android_gpu.c) */
     int essence_charging;   /* Gameplay > Essence-Only Charging (src/ut_charge.c, #120) */
     int skip_cutscenes;     /* Gameplay > Skip Any Cutscene (src/cutscene_skip.c, #139) */
+    int responsive_menus;   /* Gameplay > Responsive Menus (src/responsive.c, #116) */
     /* Hard, Very Hard and Master Ninja offered without clearing the one before */
 } NgbSettings;
 
