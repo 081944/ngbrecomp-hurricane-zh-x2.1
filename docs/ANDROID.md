@@ -53,7 +53,7 @@ packaging/android/build.sh
 
 `packaging/android/build.sh` is the only build entry for the phone port. It produces
 `NinjaGaidenBlack-android-arm64.apk` under `build/android-release/`, package
-`io.github.gamboozino.ngbrecomp`, version 0.9.52. There is no Gradle project and no second
+`io.github.gamboozino.ngbrecomp`, version 0.9.57. There is no Gradle project and no second
 script; a build that reports any other package name is the wrong build.
 
 `packaging/android/keystore/ngb-release.jks` (alias `ngb`, password `android`) is committed

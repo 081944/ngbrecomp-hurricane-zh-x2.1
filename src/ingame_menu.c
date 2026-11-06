@@ -98,6 +98,17 @@ void ngb_set_all_difficulties(int on);   /* src/cheats.c */
 void ngb_set_all_costumes(int on);
 void ngb_set_unlock(int which, int on);
 
+/* Positional Audio's next value in the menus' order -- Off, Clear, Mixed, Console -- not the values' (0 off, 1 console,
+ * 2 clear, 3 mixed: the saved numbers kept) */
+int ngb_positional_step(int v, int step)
+{
+    static const int order[4] = { 0, 2, 3, 1 };
+    int i = 0;
+    while (i < 4 && order[i] != v)
+        i++;
+    return order[((i < 4 ? i : 0) + (step > 0 ? 1 : 3)) % 4];
+}
+
 int ngb_pc_setting(int which)
 {
     if (which >= 11 && which <= 13)
@@ -179,7 +190,7 @@ void ngb_pc_set_setting(int which, int value)
     case 8: s_running.skip_intro = value; break;        /* both at the next start */
     case 9: s_running.show_launcher = value; break;
     case 18: s_running.smooth_glow = !!value; break;
-    case 23: s_running.positional_audio = value < 0 ? 0 : value > 2 ? 2 : value; ngb_audio_set_positional(s_running.positional_audio); break;
+    case 23: s_running.positional_audio = value < 0 ? 0 : value > 3 ? 3 : value; ngb_audio_set_positional(s_running.positional_audio); break;
     case 24: s_running.show_hud = !!value; break;
     case 29: s_running.detail_under_load = !!value; break;
     case 30: s_running.render_thread = !!value; break;   /* at the next start */
@@ -1793,12 +1804,19 @@ bool nv2a_overlay_frame(uint32_t *px, int w, int h, const uint32_t *backdrop)
  * game far slower than the player had any way to know why (#47). */
 _Noreturn void ngb_renderer_fatal(const char *detail)
 {
+    static int once;
     char msg[2048];   /* Hurricane: in Chinese too (UTF-8), before the English (user 2026-10-18) */
+    if (__atomic_exchange_n(&once, 1, __ATOMIC_ACQ_REL))
+        for (;;)
+            SDL_Delay(1000);                       /* (the other renderer's message is up: it ends the game) */
 #ifdef __ANDROID__
     snprintf(msg, sizeof msg,
+             "本程序需要手机显卡的 Vulkan 驱动支持 dynamic rendering 与 synchronization2"
+             "（Vulkan 1.3 自带，或以扩展提供），这台手机不满足：\n\n%s\n\n"
+             "系统更新有时会带来新驱动。也欢迎到项目的 GitHub 页面报告手机型号与芯片。\n\n"
              "Ninja Gaiden Black needs a phone GPU whose Vulkan driver has dynamic rendering and "
              "synchronization2 (Vulkan 1.3, or those as extensions), and this phone's "
-             "does not:\n\n%s\n\n"
+             "does not (see above). "
              "A system update sometimes brings a newer driver. Please report your phone's model and chip on "
              "the project's GitHub page.", detail);
 #else
@@ -1816,5 +1834,9 @@ _Noreturn void ngb_renderer_fatal(const char *detail)
     fprintf(stderr, "[D3D] %s\n", msg);
     fflush(stderr);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Ninja Gaiden Black", msg, NULL);
-    exit(1);
+    fflush(NULL);   /* (the log: stdout is a file on Windows, fully buffered) */
+    _exit(1);   /* (not exit: the other threads are still running, and its teardown under them crashed, #192) */
 }
+
+/* xboxrecomp's NV2A model (its renderer could not start): the same message */
+void nv2a_renderer_fatal(const char *detail) { ngb_renderer_fatal(detail); }

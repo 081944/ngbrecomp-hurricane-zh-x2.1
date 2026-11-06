@@ -15,6 +15,28 @@ resolutions, widescreen and ultrawide, keyboard and mouse, rebindable controls a
 sound, movies, text): on first start it asks for your disc image and installs the game from it. It is made for the **retail USA
 release** (NTSC-U, title ID `5443000D`) and checks for it.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/e9fb1579-2320-4ff9-8fc0-0ea2a724316b" alt="Ultrawide 21:9: Ryu in front of Han's Bar"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>21:9 at 6x render resolution</sub></td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/6dc8bc0d-c5c7-418d-9432-184055bbe3e1" alt="Chapter 1"></td>
+    <td><img src="https://github.com/user-attachments/assets/c4944721-b04b-4061-a42f-dbff16fbd29b" alt="A fight, the HUD hidden"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>16:9 at 6x render resolution</sub></td>
+    <td align="center"><sub>HUD hidden</sub></td>
+  </tr>
+</table>
+
 ## Features
 
 - Native Linux (AppImage) and Windows (x64) builds; Steam Deck friendly
@@ -22,8 +44,10 @@ release** (NTSC-U, title ID `5443000D`) and checks for it.
 - Render resolution up to 10x, anisotropic filtering, MSAA, sharper shadows
 - 16:9, 16:10, 21:9 and 32:9 as well as 4:3: the 3D fills the screen, the HUD goes to the screen's
   corners, optional HUD-free view, menus keep the game's own 16:19
-- Keyboard and mouse with key prompts in the game, rebindable controls for keyboard, mouse and
-  controller, mouse support in the menus
+- Keyboard and mouse with key prompts in the game, Xbox, PlayStation and Nintendo button prompts,
+  rebindable controls for keyboard, mouse and controller (Ninpo and Wind Run on any two buttons),
+  mouse support in the menus
+- Mods: replacement game files in a `mods` folder, without touching the installed game
 - Skippable intros, movies and cutscenes (an option), unlock-all options for difficulties and costumes, optional cheats
 - The arcade Ninja Gaiden on the Han's Bar cabinet and the main menu, recompiled as well
 - Sound mixed on the PC: positional 3D sound, the console's room reverb, and 5.1 surround on a 5.1 or
@@ -124,20 +148,37 @@ packages are signed ad hoc, without Developer ID signing or notarization.
 all of these go into a `userdata` folder next to it instead. The first-run setup offers this as a
 checkbox. The folder must be writable, so not inside Program Files. Delete `portable.txt` to go back.
 
+### Mods
+
+Files placed in a `mods` folder beside the saves (the first row above; `userdata/mods` in portable
+mode) are read instead of the game's own: textures, models, sounds, movies, anything the game loads
+from its files. Use the same path the file has in the game's folder, for example
+`mods/movie/cre.sfd` for `movie/cre.sfd`. A mod replaces a whole file (no patches or scripts), the
+installed game is never changed, and deleting the file goes back to the original. The log lists
+each file taken from `mods` (`[MODS]`).
+
 ## Settings
 
 Everything is in the game's own menus: **RECOMP SETTINGS** on the main menu, and the **Settings** tab
 of the pause menu. Changes apply at once and are saved.
 
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/69f8a3fa-1aa2-42b0-b35a-c7531ff931d7" alt="RECOMP SETTINGS: Graphics"></td>
+    <td><img src="https://github.com/user-attachments/assets/dc1825e8-dbb7-4d00-a62b-990af3bfac53" alt="RECOMP SETTINGS: Gameplay"></td>
+  </tr>
+</table>
+
 - **Graphics**: render resolution (1x–10x), texture filtering (the console's, or 2x–16x
   anisotropic), anti-aliasing (MSAA), shadow resolution, Smoother Glow (a softer, fainter glow on
   bright lights; off is the console's look), Lower Detail Under Load, Multithreaded Renderer (drawing on a
-  thread of its own, for slower CPUs; off unless chosen, may have bugs)
+  thread of its own, for slower CPUs; on by default on Android, off unless chosen on a PC)
 - **Display**: aspect ratio (4:3, 16:9, 16:10, 21:9, 32:9), window size, windowed / fullscreen /
   borderless, V-Sync (Off, Mailbox, FIFO, Adaptive), frame-rate counter, the HUD on or off, skip the
   warnings and intro movies
-- **Sound**: Positional Audio (3D sounds placed left and right: Clear, the default, by level only;
-  Console, through the sound chip's filters as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
+- **Sound**: Positional Audio (3D sounds placed left and right: Mixed, the default, half the sound chip's
+  filters and half panned by direction, the easiest to place; Clear, by level only; Console, through the sound
+  chip's filters as on the Xbox, duller; Off, centred), Audio Output (Auto, Stereo
   or 5.1; Auto is 5.1 on a 5.1 or 7.1 output; a change needs a restart of the game)
 - **Gameplay** (each off unless chosen): the Quick Menu, an NG2-style d-pad menu for weapons, Ninpo
   and items, and whether the game pauses while it is open; **Intercept** (Black or Hurricane), the Hurricane
@@ -151,12 +192,15 @@ of the pause menu. Changes apply at once and are saved.
   Its **Unlocks** page: all difficulties from the start, all costumes, and the main menu's Missions (with every
   mission), Arcade Ninja Gaiden and Movie Theater without earning them (saved); All Weapons (every melee and
   projectile weapon at its highest level), All Armlets (the armlets and bands) and All Scrolls (the Izuna Drop,
-  Counter Attack and Guillotine Throw technique scrolls), for the session: turned off, each takes back what it
-  gave and puts back your own pickups; a save made while one is on keeps what it gave
-- **Controls**: rebind every action (two keys or mouse buttons and a controller button each); camera
-  inversion; start in third person; Camera Sensitivity; Toggle HUD (not bound unless chosen). The
-  bindings follow the game's own Button Settings: an action keeps its key or button whatever the
-  game's Options assign
+  Counter Attack and Guillotine Throw technique scrolls; the story's own can still be picked up while it is on),
+  for the session: turned off, each takes back what it gave and puts back your own pickups; a save made while one
+  is on keeps what it gave
+- **Controls**: rebind every action (two keys or mouse buttons and a controller button each; Ninpo
+  and Wind Run can take two controller buttons pressed together); camera inversion; start in third
+  person; Camera Sensitivity; Button Prompts; Toggle HUD (not bound unless chosen). The page shows
+  each binding as its key or button picture. A key or button bound to an action is taken from the
+  one that had it (Pause always keeps a controller button). The bindings follow the game's own
+  Button Settings: an action keeps its key or button whatever the game's Options assign
 
 The game's own Options (sound, movie aspect, controller vibration and so on) are where they always
 were.
@@ -168,7 +212,14 @@ and triggers, Back, Start and the stick clicks. It hides while a controller is c
 
 A controller works as on the Xbox. The keyboard and mouse can be used at any time — the game follows
 whichever was touched last, and its button prompts change to match (or stay on one set: "Button
-Prompts" on the "Controls" page, Auto, Xbox, PlayStation or PC).
+Prompts" on the "Controls" page, Auto, Xbox, PlayStation, Nintendo or PC).
+
+On a Nintendo controller the buttons work by position, as on an Xbox pad: the bottom face button
+(marked B) jumps, and two-button moves sit where the game puts them; the prompts show its own letters. On Android a Nintendo controller works by label instead (the button marked A jumps).
+
+To bind Ninpo or Wind Run to two buttons, choose its controller slot and hold the first button, then
+press the second; letting go of a single button binds just that one. Moved to other buttons, the
+game's own pair for it (Y + B, X + A) no longer does it.
 
 | Action | Keys | | Action | Keys |
 |---|---|---|---|---|
@@ -280,8 +331,8 @@ and test rules, also for coding agents: [AGENTS.md](AGENTS.md).
   [Xbox-XBERecomp](https://github.com/TGP482/Xbox-XBERecomp): the renderer's shader, vertex and
   texture code, and the sound mixer's model (MIT)
 - Fonts: EB Garamond and Liberation Serif (SIL Open Font License)
-- Keyboard, mouse and controller prompts, and the touch controls' buttons: Xelu's Free Controller & Key
-  Prompts (CC0)
+- Keyboard, mouse and controller prompts (the Xbox, PlayStation and Nintendo Switch buttons), and the
+  touch controls' buttons: Xelu's [Free Controller & Key Prompts](https://thoseawesomeguys.com/prompts/) (CC0)
 - The touch controls' sticks and d-pad: Kenney's [Mobile Controls](https://kenney.nl/assets/mobile-controls) (CC0)
 - Banner lettering: Chakra Petch by Cadson Demak (SIL Open Font License)
 

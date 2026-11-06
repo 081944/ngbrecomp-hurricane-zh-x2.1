@@ -84,9 +84,18 @@ static uint64_t rd(void *dev, uint32_t off, int size)
          * spinning a core for most of every frame (battery and heat on a
          * handheld). 100 us is nothing against a 16.7 ms frame. */
         if (repeats > 32) {
+            extern int nv2a_pace_on;
+            extern void nv2a_pace_nap(int64_t us);
+            struct timespec a, b;
+            if (nv2a_pace_on > 0)
+                clock_gettime(CLOCK_MONOTONIC, &a);
             vcpu_block_begin();
             vcpu_nap_us(100);
             vcpu_block_end();
+            if (nv2a_pace_on > 0) {
+                clock_gettime(CLOCK_MONOTONIC, &b);
+                nv2a_pace_nap((b.tv_sec - a.tv_sec) * 1000000LL + (b.tv_nsec - a.tv_nsec) / 1000);
+            }
         } else if (off == 0x800044 || repeats) {
             vcpu_yield_any();
         }
@@ -105,6 +114,13 @@ static void wr(void *dev, uint32_t off, uint64_t val, int size)
         trace("write", off, size, val);
     nv2a_vk_mmio_write(off, val, (unsigned)size);
 }
+
+/* The registers read and written without a fault: what a guest access to the aperture comes to (rd's polling
+ * included), for code that knows it may be touching them (src/d3d/gpu_regs.h). Each fault is a trip through the
+ * kernel -- some 20 us on a phone, thousands a second from D3D's kickoff and the GPU's interrupt handler. */
+int nv2a_reg_live(void) { return s_aperture != 0; }   /* (the model started: NGB_RENDERER=none never starts it) */
+uint32_t nv2a_reg_read32(uint32_t off) { return (uint32_t)rd(NULL, off, 4); }
+void nv2a_reg_write32(uint32_t off, uint32_t val) { wr(NULL, off, val, 4); }
 
 static LONG CALLBACK nv2a_veh(PEXCEPTION_POINTERS ep)
 {

@@ -168,8 +168,6 @@ static void movie_read_hook(const char *host_path, uint64_t off, size_t len)
 /* RECOMP_TLS is not optional: the runtime defines these thread-local, and a
  * plain extern would resolve to the TLS template rather than this thread's
  * copy, so the guest would start with every register at zero. */
-extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
-extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
 extern ptrdiff_t g_xbox_mem_offset;
 
 #define NGB_ENTRY_POINT 0x0032B385u
@@ -895,7 +893,7 @@ static void *guest_main(void *unused)
         extern void ngb_audio_set_positional(int mode);
         extern void ngb_audio_set_output(int choice);
         extern void dsound_hle_set_hrtf_tables(uint32_t index, uint32_t filters);
-        ngb_audio_set_positional(ngb_pc_setting(23));   /* Positional Audio (#30, #86): Clear unless chosen otherwise */
+        ngb_audio_set_positional(ngb_pc_setting(23));   /* Positional Audio (#30, #86): Mixed unless chosen otherwise */
         ngb_audio_set_output(ngb_pc_setting(25));       /* Audio Output: auto unless chosen */
         dsound_hle_set_hrtf_tables(0x395430, 0x383E70); /* DirectSound's full HRTF tables in this build */
     }
@@ -1382,8 +1380,11 @@ int main(int argc, char **argv)
     }
     /* Controllers and keyboard, on the thread that pumps the window's
      * events (hotplug arrives there too). */
-    if (s_use_gpu && !s_headless)
+    if (s_use_gpu && !s_headless) {
+        extern void ngb_bind_load(void);
+        ngb_bind_load();   /* (the Nintendo pads' layout: the controllers start with it, src/bindings.c) */
         xbox_InputInit();
+    }
 #endif
 
 #if defined(_WIN32)

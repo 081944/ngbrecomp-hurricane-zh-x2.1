@@ -54,9 +54,6 @@ extern uint32_t xbox_GetConnectedInterrupt(uint32_t vector);
 #else
 #  define OHCI_TLS __thread
 #endif
-extern OHCI_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
-extern OHCI_TLS uint32_t g_ebx, g_esi, g_edi;
-extern OHCI_TLS uint32_t g_fs_base;
 extern uint32_t xbox_AllocThreadTib(void);
 
 /* The vector XPP takes for USB0. HalGetInterruptVector(1) returns 1 here, and
@@ -1403,6 +1400,24 @@ static OhciController *hc_for(uint32_t va)
 int xbox_OhciOwnsAddress(uint32_t xbox_va)
 {
     return hc_for(xbox_va) != NULL;
+}
+
+int xbox_OhciRead32(uint32_t xbox_va, uint32_t *val)
+{
+    OhciController *hc = hc_for(xbox_va);
+    if (!hc)
+        return 0;
+    *val = (uint32_t)ohci_read(hc, xbox_va - hc->base, 4);
+    return 1;
+}
+
+int xbox_OhciWrite32(uint32_t xbox_va, uint32_t val)
+{
+    OhciController *hc = hc_for(xbox_va);
+    if (!hc)
+        return 0;
+    ohci_write(hc, xbox_va - hc->base, val, 4);
+    return 1;
 }
 
 int xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va)
