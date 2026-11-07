@@ -347,8 +347,10 @@ typedef struct
     uint32_t *px;
     int w, h, x0, y0, x1, y1;
 } Icon;
-static Icon s_icons[64];
+static Icon s_icons[128];
 static int s_icon_count;
+static SDL_SpinLock s_icon_init_lock;
+static SDL_mutex *s_icon_lock;
 
 static unsigned spread(unsigned v, unsigned mask)
 {
@@ -365,7 +367,7 @@ static unsigned spread(unsigned v, unsigned mask)
 
 /* XPR0 .spr packages contain sprite definitions and Xbox texture resources.
  * Inventory pictures use one image; Costume Selection uses several. */
-static Icon *icon(const char *name)
+static Icon *load_icon(const char *name)
 {
     if (!*name)
         return NULL;
@@ -378,7 +380,7 @@ static Icon *icon(const char *name)
     for (int i = 0; i < s_icon_count; i++)
         if (!strcmp(s_icons[i].name, name))
             return &s_icons[i];
-    if (s_icon_count == 64)
+    if (s_icon_count == 128)
         return NULL;
     Icon *it = &s_icons[s_icon_count++];
     snprintf(it->name, sizeof it->name, "%s", name);
@@ -509,6 +511,55 @@ done:
     free(names);
     fclose(f);
     return it;
+}
+
+static Icon *icon(const char *name)
+{
+    SDL_AtomicLock(&s_icon_init_lock);
+    if (!s_icon_lock) s_icon_lock = SDL_CreateMutex();
+    SDL_AtomicUnlock(&s_icon_init_lock);
+    if (!s_icon_lock) return NULL;
+    SDL_LockMutex(s_icon_lock);
+    Icon *it = load_icon(name);
+    SDL_UnlockMutex(s_icon_lock);
+    return it;
+}
+
+const uint32_t *ngb_quick_icon(const char *name, int *w, int *h, int bounds[4])
+{
+    Icon *it = icon(name);
+    if (!it || !it->px) return NULL;
+    *w = it->w; *h = it->h;
+    bounds[0] = it->x0; bounds[1] = it->y0; bounds[2] = it->x1; bounds[3] = it->y1;
+    return it->px;
+}
+
+int ngb_quick_asset_name(unsigned index, char name[24])
+{
+    char path[4200];
+    name[0] = 0;
+    FILE *f = xbox_mod_file("spr.afs", path, sizeof path) ? fopen(path, "rb") : NULL;
+    if (!f) {
+        snprintf(path, sizeof path, "%s/spr.afs", s_game_dir);
+        f = fopen(path, "rb");
+    }
+    if (!f) return 0;
+    unsigned char header[8], entry[8], filename[32];
+    int valid = 0;
+    if (fread(header, 1, 8, f) != 8 || memcmp(header, "AFS\0", 4)) goto done_name;
+    unsigned count = u32(header + 4);
+    if (!count || count > 4096 || index >= count || fseek(f, 8 + count * 8, SEEK_SET) ||
+        fread(entry, 1, 8, f) != 8 || u32(entry + 4) < count * 48u) goto done_name;
+    if (fseek(f, (long)u32(entry) + index * 48u, SEEK_SET) || fread(filename, 1, 32, f) != 32) goto done_name;
+    filename[31] = 0;
+    size_t length = strlen((char *)filename);
+    if (length < 5 || length >= 24 || strcmp((char *)filename + length - 4, ".spr") ||
+        strpbrk((char *)filename, "/\\\t\r\n")) goto done_name;
+    memcpy(name, filename, length + 1);
+    valid = 1;
+done_name:
+    fclose(f);
+    return valid;
 }
 
 static uint32_t *s_px;

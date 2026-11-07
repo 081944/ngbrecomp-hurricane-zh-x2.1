@@ -6,6 +6,22 @@
 基于 gamboozino 的 [ngbrecomp](https://github.com/gamboozino/ngbrecomp)。
 游戏代码（含 x2.1 补丁的全部改动）从打过补丁的 `default.xbe` 静态重编译成原生程序，不是模拟器。
 
+## 本分支：Android 双屏版
+
+本 fork 的 `android-hurricane` 分支提供 Android ARM64 版本，已合并上游 0.9.57。
+在 AYN Thor 上完成双屏功能测试；其他设备需要 Android 将第二屏识别为可供应用显示的副屏。
+
+- 上屏运行游戏，下屏独立触摸选择主武器、投掷武器和恢复道具。
+- “更多装备”展开忍法、腕轮和服装，选择一次后自动收起；服装仍遵守现有解锁设置。
+- “地图”点击打开、再次点击关闭，不要求获得地图道具；当前区域没有地图时按钮置灰。
+- 分类区域位置固定，物品按钮按拥有数量调整；物品耗尽后保留分类名称和空白区域。
+- 下屏复用“快速菜单”和“快速菜单暂停”选项，实体手柄保持正常使用。
+
+下载 [Android Release](https://github.com/081944/ngbrecomp-hurricane-zh-x2.1/releases/latest) 中的
+`NinjaGaidenBlack-android-arm64.apk`，可覆盖安装本 fork 旧版，保留存档和设置。
+本次 APK 关闭调试权限及 shell 性能采样入口，包名保持 `io.github.gamboozino.ngbrecomp`。
+完整操作方法见 [Android 双屏使用说明](docs/android-dual-screen-zh.md)。安装包不含游戏数据。
+
 ## 截图
 
 ![标题画面](docs/images/zh-title.jpg)
@@ -55,11 +71,11 @@ vb-zh-x2.1 镜像**（美版原版镜像打上 vb-zh-x2.1 补丁得到的 ISO，
 | `NGB_Hurricane_PC_v<ver>_win64.zip` | Windows 10 / 11（64 位） | 程序文件夹：`ngb-hurricane-zh-x2.1.exe`、两个街机程序（`NinjaTrilogy.exe`、`NinjaTomoe.exe`）、DLL、`share/`（着色器预编译数据）、`licenses/`，以及中文说明 `说明.txt` |
 | `NGB_Hurricane_PC_v<ver>_x86_64.AppImage` | Linux（x86-64，glibc 2.35 起：Ubuntu 22.04+、SteamOS、Debian 12、Fedora 36+ 等） | 整个程序打成一个文件，含街机程序 |
 | `NGB_Hurricane_PC_v<ver>_x86_64.AppImage.zsync` | Linux | AppImage 的增量更新数据：用 AppImageUpdate（或支持它的启动器）更新时只下载变化的部分。玩游戏用不到 |
-| `NGB_Hurricane_Android_v<ver>_arm64.apk` | Android 10 起，64 位 ARM 手机 / 平板 | App「NGB Hurricane x2.1」（独立的 App ID，可与上游 App 同时安装）。不含街机版 |
+| `NinjaGaidenBlack-android-arm64.apk` | Android 10 起，64 位 ARM 手机、平板及双屏掌机 | 本 fork 的 Android 版，包名 `io.github.gamboozino.ngbrecomp`，支持下屏装备及地图。不含街机版 |
 | `SHA256SUMS.txt` | 全部 | 以上文件的 SHA-256 校验码，用来核对下载是否完整 |
 
-都需要显卡驱动支持 Vulkan 1.3（或以扩展提供 dynamic rendering 与 synchronization2 的旧版 Vulkan）。Linux 版与 Android
-版和 Windows 版是同一份重编译代码；目前只在虚拟机和模拟器里测过，还没有在真实的 Linux 电脑和手机上测试，欢迎反馈。
+都需要显卡驱动支持 Vulkan 1.3（或以扩展提供 dynamic rendering 与 synchronization2 的旧版 Vulkan）。
+本 fork 的 Android 版已完成真机测试，包括 AYN Thor 双屏功能；继承的 Linux 构建说明不代表已在真实 Linux 电脑上验证，欢迎反馈。
 
 核对下载：Windows 用 `certutil -hashfile <文件> SHA256`（或 PowerShell 的 `Get-FileHash <文件>`），Linux 用
 `sha256sum -c SHA256SUMS.txt --ignore-missing`；结果要与 `SHA256SUMS.txt` 里该文件那一行相同。

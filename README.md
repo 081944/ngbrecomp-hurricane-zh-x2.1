@@ -7,6 +7,26 @@ A Windows PC port of **NINJA GAIDEN BLACK [Hurricane] vb-zh-x2.1** — the Chine
 The game's code, with every change of the x2.1 patch in it, is statically recompiled from the patched
 `default.xbe` into a native program: not an emulator.
 
+## Android dual-screen fork
+
+This fork's `android-hurricane` branch includes upstream 0.9.57 and a second-display
+touch panel, tested on AYN Thor. The main display runs the game; the second display
+shows weapons, projectiles and recovery items. More Equipment opens Ninpo, armlets
+and costumes, then closes after one selection. Map toggles the current area's map
+without requiring its inventory item; areas without a map disable the button.
+Category regions keep their positions, while item buttons adapt to owned counts.
+
+Enable **Quick Menu** in the game's settings; **Quick Menu Pause** also applies to
+equipment presses on the second display. Physical controllers remain usable.
+Other devices must expose their second display through Android's Presentation API.
+
+Download `NinjaGaidenBlack-android-arm64.apk` from this fork's
+[Android releases](https://github.com/081944/ngbrecomp-hurricane-zh-x2.1/releases/latest).
+It upgrades this fork's earlier APKs using the same package ID and signing key.
+The release disables debugging and shell profiling and contains no game data.
+See the [Chinese user guide](docs/android-dual-screen-zh.md) and
+[implementation notes](docs/android-second-screen.md).
+
 ## Screenshots
 
 ![Title screen](docs/images/zh-title.jpg)
@@ -65,12 +85,12 @@ files); none of them holds game data.
 | `NGB_Hurricane_PC_v<ver>_win64.zip` | Windows 10 / 11, 64-bit | The program folder: `ngb-hurricane-zh-x2.1.exe`, the two arcade programs (`NinjaTrilogy.exe`, `NinjaTomoe.exe`), its DLLs, `share/` (shader seeds), `licenses/`, and `说明.txt` (Chinese notes) |
 | `NGB_Hurricane_PC_v<ver>_x86_64.AppImage` | Linux, x86-64, glibc 2.35+ (Ubuntu 22.04+, SteamOS, Debian 12, Fedora 36+ ...) | The whole program in one file, arcade programs included |
 | `NGB_Hurricane_PC_v<ver>_x86_64.AppImage.zsync` | Linux | Update data for the AppImage: AppImageUpdate (or a launcher that supports it) downloads only what changed. Not needed to play |
-| `NGB_Hurricane_Android_v<ver>_arm64.apk` | Android 10+, 64-bit ARM phones and tablets | The app "NGB Hurricane x2.1" (its own app ID, so it can sit beside upstream's app). No arcade programs |
+| `NinjaGaidenBlack-android-arm64.apk` | Android 10+, 64-bit ARM phones, tablets and dual-screen handhelds | This fork's Android app, package `io.github.gamboozino.ngbrecomp`, with second-display equipment and map support. No arcade programs |
 | `SHA256SUMS.txt` | all | SHA-256 checksums of the files above, to check a download |
 
 All need a GPU whose driver has Vulkan 1.3 (or an older Vulkan with dynamic rendering and synchronization2 as
-extensions). The Linux and Android builds are made from the same recompiled code as the Windows one; so far they
-have been tested only in a virtual machine and an emulator, not on real Linux PCs or phones -- reports welcome.
+extensions). This fork's Android build has been tested on physical devices, including AYN Thor's two screens.
+The inherited Linux build notes do not establish testing on physical Linux PCs; reports are welcome.
 
 Checking a download: on Windows `certutil -hashfile <file> SHA256` (or PowerShell `Get-FileHash <file>`), on
 Linux `sha256sum -c SHA256SUMS.txt --ignore-missing`; the hash must match the file's line in `SHA256SUMS.txt`.

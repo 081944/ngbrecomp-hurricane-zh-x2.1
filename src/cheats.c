@@ -1327,6 +1327,7 @@ void ngb_zh_font_tick(void);   /* src/hurricane_zh.c */
 void ngb_frame_tick(void)
 {
     ngb_zh_font_tick();
+    { extern void ngb_costume_frame_tick(void); ngb_costume_frame_tick(); }
     { extern void ngb_camera_frame(void); ngb_camera_frame(); }   /* src/camera.c: which view the stick turns */
     { extern void ngb_quick_tick(void); ngb_quick_tick(); }
     { extern void ngb_render_list_frame(void); ngb_render_list_frame(); }   /* src/render_list.c: its nodes back */

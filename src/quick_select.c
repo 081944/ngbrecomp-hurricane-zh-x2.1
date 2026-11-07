@@ -3,16 +3,23 @@
 #define RECOMP_GENERATED_CODE
 #include "recomp_funcs.h"
 #include "quick_select.h"
+#include "quick_panel.h"
+#include "costume_switch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static void native_pause_check(void);
 int ngb_pc_setting(int which);
 int ngb_movie_active(void);
 extern uint64_t SDL_GetTicks64(void);
+extern uint64_t SDL_GetPerformanceCounter(void);
+extern uint64_t SDL_GetPerformanceFrequency(void);
 static int s_in_quick;
 static int s_pause;
+static int s_panel_pause;
+static NgbPanelCommand s_panel_command;
 static uint16_t s_last_heal = 0xFFFF;
 static unsigned s_recovery_sound;
 static uint64_t s_recovery_due;
@@ -127,11 +134,15 @@ static uint32_t refill_effect(uint16_t item, int *kind)
         *kind = found;
     return found ? base + o : 0;
 }
-static int regular_play(void)
+static int gameplay_context(void)
 {
-    return !ngb_movie_active() && (!MEM8(0xDB9AD5) || s_pause) && MEM8(0x7F1B12) == 1 && !MEM8(0x7F1B11) &&
+    return !ngb_movie_active() && MEM8(0x7F1B12) == 1 && !MEM8(0x7F1B11) &&
            (MEM8(0xDB9894) == 2 || MEM8(0xDB9894) == 3) && MEM8(0x4B7640) < 0x20 &&
            MEM16(0x58A566 + MEM8(0x4B7640) * 0x210u) != 0;
+}
+static int regular_play(void)
+{
+    return gameplay_context() && (!MEM8(0xDB9AD5) || s_pause);
 }
 /* The pad's held buttons (0xD219A1) that Guard takes: the game's Button Settings (0xDB9420) give it
  * button 0-7 (that bit), X + A (8: bits 0 and 2) or Y + B (9: bits 1 and 3); sub_000DFCF0 reads them so. */
@@ -339,17 +350,20 @@ static void picture(NgbQuickEntry *e)
         name = "Smoke Bomb";
         break;
     case 0x27:
-    case 0x29:
         art = "bow01";
         name = "Bow";
         break;
+    case 0x29:
+        art = "bow01";
+        name = "Bow (APFSDS)";
+        break;
     case 0x8D:
         art = "bow02";
-        name = "Bow";
+        name = "Bow (Arrows)";
         break;
     case 0xE2:
         art = "bow03";
-        name = "Bow";
+        name = "Bow (Explosive)";
         break;
     case 0xF8:
         art = "bow04";
@@ -399,6 +413,20 @@ static void picture(NgbQuickEntry *e)
         art = "re_mp_ex_s";
         name = "Fragrance of Hydrangea";
         break;
+    case 0x50: art = "panel_armlet"; name = "静心腕轮"; break;
+    case 0x52: art = "panel_armlet"; name = "幸运腕轮"; break;
+    case 0x54: art = "panel_armlet"; name = "太阳腕轮"; break;
+    case 0xEB: art = "panel_armlet"; name = "月亮腕轮"; break;
+    case 0x55: art = "panel_armlet"; name = "恩惠腕轮"; break;
+    case 0x166: art = "panel_armlet"; name = "迅速腕轮"; break;
+    case 0x167: art = "panel_armlet"; name = "力量腕轮"; break;
+    case 0x174: art = "panel_armlet"; name = "生命之结"; break;
+    case 0x178: art = "panel_armlet"; name = "精神之结"; break;
+    case 0x175: art = "panel_armlet"; name = "威力之结"; break;
+    case 0x176: art = "panel_armlet"; name = "守护之结"; break;
+    case 0x177: art = "panel_armlet"; name = "财富之结"; break;
+    case 0x179: art = "panel_armlet"; name = "光明之结"; break;
+    case 0x17A: art = "panel_armlet"; name = "强韧之结"; break;
     default:
         break;
     }
@@ -414,6 +442,7 @@ static int entry_category(uint16_t item)
      * variant. The loader still uses each descriptor's native equip slot. */
     if (item == 0x98 || item == 0x170) return NGB_QUICK_MELEE;
     unsigned cls = MEM8(r + 0xD);
+    if (cls == 4) return NGB_QUICK_ARMLETS;
     if (cls >= 1 && cls <= 3) return (int)cls;
     return refill_effect(item, NULL) ? NGB_QUICK_ITEMS : 0;
 }
@@ -464,7 +493,10 @@ static void make_view(NgbQuickView *v, int category)
                 e->quantity = 1;
         }
         unsigned cls = MEM8(r + 0xD);
-        if ((category != NGB_QUICK_ITEMS && item == MEM16(0x58A570 + player + (cls - 1) * 2)) ||
+        unsigned equip_slot = ngb_quick_native_slot(cls);
+        e->equipped = category != NGB_QUICK_ITEMS && cls >= 1 && cls <= 4 &&
+                      item == MEM16(0x58A570 + player + equip_slot * 2);
+        if (e->equipped ||
             (category == NGB_QUICK_ITEMS && item == s_last_heal))
             v->index = v->count;
         v->count++;
@@ -476,6 +508,122 @@ static void make_menu(NgbQuickMenu *menu, int category, int ready)
     menu->category = category;
     menu->ready = ready;
     for (int i = 0; i < NGB_QUICK_CATEGORIES; i++) make_view(&menu->views[i], i + 1);
+}
+
+/* The original selection commits its override at 0x589761 (FF: the area's own costume).
+ * The normal world update, sub_002DF750 (serviced by sub_002DF590), calls sub_002FC6F0
+ * to compare it with 0x589760
+ * and reload the character. Do not call that resource transition from the presenter. */
+static int costume_allowed(uint16_t costume)
+{
+    if (costume == 0xFF) return 1;
+    if (costume > 7) return 0;
+    if (ngb_pc_setting(16)) return 1;
+    if (costume < 4) return 0;
+    uint32_t row = 0x3E9D0C + (costume - 3) * 12;
+    ecx = MEM32(row + 4);
+    return call(sub_001DB520) & 255;
+}
+
+static void make_map(NgbQuickMenu *menu)
+{
+    unsigned id = MEM16(0xDB932C);
+    menu->map_id = menu->map_asset = -1;
+    menu->map_position = 0;
+    if (id >= 52) return;
+    /* The same language-specific sprite table used by sub_00219860.
+     * Lookup by key: the last entries include aliases and are not ordered. */
+    unsigned table = MEM32(0xDB9890) ? 0x43A5B8 : 0x43A838;
+    unsigned file = 0xFFFF;
+    for (unsigned i = 0; i < 52; ++i) {
+        unsigned row = table + i * 12;
+        if (MEM32(row) != id) continue;
+        file = MEM16(row + 8);
+        break;
+    }
+    if (file == 0xFFFF) return;
+    /* +8 is the native file ID; +10 is a text label, NOT an AFS index.
+     * Resolve through the same archive membership list as the file loader. */
+    unsigned registry = MEM32(0x44D430);
+    if (!registry) return;
+    unsigned header = MEM32(registry);
+    if (!header) return;
+    unsigned archives = MEM32(header + 8), count = MEM32(header + 12);
+    if (!archives || !count || count > 256) return;
+    for (unsigned i = 0; i < count; ++i) {
+        unsigned archive = archives + i * 16;
+        if (MEM8(archive + 6) != 's' || MEM8(archive + 7) != 'p' ||
+            MEM8(archive + 8) != 'r' || MEM8(archive + 9)) continue;
+        unsigned list = MEM32(archive), entries = MEM16(archive + 4);
+        if (!list || entries > 4096) return;
+        for (unsigned index = 0; index < entries; ++index) {
+            if (MEM16(list + index * 2) != file) continue;
+            menu->map_id = (int)id;
+            menu->map_asset = (int)index;
+            break;
+        }
+        break;
+    }
+    if (menu->map_asset < 0) return;
+    unsigned projection = id;
+    if (id == 0x1C && MEM16(0xDB9AC2) == 9) projection = 0x32;
+    if (id == 0x2E && MEM16(0xDB9AC2) == 0x1A) projection = 0x33;
+    unsigned config = MEM32(0x439EC0 + projection * 4);
+    if (config < 0x438B40 || config > 0x439E60) return;
+    unsigned actor_space = MEM8(0xDB9C60);
+    if (actor_space > 1) return;
+    unsigned matrix = 0x4B4C00 + actor_space * 0x140;
+    float x = MEMF(0x4B5710), y = MEMF(0x4B5714), z = MEMF(0x4B5718);
+    float wx = x * MEMF(matrix) + y * MEMF(matrix + 16) + z * MEMF(matrix + 32) + MEMF(matrix + 48);
+    float wz = x * MEMF(matrix + 8) + y * MEMF(matrix + 24) + z * MEMF(matrix + 40) + MEMF(matrix + 56);
+    float angle = MEMF(config + 24) * MEMF(0x414944) * MEMF(0x41499C);
+    float sine = sinf(angle), cosine = cosf(angle);
+    float sx = MEMF(config + 16), sy = MEMF(config + 20);
+    float ox = -MEMF(config) * sx, oy = -MEMF(config + 4) * sy;
+    unsigned width = MEM16(config + 28), height = MEM16(config + 30);
+    if (!width || !height) return;
+    menu->map_x = ((wx * cosine - wz * sine) * sx + ox * cosine - oy * sine + MEMF(config + 8)) / width;
+    menu->map_y = ((wx * sine + wz * cosine) * sy + oy * cosine + ox * sine + MEMF(config + 12)) / height;
+    menu->map_position = isfinite(menu->map_x) && isfinite(menu->map_y) &&
+                         menu->map_x >= 0 && menu->map_x <= 1 && menu->map_y >= 0 && menu->map_y <= 1;
+}
+
+static void make_costumes(NgbQuickMenu *menu)
+{
+    NgbQuickView *view = &menu->views[NGB_QUICK_COSTUMES - 1];
+    memset(view, 0, sizeof *view);
+    view->category = NGB_QUICK_COSTUMES;
+    view->freeze = ngb_pc_setting(19);
+    unsigned requested = MEM8(0x589761), active = MEM8(0x589760);
+    for (int i = -1; i < 8; i++) {
+        uint16_t id = i < 0 ? 0xFF : (uint16_t)i;
+        if (!costume_allowed(id)) continue;
+        NgbQuickEntry *entry = &view->entries[view->count];
+        entry->id = id;
+        entry->count = 1;
+        entry->usable = ngb_costume_can_request(id);
+        entry->equipped = id == 0xFF ? requested == 0xFF : requested != 0xFF && active == id;
+        /* cos_menu.spr starts at global sprite 74F. Its default picture is 750; 751-754 are 4-7. */
+        snprintf(entry->art, sizeof entry->art, "cos_menu.spr#%d", i >= 4 ? i - 2 : 1);
+        if (i < 0) snprintf(entry->name, sizeof entry->name, "Default Costume");
+        else snprintf(entry->name, sizeof entry->name, "Costume %d", i + 1);
+        if (entry->equipped) view->index = view->count;
+        view->count++;
+    }
+}
+
+static void apply_costume(uint16_t costume)
+{
+    if (!can_pause() || !costume_allowed(costume)) return;
+    unsigned previous = MEM8(0x589761);
+    /* Only request a change. The game owns the character teardown, loading and restoration. */
+    if (!ngb_costume_request(costume)) {
+        fprintf(stderr, "[COSTUME] refused: native request already pending or default not known\n");
+        return;
+    }
+    fprintf(stderr, "[COSTUME] request=%02X previous=%02X active=%02X task=%u\n",
+            costume, previous, MEM8(0x589760), MEM32(0xD21E4C));
+    play_sound(5, "costume confirmation");
 }
 static void apply(uint16_t item, int category)
 {
@@ -495,8 +643,11 @@ static void apply(uint16_t item, int category)
     if (category != NGB_QUICK_ITEMS)
     {
         unsigned cls = MEM8(r + 0xD);
-        if (cls < 1 || cls > 3)
+        if (cls < 1 || cls > 4)
             return;
+        /* The retail inventory maps class-four armlets/bands to equip slot 7
+         * (00180DC0 at 001811DF), rather than to the Ninpo slot. */
+        unsigned equip_slot = ngb_quick_native_slot(cls);
         /* The inventory handler checks ownership of the weapon before
          * passing it to the resource loader. */
         esi = item;
@@ -523,7 +674,7 @@ static void apply(uint16_t item, int category)
             if (!call(sub_001542C0))
                 fprintf(stderr, "[QUICK] %04X: its part %04X is not owned\n", item, (unsigned)MEM16(scratch + i * 2));
         }
-        if (MEM16(0x58A570 + player + (cls - 1) * 2) == item)
+        if (MEM16(0x58A570 + player + equip_slot * 2) == item)
         {
             play_sound(5, "confirmation");
             return;
@@ -532,20 +683,52 @@ static void apply(uint16_t item, int category)
          * inventory transition, including the world/player restoration on
          * exit, even when selection itself is configured to remain live. */
         s_in_quick = 1;
+        uint64_t transition_begin = SDL_GetPerformanceCounter();
         call(sub_002FD820);
-        eax = cls - 1;
+        uint64_t suspended = SDL_GetPerformanceCounter();
+        eax = equip_slot;
         PUSH32(esp, item);
         unsigned accepted = call(sub_002EAA20) & 255;
         esp += 4;
+        uint64_t loaded = SDL_GetPerformanceCounter();
+        /* Same polling and restoration as sub_00166B90, with separate
+         * measurements for resource progress and the final world restore. */
+        uint64_t poll_ticks = 0, service_ticks = 0;
+        unsigned iterations = 0;
+        for (;;) {
+            uint64_t begin = SDL_GetPerformanceCounter();
+            unsigned busy = call(sub_002EAAE0) & 255;
+            poll_ticks += SDL_GetPerformanceCounter() - begin;
+            if (!busy) break;
+            begin = SDL_GetPerformanceCounter();
+            PUSH32(esp, 1);
+            call(sub_002FE1D0);
+            esp += 4;
+            service_ticks += SDL_GetPerformanceCounter() - begin;
+            iterations++;
+        }
+        uint64_t restore_begin = SDL_GetPerformanceCounter();
         PUSH32(esp, 1);
-        call(sub_00166B90);
+        call(sub_002FDAE0);
         esp += 4;
+        MEM8(0x7F1B12) = 1;
+        uint64_t restored = SDL_GetPerformanceCounter();
         s_in_quick = 0;
-        fprintf(stderr, "[QUICK] equipped accepted=%u slot=%u item=%04X actual=%04X\n", accepted, cls - 1, item,
-                MEM16(0x58A570 + player + (cls - 1) * 2));
+        uint64_t frequency = SDL_GetPerformanceFrequency();
+        fprintf(stderr, "[QUICK PHASE] polls=%u poll_us=%llu service_us=%llu final_us=%llu\n", iterations,
+                (unsigned long long)(poll_ticks * 1000000 / frequency),
+                (unsigned long long)(service_ticks * 1000000 / frequency),
+                (unsigned long long)((restored - restore_begin) * 1000000 / frequency));
+        fprintf(stderr, "[QUICK TIMING] item=%04X suspend_us=%llu load_us=%llu restore_us=%llu total_us=%llu\n", item,
+                (unsigned long long)((suspended - transition_begin) * 1000000 / frequency),
+                (unsigned long long)((loaded - suspended) * 1000000 / frequency),
+                (unsigned long long)((restored - loaded) * 1000000 / frequency),
+                (unsigned long long)((restored - transition_begin) * 1000000 / frequency));
+        fprintf(stderr, "[QUICK] equipped accepted=%u slot=%u item=%04X actual=%04X\n", accepted, equip_slot, item,
+                MEM16(0x58A570 + player + equip_slot * 2));
         /* The native resource transition pauses active voices. Confirm only
          * after it has restored the world and resumed audio. */
-        if (accepted && MEM16(0x58A570 + player + (cls - 1) * 2) == item)
+        if (accepted && MEM16(0x58A570 + player + equip_slot * 2) == item)
             play_sound(5, "confirmation");
     }
     else
@@ -595,9 +778,76 @@ static void dispatch_command(uint16_t item, int category)
         /* A fast second command must not overwrite an earlier item's sound
          * or carry it into the weapon loader's audio pause. */
         finish_recovery();
-        apply(item, category);
+        if (category == NGB_QUICK_COSTUMES) apply_costume(item);
+        else apply(item, category);
     }
 }
+#ifdef __ANDROID__
+static void panel_tick(void)
+{
+    if (s_in_quick) return;
+    static int timing = -1;
+    if (timing < 0) timing = getenv("NGB_QUICK_TIMING") != NULL;
+    uint64_t begin = timing ? SDL_GetPerformanceCounter() : 0;
+    GuestContext context = save_context();
+    static NgbQuickMenu panel;
+    uint16_t item;
+    int category;
+    int enabled = ngb_pc_setting(20) != 0;
+    const char *override = getenv("NGB_QUICK_SELECT");
+    /* The native pause counter also covers the charge flash. It blocks equipping,
+     * but does not mean that the player left the world or lost the display. */
+    int allowed = enabled && gameplay_context() && supported_layout() && !(override && !strcmp(override, "0"));
+    int ready = allowed && can_pause();
+    if (!allowed || (MEM8(0xDB9AD5) && !s_pause)) s_panel_command.pending = 0;
+    if (allowed) {
+        make_menu(&panel, NGB_QUICK_MELEE, ready);
+        make_map(&panel);
+        make_costumes(&panel);
+        make_view(&panel.views[NGB_QUICK_ARMLETS - 1], NGB_QUICK_ARMLETS);
+        static int last_costume = -1;
+        int active = MEM8(0x589760);
+        if (active != last_costume) {
+            fprintf(stderr, "[COSTUME] active=%02X override=%02X\n", active, MEM8(0x589761));
+            last_costume = active;
+        }
+    }
+    int result = ngb_android_quick_update(allowed ? &panel : NULL, enabled, &item, &category);
+    s_panel_pause = result & 1;
+    if (result & 2) {
+        /* Swap runs inside the current render task. Equipping here waits on resources that require
+         * that task to finish its frame. The native pause-check task consumes this mailbox instead. */
+        int queued = ngb_panel_submit(&s_panel_command, item, category, SDL_GetTicks64());
+        fprintf(stderr, "[PANEL] queued=%d category=%d item=%04X\n", queued, category, item);
+    }
+    /* Retain our optional pause until the native task acknowledges the released button. Releasing
+     * it here would flush input histories before that task can recheck the inventory gate. */
+    if (allowed && ngb_panel_pending(&s_panel_command, SDL_GetTicks64()) && ngb_pc_setting(19))
+        s_panel_pause = 1;
+    pause_menu(ngb_quick_frozen() || s_panel_pause);
+    restore_context(&context);
+    if (timing) {
+        static uint64_t last, start, maximum;
+        static unsigned frames;
+        static int previous = -1;
+        uint64_t end = SDL_GetPerformanceCounter(), frequency = SDL_GetPerformanceFrequency();
+        uint64_t work = (end - begin) * 1000000 / frequency;
+        int paused = MEM8(0xDB9AD5) != 0;
+        if (work > maximum) maximum = work;
+        frames++;
+        if (paused != previous) {
+            fprintf(stderr, "[PANEL TIMING] native_pause=%d visible=%d ready=%d frames=%u span_us=%llu gap_us=%llu work_us=%llu max_work_us=%llu depth=%u/%u\n",
+                    paused, allowed, ready, frames,
+                    (unsigned long long)(start ? (end - start) * 1000000 / frequency : 0),
+                    (unsigned long long)(last ? (end - last) * 1000000 / frequency : 0),
+                    (unsigned long long)work, (unsigned long long)maximum,
+                    MEM8(0xDB5A68), MEM8(0xDB5A62));
+            previous = paused; start = end; maximum = 0; frames = 0;
+        }
+        last = end;
+    }
+}
+#endif
 static uint64_t s_closed_since;   /* the gate closed on an open menu, since (SDL ms) */
 static void quick_step(void)
 {
@@ -606,6 +856,8 @@ static void quick_step(void)
         finish_recovery();
     if (!ngb_pc_setting(20))
     {
+        s_panel_pause = 0;
+        s_panel_command.pending = 0;
         ngb_quick_close();
         ngb_quick_take_open();
         pause_menu(0);
@@ -626,12 +878,28 @@ static void quick_step(void)
      * category changes and applying a selection must wait for it. Recheck
      * queued host input here: live gameplay may have begun another action. */
     int ready = can_pause();
+    if (s_panel_command.pending && !ready) {
+        static uint64_t reported;
+        if (reported != s_panel_command.until) {
+            reported = s_panel_command.until;
+            fprintf(stderr, "[PANEL] waiting for gate task=%u state=%u pause=%d\n",
+                    MEM32(0xD21E4C), MEM8(0x7F1B12), s_pause);
+        }
+    }
+    if (ngb_panel_take(&s_panel_command, ready, SDL_GetTicks64(), &item, &category)) {
+        fprintf(stderr, "[PANEL] dispatch category=%d item=%04X task=%u\n", category, item, MEM32(0xD21E4C));
+        ngb_quick_close();
+        dispatch_command(item, category);
+        s_panel_pause = 0;
+        ready = can_pause();
+    }
     if (ngb_quick_take_command(&item, &category) && ready)
     {
+        fprintf(stderr, "[QUICK] dispatch category=%d item=%04X task=%u\n", category, item, MEM32(0xD21E4C));
         ngb_quick_close();
         dispatch_command(item, category);
     }
-    if (!ngb_quick_wanted()) pause_menu(0);
+    if (!ngb_quick_wanted()) pause_menu(s_panel_pause);
     if (!regular_play())
     {
         ngb_quick_close();
@@ -683,7 +951,7 @@ static void quick_step(void)
          * particular, clearing it here could release a charged attack.
          * Host binding filters consume menu controls on subsequent polls. */
     }
-    pause_menu(ngb_quick_frozen());
+    pause_menu(ngb_quick_frozen() || s_panel_pause);
 }
 void sub_00166960(void)
 {
@@ -695,9 +963,15 @@ void sub_00166960(void)
 }
 void ngb_quick_tick(void)
 {
+#ifdef __ANDROID__
+    /* A persistent second-screen panel needs service even while the controller menu is closed. */
+    panel_tick();
+#endif
     /* The pause-check hook is absent in cutscenes and other game states. */
     if (!s_in_quick && (!regular_play() || !ngb_pc_setting(20)))
     {
+        s_panel_command.pending = 0;
+        s_panel_pause = 0;
         s_recovery_sound = 0;
         ngb_quick_close();
         pause_menu(0);

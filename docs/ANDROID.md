@@ -1,6 +1,10 @@
 # Android ARM64 port
 
-Status: **playable**, 2026-10-30. The x2.1 build runs on an ARM64 phone (OnePlus 8,
+Status: **playable**, updated 2026-11-07. The AYN Thor second-display equipment
+and map panel has been tested on hardware. See the [Chinese usage guide](android-dual-screen-zh.md)
+and [implementation notes](android-second-screen.md). Published APKs disable
+debugging and shell profiling, retaining the existing package ID and signing key
+for in-place upgrades. The x2.1 build also runs on an ARM64 phone (OnePlus 8,
 Adreno 650, Mesa Turnip v25.3.0-R11) with touch controls, a touch settings menu,
 ISO/folder import and driver switching. The bring-up audit further down is kept as
 history: it describes the checkout before any of this existed.

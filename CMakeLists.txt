@@ -154,6 +154,9 @@ add_library(ngb_gen OBJECT ${RECOMP_GEN_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/render_list.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/playtime.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/quick_select.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/quick_panel.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/costume_state.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/costume_switch.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main_menu.c
     # The Hurricane x2.1 build: hand-written for its patched-in code.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hurricane_hint.c
@@ -261,6 +264,7 @@ set(NGB_MAIN_SOURCES
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_install.c>
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_gpu.c>
     $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_haptic.c>
+    $<$<PLATFORM_ID:Android>:${CMAKE_CURRENT_SOURCE_DIR}/src/android_quick.c>
     $<TARGET_OBJECTS:ngb_gen>
     $<$<BOOL:${NGB_NV2A_VK}>:$<TARGET_OBJECTS:ngb_d3d>>
     $<TARGET_OBJECTS:ngb_audio>
